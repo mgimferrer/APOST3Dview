@@ -1,0 +1,16 @@
+# Rust build artifacts
+/target
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+
+# Python (later phases' scripts)
+__pycache__/
+*.pyc
+
+# Local AI working notes (mirrors the APOST3D convention — delete this line
+# if you'd rather track CLAUDE.md in the repo, nothing in it is sensitive)
+CLAUDE.md
