@@ -15,3 +15,8 @@ __pycache__/
 # line if you'd rather track these in the repo, nothing in them is sensitive)
 CLAUDE.md
 PROJECT-ROADMAP.md
+
+# APOST-3D test data (.fchk/.inp) used for local testing — not committed,
+# these are your own calculation files, not project source
+*.fchk
+*.inp
