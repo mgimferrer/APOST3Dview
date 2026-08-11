@@ -11,6 +11,7 @@
 __pycache__/
 *.pyc
 
-# Local AI working notes (mirrors the APOST3D convention — delete this line
-# if you'd rather track CLAUDE.md in the repo, nothing in it is sensitive)
+# Local AI working notes (mirrors the APOST3D convention — delete either
+# line if you'd rather track these in the repo, nothing in them is sensitive)
 CLAUDE.md
+PROJECT-ROADMAP.md
