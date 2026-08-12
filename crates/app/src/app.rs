@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use apost3dview_core::Molecule;
+use apost3dview_core::{format_coordinates, CoordinateFormat, LengthUnit, Molecule};
 use apost3dview_render::{Material, OrbitCamera, ViewportCallback, ViewportResources};
 use egui::{Color32, Slider};
 
@@ -23,9 +23,21 @@ fn load_texture(ctx: &egui::Context, name: &str, png_bytes: &[u8]) -> egui::Text
 pub struct App {
     camera: OrbitCamera,
     material: Material,
+    molecule: Option<Molecule>,
+    fchk_filename: String,
     logo_texture: egui::TextureHandle,
-    show_about: bool,
     start_time: Instant,
+
+    // Each tool panel is an independent floating window, toggled from the
+    // top toolbar — this is the scalable structure: adding a new panel
+    // later is one more bool + one more `show_*_window` function, no
+    // restructuring of the others.
+    show_style: bool,
+    show_xyz: bool,
+    show_about: bool,
+
+    coordinate_unit: LengthUnit,
+    coordinate_format: CoordinateFormat,
 }
 
 impl App {
@@ -42,11 +54,14 @@ impl App {
         // so there's real geometry to look at and profile against. Real
         // file-open UI is separate future work.
         let fchk_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Bi-dianion-OSD.fchk");
+        let fchk_filename = fchk_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let mut molecule = None;
         match Molecule::from_fchk(&fchk_path) {
-            Ok(molecule) => {
-                let (center, radius) = molecule.bounding_sphere();
+            Ok(loaded) => {
+                let (center, radius) = loaded.bounding_sphere();
                 camera.frame_bounds(center, radius);
-                resources.load_molecule(&render_state.device, &molecule);
+                resources.load_molecule(&render_state.device, &loaded);
+                molecule = Some(loaded);
             }
             Err(err) => {
                 eprintln!("could not load {}: {err}", fchk_path.display());
@@ -60,9 +75,15 @@ impl App {
         Self {
             camera,
             material: Material::default(),
+            molecule,
+            fchk_filename,
             logo_texture,
-            show_about: false,
             start_time: Instant::now(),
+            show_style: true,
+            show_xyz: false,
+            show_about: false,
+            coordinate_unit: LengthUnit::Angstrom,
+            coordinate_format: CoordinateFormat::AtomicNumberTable,
         }
     }
 
@@ -84,6 +105,122 @@ impl App {
         );
 
         ui.ctx().request_repaint_after(Duration::from_millis(50));
+    }
+
+    fn show_toolbar(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::top("toolbar").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new("APOST3Dview").strong());
+                ui.separator();
+                if ui.selectable_label(self.show_style, "Style").clicked() {
+                    self.show_style = !self.show_style;
+                }
+                if ui.selectable_label(self.show_xyz, "XYZ").clicked() {
+                    self.show_xyz = !self.show_xyz;
+                }
+                if ui.selectable_label(self.show_about, "About").clicked() {
+                    self.show_about = !self.show_about;
+                }
+            });
+        });
+    }
+
+    fn show_style_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_style;
+        egui::Window::new("Style")
+            .open(&mut open)
+            .default_pos([ctx.content_rect().right() - 280.0, 60.0])
+            .default_width(240.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("Default").clicked() {
+                        self.material = Material::default();
+                    }
+                    if ui.button("Publication").clicked() {
+                        self.material = Material::publication();
+                    }
+                });
+
+                ui.add_space(8.0);
+                ui.label("Geometry");
+                ui.add(Slider::new(&mut self.material.atom_scale, 0.1..=1.5).text("atom scale"));
+                ui.add(Slider::new(&mut self.material.bond_radius, 0.02..=0.5).text("bond radius"));
+
+                ui.add_space(12.0);
+                ui.label("Material");
+                ui.add(Slider::new(&mut self.material.ambient, 0.0..=1.0).text("ambient"));
+                ui.add(Slider::new(&mut self.material.diffuse, 0.0..=1.0).text("diffuse"));
+                ui.add(Slider::new(&mut self.material.specular, 0.0..=1.0).text("specular"));
+                ui.add(Slider::new(&mut self.material.shininess, 1.0..=128.0).text("shininess"));
+
+                ui.add_space(12.0);
+                ui.label("Lighting");
+                ui.add(
+                    Slider::new(&mut self.material.light_yaw, -std::f32::consts::PI..=std::f32::consts::PI)
+                        .text("light yaw"),
+                );
+                ui.add(Slider::new(&mut self.material.light_pitch, -1.5..=1.5).text("light pitch"));
+
+                ui.add_space(12.0);
+                ui.label("Background");
+                let mut background = Color32::from_rgb(
+                    (self.material.background[0] * 255.0) as u8,
+                    (self.material.background[1] * 255.0) as u8,
+                    (self.material.background[2] * 255.0) as u8,
+                );
+                if ui.color_edit_button_srgba(&mut background).changed() {
+                    self.material.background = [
+                        background.r() as f32 / 255.0,
+                        background.g() as f32 / 255.0,
+                        background.b() as f32 / 255.0,
+                    ];
+                }
+
+                ui.add_space(16.0);
+                ui.separator();
+                ui.label("Drag to orbit, scroll to zoom, shift-drag to pan.");
+            });
+        self.show_style = open;
+    }
+
+    fn show_xyz_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_xyz;
+        egui::Window::new("XYZ")
+            .open(&mut open)
+            .default_pos([40.0, 60.0])
+            .default_width(420.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Unit:");
+                    ui.selectable_value(&mut self.coordinate_unit, LengthUnit::Angstrom, "Ang (Å)");
+                    ui.selectable_value(&mut self.coordinate_unit, LengthUnit::Bohr, "Bohr (a.u.)");
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Format:");
+                    ui.selectable_value(&mut self.coordinate_format, CoordinateFormat::AtomicNumberTable, "Z x y z");
+                    ui.selectable_value(&mut self.coordinate_format, CoordinateFormat::XyzFile, "xyz");
+                });
+                ui.separator();
+
+                match &self.molecule {
+                    Some(molecule) => {
+                        let text =
+                            format_coordinates(molecule, self.coordinate_unit, self.coordinate_format, &self.fchk_filename);
+                        egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(text).monospace())
+                                    .selectable(true)
+                                    .wrap_mode(egui::TextWrapMode::Extend),
+                            );
+                        });
+                    }
+                    None => {
+                        ui.label("No molecule loaded.");
+                    }
+                }
+            });
+        self.show_xyz = open;
     }
 
     fn show_about_window(&mut self, ctx: &egui::Context) {
@@ -122,69 +259,10 @@ impl eframe::App for App {
             return;
         }
 
+        self.show_toolbar(ui);
+        self.show_style_window(ui.ctx());
+        self.show_xyz_window(ui.ctx());
         self.show_about_window(ui.ctx());
-
-        egui::Panel::right("style_panel")
-            .default_size(240.0)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.heading("Style");
-                    if ui.small_button("About").clicked() {
-                        self.show_about = true;
-                    }
-                });
-                ui.add_space(8.0);
-
-                ui.horizontal(|ui| {
-                    if ui.button("Default").clicked() {
-                        self.material = Material::default();
-                    }
-                    if ui.button("Publication").clicked() {
-                        self.material = Material::publication();
-                    }
-                });
-
-                ui.add_space(8.0);
-                ui.label("Geometry");
-                ui.add(Slider::new(&mut self.material.atom_scale, 0.1..=1.5).text("atom scale"));
-                ui.add(Slider::new(&mut self.material.bond_radius, 0.02..=0.5).text("bond radius"));
-
-                ui.add_space(12.0);
-                ui.label("Material");
-                ui.add(Slider::new(&mut self.material.ambient, 0.0..=1.0).text("ambient"));
-                ui.add(Slider::new(&mut self.material.diffuse, 0.0..=1.0).text("diffuse"));
-                ui.add(Slider::new(&mut self.material.specular, 0.0..=1.0).text("specular"));
-                ui.add(Slider::new(&mut self.material.shininess, 1.0..=128.0).text("shininess"));
-
-                ui.add_space(12.0);
-                ui.label("Lighting");
-                ui.add(
-                    Slider::new(&mut self.material.light_yaw, -std::f32::consts::PI..=std::f32::consts::PI)
-                        .text("light yaw"),
-                );
-                ui.add(
-                    Slider::new(&mut self.material.light_pitch, -1.5..=1.5).text("light pitch"),
-                );
-
-                ui.add_space(12.0);
-                ui.label("Background");
-                let mut background = Color32::from_rgb(
-                    (self.material.background[0] * 255.0) as u8,
-                    (self.material.background[1] * 255.0) as u8,
-                    (self.material.background[2] * 255.0) as u8,
-                );
-                if ui.color_edit_button_srgba(&mut background).changed() {
-                    self.material.background = [
-                        background.r() as f32 / 255.0,
-                        background.g() as f32 / 255.0,
-                        background.b() as f32 / 255.0,
-                    ];
-                }
-
-                ui.add_space(16.0);
-                ui.separator();
-                ui.label("Drag to orbit, scroll to zoom, shift-drag to pan.");
-            });
 
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)

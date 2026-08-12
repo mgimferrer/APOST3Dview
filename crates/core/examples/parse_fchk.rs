@@ -22,4 +22,16 @@ fn main() {
         let symbol = apost3dview_core::element_data(z).symbol;
         println!("  Z={z:>3} {symbol:<2}  x{count}");
     }
+
+    let filename = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    print_formats(&molecule, &filename);
+}
+
+#[allow(dead_code)]
+fn print_formats(molecule: &apost3dview_core::Molecule, filename: &str) {
+    use apost3dview_core::{format_coordinates, CoordinateFormat, LengthUnit};
+    println!("\n--- Z x y z, Angstrom ---");
+    println!("{}", format_coordinates(molecule, LengthUnit::Angstrom, CoordinateFormat::AtomicNumberTable, filename));
+    println!("--- xyz, Bohr ---");
+    println!("{}", format_coordinates(molecule, LengthUnit::Bohr, CoordinateFormat::XyzFile, filename));
 }

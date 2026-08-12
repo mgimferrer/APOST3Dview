@@ -8,8 +8,7 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, Lines};
 use std::path::Path;
 
-/// Bohr -> angstrom, CODATA.
-const BOHR_TO_ANGSTROM: f64 = 0.529177210903;
+use crate::units::ANGSTROM_PER_BOHR;
 
 pub struct FchkGeometry {
     pub atomic_numbers: Vec<u32>,
@@ -106,9 +105,9 @@ pub fn parse_fchk_geometry(path: &Path) -> io::Result<FchkGeometry> {
         .chunks_exact(3)
         .map(|c| {
             [
-                (c[0] * BOHR_TO_ANGSTROM) as f32,
-                (c[1] * BOHR_TO_ANGSTROM) as f32,
-                (c[2] * BOHR_TO_ANGSTROM) as f32,
+                (c[0] * ANGSTROM_PER_BOHR) as f32,
+                (c[1] * ANGSTROM_PER_BOHR) as f32,
+                (c[2] * ANGSTROM_PER_BOHR) as f32,
             ]
         })
         .collect();
