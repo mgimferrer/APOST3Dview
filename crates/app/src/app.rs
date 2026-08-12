@@ -47,6 +47,17 @@ fn format_measurement(kind: MeasurementKind, value: f32, unit: LengthUnit, decim
     }
 }
 
+/// "C1-N3-O5" style tag for the measurement list, so entries with
+/// identical values (a common occurrence — symmetric structures, several
+/// similar bonds) are still distinguishable at a glance.
+fn format_measurement_atoms(molecule: &Molecule, kind: MeasurementKind) -> String {
+    kind.atoms()
+        .iter()
+        .map(|&i| format!("{}{}", element_data(molecule.atomic_numbers[i]).symbol, i + 1))
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
 /// Centroid of a measurement's involved atoms — the default label anchor
 /// before the user's own drag offset is applied.
 fn measurement_anchor(molecule: &Molecule, kind: MeasurementKind) -> Vec3 {
@@ -92,11 +103,18 @@ struct MeasurementStyle {
     decimal_places: usize,
     text_color: Color32,
     line_color: [f32; 3],
+    bold: bool,
 }
 
 impl Default for MeasurementStyle {
     fn default() -> Self {
-        Self { font_size: 16.0, decimal_places: 2, text_color: Color32::from_rgb(20, 20, 20), line_color: [0.05, 0.05, 0.05] }
+        Self {
+            font_size: 16.0,
+            decimal_places: 2,
+            text_color: Color32::from_rgb(20, 20, 20),
+            line_color: [0.05, 0.05, 0.05],
+            bold: true,
+        }
     }
 }
 
@@ -710,9 +728,10 @@ impl App {
                     let mut remove_index = None;
                     for (index, measurement) in self.structures[active].measurements.iter().enumerate() {
                         let value = measure(&self.structures[active].molecule, measurement.kind);
+                        let atoms = format_measurement_atoms(&self.structures[active].molecule, measurement.kind);
                         let text = format_measurement(measurement.kind, value, self.coordinate_unit, self.measurement_style.decimal_places);
                         ui.horizontal(|ui| {
-                            ui.label(text);
+                            ui.label(format!("{atoms}: {text}"));
                             if ui.small_button("×").clicked() {
                                 remove_index = Some(index);
                             }
@@ -732,6 +751,7 @@ impl App {
                 ui.separator();
                 ui.label("Label style");
                 ui.add(Slider::new(&mut self.measurement_style.font_size, 8.0..=32.0).text("font size"));
+                ui.checkbox(&mut self.measurement_style.bold, "Bold");
                 let mut decimals = self.measurement_style.decimal_places as u32;
                 if ui.add(Slider::new(&mut decimals, 0..=4).text("decimal places")).changed() {
                     self.measurement_style.decimal_places = decimals as usize;
@@ -990,9 +1010,17 @@ impl eframe::App for App {
                     let font_id = egui::FontId::proportional(self.measurement_style.font_size);
                     let galley = ui.painter().layout_no_wrap(text, font_id, self.measurement_style.text_color);
                     let text_rect = egui::Rect::from_center_size(label_pos, galley.size() + egui::vec2(8.0, 4.0));
+                    let text_origin = text_rect.center() - galley.size() * 0.5;
 
-                    ui.painter().rect_filled(text_rect, 3.0, Color32::from_white_alpha(215));
-                    ui.painter().galley(text_rect.center() - galley.size() * 0.5, galley, self.measurement_style.text_color);
+                    // No background — fully transparent, so the label
+                    // doesn't obscure the molecule behind it. "Bold" is
+                    // faked by drawing the same galley twice, offset by a
+                    // fraction of a pixel, since the bundled fonts don't
+                    // include a true bold weight.
+                    if self.measurement_style.bold {
+                        ui.painter().galley(text_origin + egui::vec2(0.6, 0.0), galley.clone(), self.measurement_style.text_color);
+                    }
+                    ui.painter().galley(text_origin, galley, self.measurement_style.text_color);
 
                     let label_response = ui.interact(text_rect, ui.id().with(("measurement_label", active, index)), egui::Sense::drag());
                     if label_response.dragged() {
