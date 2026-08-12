@@ -5,6 +5,7 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+apost3dview-core = { version = "0.1.0", path = "../core" }
 bytemuck = { version = "1.25.2", features = ["derive"] }
 egui = "0.36.1"
 egui-wgpu = "0.36.1"

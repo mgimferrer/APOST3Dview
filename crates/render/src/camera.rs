@@ -74,4 +74,21 @@ impl OrbitCamera {
     pub fn zoom(&mut self, delta: f32) {
         self.distance = (self.distance - delta).clamp(Self::MIN_DISTANCE, Self::MAX_DISTANCE);
     }
+
+    /// (right, up) camera basis vectors, used to billboard atom impostors
+    /// toward the camera.
+    pub fn screen_basis(&self) -> (Vec3, Vec3) {
+        let forward = (self.target - self.eye()).normalize_or_zero();
+        let right = forward.cross(Vec3::Y).normalize_or_zero();
+        let up = right.cross(forward).normalize_or_zero();
+        (right, up)
+    }
+
+    /// Frames the camera on a bounding sphere: recenters the target and
+    /// backs the distance off enough for the whole molecule to fit in view
+    /// at the current field of view.
+    pub fn frame_bounds(&mut self, center: Vec3, radius: f32) {
+        self.target = center;
+        self.distance = (radius / (self.fov_y_radians * 0.5).sin()).max(Self::MIN_DISTANCE);
+    }
 }

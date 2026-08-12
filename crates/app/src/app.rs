@@ -1,3 +1,6 @@
+use std::path::Path;
+
+use apost3dview_core::Molecule;
 use apost3dview_render::{Material, OrbitCamera, ViewportCallback, ViewportResources};
 use egui::{Color32, Slider};
 
@@ -13,10 +16,27 @@ impl App {
             .as_ref()
             .expect("eframe must be running with the wgpu backend");
 
-        let resources = ViewportResources::new(&render_state.device, render_state.target_format);
+        let mut resources = ViewportResources::new(&render_state.device, render_state.target_format);
+        let mut camera = OrbitCamera::default();
+
+        // Bring-up wiring: load the sample .fchk shipped alongside the repo
+        // so there's real geometry to look at and profile against. Real
+        // file-open UI is separate future work.
+        let fchk_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Bi-dianion-OSD.fchk");
+        match Molecule::from_fchk(&fchk_path) {
+            Ok(molecule) => {
+                let (center, radius) = molecule.bounding_sphere();
+                camera.frame_bounds(center, radius);
+                resources.load_molecule(&render_state.device, &molecule);
+            }
+            Err(err) => {
+                eprintln!("could not load {}: {err}", fchk_path.display());
+            }
+        }
+
         render_state.renderer.write().callback_resources.insert(resources);
 
-        Self { camera: OrbitCamera::default(), material: Material::default() }
+        Self { camera, material: Material::default() }
     }
 }
 
@@ -28,6 +48,11 @@ impl eframe::App for App {
                 ui.heading("Style");
                 ui.add_space(8.0);
 
+                ui.label("Geometry");
+                ui.add(Slider::new(&mut self.material.atom_scale, 0.1..=1.5).text("atom scale"));
+                ui.add(Slider::new(&mut self.material.bond_radius, 0.02..=0.5).text("bond radius"));
+
+                ui.add_space(12.0);
                 ui.label("Material");
                 ui.add(Slider::new(&mut self.material.ambient, 0.0..=1.0).text("ambient"));
                 ui.add(Slider::new(&mut self.material.diffuse, 0.0..=1.0).text("diffuse"));
@@ -61,7 +86,6 @@ impl eframe::App for App {
 
                 ui.add_space(16.0);
                 ui.separator();
-                ui.label("Phase 1: geometry only.");
                 ui.label("Drag to orbit, scroll to zoom, shift-drag to pan.");
             });
 
