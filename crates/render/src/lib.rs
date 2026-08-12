@@ -14,6 +14,6 @@ pub use camera::OrbitCamera;
 pub use consts::{DEPTH_BUFFER_BITS, DEPTH_FORMAT, MSAA_SAMPLES};
 pub use instances::{BondVisualStyle, HIGHLIGHT_COLOR};
 pub use material::Material;
-pub use picking::{pick_atom, pick_bond, ray_from_ndc};
+pub use picking::{is_atom_visible, pick_atom, pick_bond, ray_from_ndc};
 pub use uniforms::SceneUniforms;
 pub use viewport::{ViewportCallback, ViewportResources};

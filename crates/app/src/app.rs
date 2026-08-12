@@ -3,7 +3,8 @@ use std::time::{Duration, Instant};
 
 use apost3dview_core::{element_data, format_coordinates, measure, parse_xyz, Bond, CoordinateFormat, LengthUnit, MeasurementKind, Molecule};
 use apost3dview_render::{
-    pick_atom, pick_bond, ray_from_ndc, BondVisualStyle, Material, OrbitCamera, ViewportCallback, ViewportResources,
+    is_atom_visible, pick_atom, pick_bond, ray_from_ndc, BondVisualStyle, Material, OrbitCamera, ViewportCallback,
+    ViewportResources,
 };
 use egui::{Color32, Slider};
 use glam::{Vec3, Vec4};
@@ -1047,20 +1048,44 @@ impl eframe::App for App {
                 // drag offset: these should just track their atom.
                 if self.atom_label_mode != AtomLabelMode::None {
                     let structure = &self.structures[active];
-                    let font_id = egui::FontId::proportional(self.atom_label_style.font_size);
+                    // Carbon as the "typical" atom size reference — other
+                    // elements' labels scale relative to it, clamped so a
+                    // very small (H) or very large (Fr-scale) atom doesn't
+                    // get an illegibly tiny or absurdly oversized label.
+                    let reference_radius = element_data(6).vdw_radius;
                     for (index, (&z, &position)) in structure.molecule.atomic_numbers.iter().zip(&structure.molecule.positions).enumerate()
                     {
                         if structure.hidden_atoms.contains(&index) {
                             continue;
                         }
+                        // Skip if something else (another atom, or a bond
+                        // not attached to this one) sits closer to the
+                        // camera along the ray to this atom's center — a
+                        // coarse but effective fix for labels floating
+                        // over an unrelated bond because their atom is
+                        // actually hidden behind a cluster in front of it.
+                        if !is_atom_visible(
+                            &structure.molecule,
+                            self.camera.eye(),
+                            index,
+                            self.material.atom_scale,
+                            self.material.bond_radius,
+                            &structure.hidden_atoms,
+                            &structure.hidden_bonds,
+                        ) {
+                            continue;
+                        }
                         let Some(screen_pos) = project_to_screen(&self.camera, aspect_ratio, rect, position) else { continue };
+
+                        let size_scale = (element_data(z).vdw_radius / reference_radius).clamp(0.55, 1.6);
+                        let font_id = egui::FontId::proportional(self.atom_label_style.font_size * size_scale);
                         let text = match self.atom_label_mode {
                             AtomLabelMode::Number => format!("{}", index + 1),
                             AtomLabelMode::Type => element_data(z).symbol.to_string(),
                             AtomLabelMode::NumberType => format!("{}{}", element_data(z).symbol, index + 1),
                             AtomLabelMode::None => unreachable!(),
                         };
-                        let galley = ui.painter().layout_no_wrap(text, font_id.clone(), self.atom_label_style.text_color);
+                        let galley = ui.painter().layout_no_wrap(text, font_id, self.atom_label_style.text_color);
                         let origin = screen_pos - galley.size() * 0.5;
                         if self.atom_label_style.bold {
                             ui.painter().galley(origin + egui::vec2(0.6, 0.0), galley.clone(), self.atom_label_style.text_color);

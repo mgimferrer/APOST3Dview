@@ -128,3 +128,68 @@ pub fn pick_bond(
     }
     best.map(|(index, _)| index)
 }
+
+/// Whether an atom's center is unoccluded from the camera — nothing else
+/// (another atom or a bond not attached to it) sits strictly closer along
+/// the ray to it. Used to decide whether to draw that atom's label.
+///
+/// This is a binary visibility test on the center point, not true
+/// per-pixel occlusion — a bond grazing the edge of an atom's disc will
+/// still let its whole label through rather than clipping part of it.
+/// Real per-pixel coverage would mean rendering the label as actual
+/// depth-tested 3D geometry rather than a 2D overlay; this is the cheaper
+/// approximation, and it's the one that matters for the common case (a
+/// label floating over an unrelated bond because its atom is hidden
+/// behind a cluster of other atoms).
+pub fn is_atom_visible(
+    molecule: &Molecule,
+    camera_eye: Vec3,
+    atom_index: usize,
+    atom_scale: f32,
+    bond_radius: f32,
+    hidden_atoms: &HashSet<usize>,
+    hidden_bonds: &HashSet<usize>,
+) -> bool {
+    let position = molecule.positions[atom_index];
+    let to_atom = position - camera_eye;
+    let distance = to_atom.length();
+    if distance < 1e-5 {
+        return true;
+    }
+    let dir = to_atom / distance;
+    let own_radius = element_data(molecule.atomic_numbers[atom_index]).vdw_radius * atom_scale;
+    let own_surface_t = (distance - own_radius).max(0.0);
+    // A little slack so a bond/atom that just grazes this atom's own
+    // surface (as anything actually touching it geometrically will)
+    // doesn't register as a false occluder.
+    let epsilon = own_radius * 0.15 + 0.02;
+
+    for (index, &other_position) in molecule.positions.iter().enumerate() {
+        if index == atom_index || hidden_atoms.contains(&index) {
+            continue;
+        }
+        let other_radius = element_data(molecule.atomic_numbers[index]).vdw_radius * atom_scale;
+        if let Some(t) = ray_sphere_hit(camera_eye, dir, other_position, other_radius) {
+            if t < own_surface_t - epsilon {
+                return false;
+            }
+        }
+    }
+
+    for (bond_index, bond) in molecule.bonds.iter().enumerate() {
+        if hidden_bonds.contains(&bond_index) || bond.atom_a == atom_index || bond.atom_b == atom_index {
+            continue;
+        }
+        if hidden_atoms.contains(&bond.atom_a) || hidden_atoms.contains(&bond.atom_b) {
+            continue;
+        }
+        let a = molecule.positions[bond.atom_a];
+        let b = molecule.positions[bond.atom_b];
+        let (t, dist2) = ray_segment_closest(camera_eye, dir, a, b);
+        if dist2 <= bond_radius * bond_radius && t < own_surface_t - epsilon {
+            return false;
+        }
+    }
+
+    true
+}
