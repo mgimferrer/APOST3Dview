@@ -48,6 +48,11 @@ impl eframe::App for App {
                 ui.heading("Style");
                 ui.add_space(8.0);
 
+                if ui.button("Default").clicked() {
+                    self.material = Material::default();
+                }
+
+                ui.add_space(8.0);
                 ui.label("Geometry");
                 ui.add(Slider::new(&mut self.material.atom_scale, 0.1..=1.5).text("atom scale"));
                 ui.add(Slider::new(&mut self.material.bond_radius, 0.02..=0.5).text("bond radius"));

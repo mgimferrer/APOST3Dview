@@ -19,21 +19,22 @@ pub struct Material {
 }
 
 impl Default for Material {
+    /// The reference look — matches what Martí tuned to and confirmed
+    /// against the VMD/CYLview reference images (2026-08-12). This is what
+    /// the style panel's "Default" button resets to.
     fn default() -> Self {
         Self {
-            ambient: 0.25,
-            diffuse: 0.7,
-            specular: 0.4,
+            ambient: 0.30,
+            diffuse: 0.75,
+            specular: 0.45,
             shininess: 32.0,
-            light_yaw: -0.6,
-            light_pitch: 0.9,
+            // Aligned with the camera (see light_dir below) rather than
+            // offset from it, so no part of the visible hemisphere ever
+            // falls into shadow, at any orbit angle.
+            light_yaw: 0.0,
+            light_pitch: 0.0,
             background: [1.0, 1.0, 1.0],
-            // Starting point, not a settled value: Martí's "0.7"/"0.3" were
-            // calibrated against VMD's own internal radius table, which we
-            // don't have access to, and against covalent radii (since
-            // replaced by van der Waals radii here — see element.rs for
-            // why). Live-tune from here once you can see it.
-            atom_scale: 0.35,
+            atom_scale: 0.20,
             bond_radius: 0.15,
         }
     }
@@ -44,7 +45,11 @@ impl Material {
     /// own (right, up, forward) basis — a "headlight" rig. Rotates with
     /// the camera so the lit/shadowed pattern on the molecule stays fixed
     /// relative to the screen as you orbit, instead of sweeping across the
-    /// molecule the way a world-fixed light direction would.
+    /// molecule the way a world-fixed light direction would. At the
+    /// default zero offset the light sits exactly on the camera (a ring
+    /// light/flash rig): shading becomes a pure function of view
+    /// direction, so it's rotation-invariant, not just less noticeable —
+    /// no point on the visible hemisphere can fall into shadow.
     pub fn light_dir(&self, camera_right: Vec3, camera_up: Vec3, camera_forward: Vec3) -> Vec3 {
         // Subtract the forward component: a headlight sits near the
         // camera and shines into the scene, so the surface-to-light
