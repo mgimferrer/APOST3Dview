@@ -1,0 +1,14 @@
+[package]
+name = "apost3dview"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+apost3dview-core = { version = "0.1.0", path = "../core" }
+apost3dview-render = { version = "0.1.0", path = "../render" }
+eframe = { version = "0.36.1", default-features = false, features = ["wgpu", "default_fonts", "persistence"] }
+egui = "0.36.1"
+egui-wgpu = "0.36.1"
+glam = "0.33.3"
+wgpu = "30.0.0"

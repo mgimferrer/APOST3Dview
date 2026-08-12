@@ -1,0 +1,77 @@
+use glam::{Mat4, Vec3};
+
+/// Orbit camera: rotates around a fixed target at a fixed distance, driven
+/// by yaw/pitch. Matches the drag-to-orbit / scroll-to-zoom interaction
+/// model used by CYLview, IBOview and VMD.
+#[derive(Debug, Clone, Copy)]
+pub struct OrbitCamera {
+    pub target: Vec3,
+    pub distance: f32,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub fov_y_radians: f32,
+    pub near: f32,
+    pub far: f32,
+}
+
+impl Default for OrbitCamera {
+    fn default() -> Self {
+        Self {
+            target: Vec3::ZERO,
+            distance: 12.0,
+            yaw: -0.6,
+            pitch: 0.35,
+            fov_y_radians: 45.0_f32.to_radians(),
+            near: 0.05,
+            far: 500.0,
+        }
+    }
+}
+
+impl OrbitCamera {
+    // Just shy of +/- 90 degrees so the up vector never flips.
+    const PITCH_LIMIT: f32 = 1.5;
+    const MIN_DISTANCE: f32 = 0.5;
+    const MAX_DISTANCE: f32 = 500.0;
+
+    pub fn eye(&self) -> Vec3 {
+        let x = self.distance * self.pitch.cos() * self.yaw.sin();
+        let y = self.distance * self.pitch.sin();
+        let z = self.distance * self.pitch.cos() * self.yaw.cos();
+        self.target + Vec3::new(x, y, z)
+    }
+
+    pub fn view_matrix(&self) -> Mat4 {
+        glam::camera::rh::view::look_at_mat4(self.eye(), self.target, Vec3::Y)
+    }
+
+    pub fn projection_matrix(&self, aspect_ratio: f32) -> Mat4 {
+        // wgpu's NDC depth range is [0, 1], matching the directx convention.
+        glam::camera::rh::proj::directx::perspective(
+            self.fov_y_radians,
+            aspect_ratio.max(0.0001),
+            self.near,
+            self.far,
+        )
+    }
+
+    pub fn view_projection_matrix(&self, aspect_ratio: f32) -> Mat4 {
+        self.projection_matrix(aspect_ratio) * self.view_matrix()
+    }
+
+    pub fn orbit(&mut self, delta_yaw: f32, delta_pitch: f32) {
+        self.yaw += delta_yaw;
+        self.pitch = (self.pitch + delta_pitch).clamp(-Self::PITCH_LIMIT, Self::PITCH_LIMIT);
+    }
+
+    pub fn pan(&mut self, delta_x: f32, delta_y: f32) {
+        let forward = (self.target - self.eye()).normalize_or_zero();
+        let right = forward.cross(Vec3::Y).normalize_or_zero();
+        let up = right.cross(forward).normalize_or_zero();
+        self.target += right * delta_x + up * delta_y;
+    }
+
+    pub fn zoom(&mut self, delta: f32) {
+        self.distance = (self.distance - delta).clamp(Self::MIN_DISTANCE, Self::MAX_DISTANCE);
+    }
+}

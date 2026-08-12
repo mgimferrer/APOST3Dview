@@ -1,0 +1,7 @@
+[package]
+name = "apost3dview-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]

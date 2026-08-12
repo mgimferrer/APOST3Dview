@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(cargo build*)",
+      "Bash(cargo check*)",
+      "Bash(cargo run*)",
+      "Bash(cargo test*)",
+      "Bash(cargo fmt*)",
+      "Bash(cargo clippy*)",
+      "Bash(cargo add*)",
+      "Bash(cargo tree*)",
+      "Bash(cargo doc*)",
+      "Bash(cargo new*)",
+      "Bash(cargo metadata*)"
+    ]
+  }
+}
