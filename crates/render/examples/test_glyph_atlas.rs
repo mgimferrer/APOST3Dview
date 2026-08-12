@@ -30,7 +30,7 @@ async fn run() {
     // Layout "C12" and check: 3 glyph instances (no spaces to skip), and
     // x-offsets strictly increasing left to right.
     let scale = glyph_scale_for_font_size(16.0, 0.01);
-    let instances = layout_label(&atlas, "C12", Vec3::ZERO, scale, [0.0, 0.0, 0.0]);
+    let instances = layout_label(&atlas, "C12", Vec3::ZERO, scale, [0.0, 0.0, 0.0], 0.5);
     println!("'C12' produced {} glyph instances", instances.len());
     assert_eq!(instances.len(), 3, "expected one instance per character");
     for pair in instances.windows(2) {
@@ -44,7 +44,7 @@ async fn run() {
 
     // A space should be skipped (zero-size glyph, not emitted as an
     // instance) rather than producing a degenerate quad.
-    let with_space = layout_label(&atlas, "a b", Vec3::ZERO, scale, [0.0, 0.0, 0.0]);
+    let with_space = layout_label(&atlas, "a b", Vec3::ZERO, scale, [0.0, 0.0, 0.0], 0.5);
     println!("'a b' produced {} glyph instances (space skipped)", with_space.len());
     assert_eq!(with_space.len(), 2);
 

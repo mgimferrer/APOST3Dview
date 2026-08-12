@@ -23,12 +23,14 @@ struct InstanceInput {
     @location(3) uv_min: vec2<f32>,
     @location(4) uv_max: vec2<f32>,
     @location(5) color: vec3<f32>,
+    @location(6) edge_bias: f32,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec3<f32>,
+    @location(2) edge_bias: f32,
 };
 
 // Camera-facing quad, same procedural-corner trick as the atom impostors —
@@ -54,18 +56,28 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32, instance: InstanceInput) ->
     out.clip_position = scene.view_proj * vec4<f32>(world_position, 1.0);
     out.uv = mix(instance.uv_min, instance.uv_max, UVS[vertex_index]);
     out.color = instance.color;
+    out.edge_bias = instance.edge_bias;
     return out;
 }
 
+// The glyph texture stores a signed distance field, not raw coverage: 0.5
+// sits exactly on the glyph edge. Thresholding it with smoothstep, sized
+// by the texture's own screen-space rate of change (fwidth), reconstructs
+// a crisp edge at any zoom level — magnifying a fixed-resolution coverage
+// bitmap directly (the previous approach) went blurry/blocky once a label
+// covered much more than the atlas's native raster resolution on screen.
+//
 // Alpha-to-coverage (see the pipeline's MultisampleState) rather than
 // traditional blending: each MSAA sample either fully passes or is
-// discarded based on the glyph's coverage value, giving smooth
-// antialiased edges while still writing real depth — so labels are
-// correctly, precisely occluded by anything nearer the camera, including
-// partially (a bond crossing over just part of a label only covers that
-// part), not the all-or-nothing a 2D screen overlay could manage.
+// discarded based on the computed coverage, giving smooth antialiased
+// edges while still writing real depth — so labels are correctly,
+// precisely occluded by anything nearer the camera, including partially
+// (a bond crossing over just part of a label only covers that part), not
+// the all-or-nothing a 2D screen overlay could manage.
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let coverage = textureSample(glyph_texture, glyph_sampler, in.uv).r;
+    let sdf = textureSample(glyph_texture, glyph_sampler, in.uv).r;
+    let aa = max(fwidth(sdf), 0.0001);
+    let coverage = smoothstep(in.edge_bias - aa, in.edge_bias + aa, sdf);
     return vec4<f32>(in.color, coverage);
 }

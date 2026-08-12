@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 
 use apost3dview_core::{element_data, format_coordinates, measure, parse_xyz, Bond, CoordinateFormat, LengthUnit, MeasurementKind, Molecule};
 use apost3dview_render::{
-    glyph_scale_for_font_size, layout_label, pick_atom, pick_bond, ray_from_ndc, BondVisualStyle, GlyphAtlas,
-    GlyphInstance, Material, OrbitCamera, ViewportCallback, ViewportResources,
+    glyph_scale_for_font_size, glyph_scale_for_world_size, layout_label, pick_atom, pick_bond, ray_from_ndc, BondVisualStyle,
+    GlyphAtlas, GlyphInstance, Material, OrbitCamera, ViewportCallback, ViewportResources,
 };
 use egui::{Color32, Slider};
 use glam::{Vec3, Vec4};
@@ -86,20 +86,25 @@ fn color32_to_rgb(color: Color32) -> [f32; 3] {
     [color.r() as f32 / 255.0, color.g() as f32 / 255.0, color.b() as f32 / 255.0]
 }
 
+/// SDF edge-threshold constants controlling stroke weight (see
+/// `GlyphInstance::edge_bias`) — lower reads as thicker, since more of the
+/// distance field counts as "inside" the glyph. Sampling the field once at
+/// a shifted threshold gives a uniformly thicker, still crisply
+/// antialiased stroke; the previous approach (stamping several offset
+/// copies of the glyph) visibly pixelated once labels could be zoomed in
+/// this close, since each copy's edge lands on a different sub-pixel and
+/// their overlap dithers instead of blending.
+const EDGE_BIAS_NORMAL: f32 = 0.5;
+const EDGE_BIAS_BOLD: f32 = 0.38;
+/// Atom labels have no weight toggle — they're always rendered noticeably
+/// thicker than plain body text so a single digit reads clearly against a
+/// CPK-colored sphere.
+const EDGE_BIAS_ATOM_LABEL: f32 = 0.30;
+
 /// Lays out `text` as 3D glyph instances anchored at `anchor`, appending to
-/// `instances`. "Bold" is a second copy offset by a fraction of a glyph
-/// width — the bundled font has no true bold weight, same trick the old
-/// 2D rendering used, just now in world space instead of screen pixels.
-fn push_label(instances: &mut Vec<GlyphInstance>, atlas: &GlyphAtlas, text: &str, anchor: Vec3, scale: f32, color: [f32; 3], bold: bool) {
-    let base = layout_label(atlas, text, anchor, scale, color);
-    if bold {
-        let mut shifted = base.clone();
-        for glyph in &mut shifted {
-            glyph.local_offset[0] += scale * 0.6;
-        }
-        instances.extend(shifted);
-    }
-    instances.extend(base);
+/// `instances`.
+fn push_label(instances: &mut Vec<GlyphInstance>, atlas: &GlyphAtlas, text: &str, anchor: Vec3, scale: f32, color: [f32; 3], edge_bias: f32) {
+    instances.extend(layout_label(atlas, text, anchor, scale, color, edge_bias));
 }
 
 /// What a left-click in the viewport does. Right-click always orbits, so
@@ -160,14 +165,18 @@ enum AtomLabelMode {
 /// atom label sits on top of a CPK-colored sphere rather than on empty
 /// space, so it usually wants a smaller size and its own contrast choice).
 struct AtomLabelStyle {
-    font_size: f32,
+    /// Label height as a fraction of the atom's own rendered radius. A
+    /// real world-space size (not a screen-pixel one) so labels are true
+    /// 3D geometry that scales with zoom exactly like the atom they're
+    /// attached to, instead of holding a constant on-screen size the way
+    /// a 2D overlay would.
+    relative_size: f32,
     text_color: Color32,
-    bold: bool,
 }
 
 impl Default for AtomLabelStyle {
     fn default() -> Self {
-        Self { font_size: 13.0, text_color: Color32::BLACK, bold: true }
+        Self { relative_size: 1.0, text_color: Color32::BLACK }
     }
 }
 
@@ -487,8 +496,7 @@ impl App {
                     ui.selectable_value(&mut self.atom_label_mode, AtomLabelMode::NumberType, "Number+Type");
                 });
                 if self.atom_label_mode != AtomLabelMode::None {
-                    ui.add(Slider::new(&mut self.atom_label_style.font_size, 6.0..=24.0).text("label font size"));
-                    ui.checkbox(&mut self.atom_label_style.bold, "Bold");
+                    ui.add(Slider::new(&mut self.atom_label_style.relative_size, 0.2..=2.5).text("label size (× atom radius)"));
                     ui.horizontal(|ui| {
                         ui.label("Label color:");
                         ui.color_edit_button_srgba(&mut self.atom_label_style.text_color);
@@ -1063,35 +1071,45 @@ impl eframe::App for App {
                 // (see crates/render/src/{glyphs,label,shaders/text.wgsl}),
                 // not a 2D UI overlay — so a bond or atom nearer the camera
                 // correctly, even partially, occludes them. Built fresh
-                // each repaint and handed to the wgpu callback below,
-                // since a label's world size (for constant apparent size)
-                // depends on its current distance from the camera.
+                // each repaint and handed to the wgpu callback below.
+                // Atom labels are sized in world units (scale with zoom,
+                // like the atom itself); measurement labels still hold a
+                // constant apparent screen size, which depends on distance
+                // from the camera and so is also recomputed every frame.
                 let mut label_instances: Vec<GlyphInstance> = Vec::new();
 
                 if self.atom_label_mode != AtomLabelMode::None {
                     let structure = &self.structures[active];
-                    // Carbon as the "typical" atom size reference — other
-                    // elements' labels scale relative to it, clamped so a
-                    // very small (H) or very large (Fr-scale) atom doesn't
-                    // get an illegibly tiny or absurdly oversized label.
-                    let reference_radius = element_data(6).vdw_radius;
                     let color = color32_to_rgb(self.atom_label_style.text_color);
                     for (index, (&z, &position)) in structure.molecule.atomic_numbers.iter().zip(&structure.molecule.positions).enumerate()
                     {
                         if structure.hidden_atoms.contains(&index) {
                             continue;
                         }
-                        let distance = (position - self.camera.eye()).length();
-                        let world_per_pixel = self.camera.world_units_per_pixel(distance, rect.height());
-                        let size_scale = (element_data(z).vdw_radius / reference_radius).clamp(0.55, 1.6);
-                        let scale = glyph_scale_for_font_size(self.atom_label_style.font_size * size_scale, world_per_pixel);
+                        // A real world-space size, tied to this atom's own
+                        // rendered radius — labels are true 3D geometry, so
+                        // they grow and shrink with zoom exactly like the
+                        // atom they're attached to, rather than holding a
+                        // constant on-screen size the way a 2D overlay would.
+                        let radius = element_data(z).vdw_radius * self.material.atom_scale;
+                        let scale = glyph_scale_for_world_size(radius * self.atom_label_style.relative_size);
                         let text = match self.atom_label_mode {
                             AtomLabelMode::Number => format!("{}", index + 1),
                             AtomLabelMode::Type => element_data(z).symbol.to_string(),
                             AtomLabelMode::NumberType => format!("{}{}", element_data(z).symbol, index + 1),
                             AtomLabelMode::None => unreachable!(),
                         };
-                        push_label(&mut label_instances, &self.glyph_atlas, &text, position, scale, color, self.atom_label_style.bold);
+                        // The label anchor starts at the atom's own 3D
+                        // center, but the sphere impostor's near surface
+                        // renders a full radius closer to the camera than
+                        // that — so a label sitting exactly at the center
+                        // is depth-occluded by its own atom. Push the
+                        // anchor toward the camera past the sphere's near
+                        // surface (radius + a little clearance) so the
+                        // label wins the depth test against its own atom.
+                        let to_camera = (self.camera.eye() - position).normalize_or_zero();
+                        let label_anchor = position + to_camera * (radius * 1.15 + 0.02);
+                        push_label(&mut label_instances, &self.glyph_atlas, &text, label_anchor, scale, color, EDGE_BIAS_ATOM_LABEL);
                     }
                 }
 
@@ -1116,7 +1134,8 @@ impl eframe::App for App {
                     let value = measure(&self.structures[active].molecule, measurement.kind);
                     let text = format_measurement(measurement.kind, value, self.coordinate_unit, self.measurement_style.decimal_places);
                     let scale = glyph_scale_for_font_size(self.measurement_style.font_size, world_per_pixel);
-                    push_label(&mut label_instances, &self.glyph_atlas, &text, final_anchor, scale, measurement_color, self.measurement_style.bold);
+                    let edge_bias = if self.measurement_style.bold { EDGE_BIAS_BOLD } else { EDGE_BIAS_NORMAL };
+                    push_label(&mut label_instances, &self.glyph_atlas, &text, final_anchor, scale, measurement_color, edge_bias);
 
                     // Hit-test area for dragging: approximate (text length
                     // × font size), since there's no 2D layout pass to get

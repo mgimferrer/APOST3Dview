@@ -39,10 +39,43 @@ const CORNERS: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32, instance: InstanceInput) -> VertexOutput {
     let radius = instance.vdw_radius * scene.style.x;
+
+    // The billboard plane must be perpendicular to the ray from the eye to
+    // *this atom's own center*, not to the camera's shared forward axis —
+    // for an atom off to the side of the screen those two directions
+    // differ, and orienting the quad to the shared axis leaves it tilted
+    // relative to the true silhouette cone, clipping part of the sphere
+    // even after correcting the quad's size. So the basis is rebuilt here
+    // per instance instead of reusing scene.camera_right/camera_up.
+    let to_eye = scene.camera_eye.xyz - instance.center;
+    let distance_to_eye = max(length(to_eye), 0.0001);
+    let forward_to_eye = to_eye / distance_to_eye;
+    var right = cross(forward_to_eye, scene.camera_up.xyz);
+    let right_len = length(right);
+    if (right_len < 0.0001) {
+        // Degenerate only when this atom sits exactly along the camera's
+        // own up axis — fall back to the shared basis for that instant.
+        right = scene.camera_right.xyz;
+    } else {
+        right = right / right_len;
+    }
+    let up = cross(right, forward_to_eye);
+
+    // A billboard quad sized to exactly `radius` only bounds the sphere's
+    // silhouette under an orthographic camera. Under this perspective one,
+    // the tangent lines from the eye to the sphere flare wider than that
+    // the closer the eye gets — the true half-angle is asin(radius /
+    // distance), so the quad needs to be sized radius / cos(that angle) =
+    // radius / sqrt(1 - (radius/distance)^2) to fully contain it. Without
+    // this, atoms near the camera (e.g. terminal atoms pointing at the
+    // viewer) get their silhouette clipped by the quad's own edge.
+    let ratio = clamp(radius / distance_to_eye, 0.0, 0.999);
+    let quad_radius = radius / sqrt(1.0 - ratio * ratio);
+
     let corner = CORNERS[vertex_index];
     let world_position = instance.center
-        + scene.camera_right.xyz * corner.x * radius
-        + scene.camera_up.xyz * corner.y * radius;
+        + right * corner.x * quad_radius
+        + up * corner.y * quad_radius;
 
     var out: VertexOutput;
     out.clip_position = scene.view_proj * vec4<f32>(world_position, 1.0);

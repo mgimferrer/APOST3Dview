@@ -288,6 +288,7 @@ impl ViewportResources {
                 wgpu::VertexAttribute { offset: 32, shader_location: 3, format: wgpu::VertexFormat::Float32x2 },
                 wgpu::VertexAttribute { offset: 40, shader_location: 4, format: wgpu::VertexFormat::Float32x2 },
                 wgpu::VertexAttribute { offset: 48, shader_location: 5, format: wgpu::VertexFormat::Float32x3 },
+                wgpu::VertexAttribute { offset: 60, shader_location: 6, format: wgpu::VertexFormat::Float32 },
             ],
         };
         // Alpha-to-coverage, not blending: each MSAA sample is dithered

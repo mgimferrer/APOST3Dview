@@ -14,7 +14,7 @@ pub mod viewport;
 
 pub use camera::OrbitCamera;
 pub use consts::{DEPTH_BUFFER_BITS, DEPTH_FORMAT, MSAA_SAMPLES};
-pub use glyphs::{glyph_scale_for_font_size, GlyphAtlas};
+pub use glyphs::{glyph_scale_for_font_size, glyph_scale_for_world_size, GlyphAtlas};
 pub use instances::{BondVisualStyle, HIGHLIGHT_COLOR};
 pub use label::{layout_label, GlyphInstance};
 pub use material::Material;
