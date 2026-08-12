@@ -105,7 +105,10 @@ impl App {
                     ui.label("Martí Gimferrer");
                     ui.hyperlink_to("mgimferrer18@gmail.com", "mailto:mgimferrer18@gmail.com");
                     ui.add_space(8.0);
-                    ui.label("Sister project to APOST-3D, the fragment/EOS/IQA/QTAIM analysis program.");
+                    ui.label(
+                        "Sister project to APOST-3D, a software to extract state-of-the-art \
+                         chemical bonding indicators from wavefunction analysis",
+                    );
                 });
             });
         self.show_about = open;
