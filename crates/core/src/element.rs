@@ -161,3 +161,17 @@ const FALLBACK: ElementData = ElementData { symbol: "?", cpk_color: rgb(0xFFC0CB
 pub fn element_data(atomic_number: u32) -> &'static ElementData {
     ELEMENTS.get(atomic_number as usize).unwrap_or(&FALLBACK)
 }
+
+/// Reverse lookup for .xyz parsing, which gives element symbols rather
+/// than atomic numbers. Case-insensitive (symbols in the wild show up as
+/// "H", "h", occasionally "H1" for isotope-labeled atoms — this matches
+/// on the element part only, ignoring trailing digits).
+pub fn atomic_number_from_symbol(symbol: &str) -> Option<u32> {
+    let symbol = symbol.trim_end_matches(|c: char| c.is_ascii_digit());
+    ELEMENTS
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find(|(_, element)| element.symbol.eq_ignore_ascii_case(symbol))
+        .map(|(z, _)| z as u32)
+}

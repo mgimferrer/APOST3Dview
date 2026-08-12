@@ -40,11 +40,15 @@ fn perceive_bonds(atomic_numbers: &[u32], positions: &[Vec3]) -> Vec<Bond> {
 }
 
 impl Molecule {
+    pub fn from_atoms(atomic_numbers: Vec<u32>, positions: Vec<Vec3>) -> Self {
+        let bonds = perceive_bonds(&atomic_numbers, &positions);
+        Self { atomic_numbers, positions, bonds }
+    }
+
     pub fn from_fchk(path: &Path) -> io::Result<Self> {
         let geometry = parse_fchk_geometry(path)?;
         let positions: Vec<Vec3> = geometry.positions.iter().map(|&p| Vec3::from(p)).collect();
-        let bonds = perceive_bonds(&geometry.atomic_numbers, &positions);
-        Ok(Self { atomic_numbers: geometry.atomic_numbers, positions, bonds })
+        Ok(Self::from_atoms(geometry.atomic_numbers, positions))
     }
 
     pub fn bounding_sphere(&self) -> (Vec3, f32) {
