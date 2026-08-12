@@ -118,6 +118,33 @@ impl Default for MeasurementStyle {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AtomLabelMode {
+    None,
+    /// 1-based index, matching the XYZ window's atom numbering.
+    Number,
+    /// Element symbol only — H, C, Bi, ...
+    Type,
+    /// Symbol + number — C1, C2, H1, ... the common convention.
+    NumberType,
+}
+
+/// Shared across every structure, same reasoning as MeasurementStyle.
+/// Separate from it rather than reusing it — different typical needs (an
+/// atom label sits on top of a CPK-colored sphere rather than on empty
+/// space, so it usually wants a smaller size and its own contrast choice).
+struct AtomLabelStyle {
+    font_size: f32,
+    text_color: Color32,
+    bold: bool,
+}
+
+impl Default for AtomLabelStyle {
+    fn default() -> Self {
+        Self { font_size: 13.0, text_color: Color32::BLACK, bold: true }
+    }
+}
+
 /// One opened structure — its own geometry and its own hide/selection/
 /// bond-style state. Deliberately does NOT own a Style/Material — that
 /// stays a single value shared across every structure, so tuning it once
@@ -176,6 +203,8 @@ pub struct App {
     coordinate_unit: LengthUnit,
     coordinate_format: CoordinateFormat,
     measurement_style: MeasurementStyle,
+    atom_label_mode: AtomLabelMode,
+    atom_label_style: AtomLabelStyle,
 
     selection_mode: SelectionMode,
     warning: Option<(String, Instant)>,
@@ -210,6 +239,8 @@ impl App {
             coordinate_unit: LengthUnit::Angstrom,
             coordinate_format: CoordinateFormat::AtomicNumberTable,
             measurement_style: MeasurementStyle::default(),
+            atom_label_mode: AtomLabelMode::None,
+            atom_label_style: AtomLabelStyle::default(),
             selection_mode: SelectionMode::None,
             warning: None,
         }
@@ -413,6 +444,23 @@ impl App {
                 ui.label("Geometry");
                 ui.add(Slider::new(&mut self.material.atom_scale, 0.1..=1.5).text("atom scale"));
                 ui.add(Slider::new(&mut self.material.bond_radius, 0.02..=0.5).text("bond radius"));
+
+                ui.add_space(12.0);
+                ui.label("Atom labels");
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.atom_label_mode, AtomLabelMode::None, "None");
+                    ui.selectable_value(&mut self.atom_label_mode, AtomLabelMode::Number, "Number");
+                    ui.selectable_value(&mut self.atom_label_mode, AtomLabelMode::Type, "Type");
+                    ui.selectable_value(&mut self.atom_label_mode, AtomLabelMode::NumberType, "Number+Type");
+                });
+                if self.atom_label_mode != AtomLabelMode::None {
+                    ui.add(Slider::new(&mut self.atom_label_style.font_size, 6.0..=24.0).text("label font size"));
+                    ui.checkbox(&mut self.atom_label_style.bold, "Bold");
+                    ui.horizontal(|ui| {
+                        ui.label("Label color:");
+                        ui.color_edit_button_srgba(&mut self.atom_label_style.text_color);
+                    });
+                }
 
                 ui.add_space(12.0);
                 ui.label("Material");
@@ -993,6 +1041,33 @@ impl eframe::App for App {
                 };
                 ui.painter()
                     .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
+
+                // Atom labels (Number/Type/Number+Type) — same screen-
+                // space projection technique as measurement labels, but no
+                // drag offset: these should just track their atom.
+                if self.atom_label_mode != AtomLabelMode::None {
+                    let structure = &self.structures[active];
+                    let font_id = egui::FontId::proportional(self.atom_label_style.font_size);
+                    for (index, (&z, &position)) in structure.molecule.atomic_numbers.iter().zip(&structure.molecule.positions).enumerate()
+                    {
+                        if structure.hidden_atoms.contains(&index) {
+                            continue;
+                        }
+                        let Some(screen_pos) = project_to_screen(&self.camera, aspect_ratio, rect, position) else { continue };
+                        let text = match self.atom_label_mode {
+                            AtomLabelMode::Number => format!("{}", index + 1),
+                            AtomLabelMode::Type => element_data(z).symbol.to_string(),
+                            AtomLabelMode::NumberType => format!("{}{}", element_data(z).symbol, index + 1),
+                            AtomLabelMode::None => unreachable!(),
+                        };
+                        let galley = ui.painter().layout_no_wrap(text, font_id.clone(), self.atom_label_style.text_color);
+                        let origin = screen_pos - galley.size() * 0.5;
+                        if self.atom_label_style.bold {
+                            ui.painter().galley(origin + egui::vec2(0.6, 0.0), galley.clone(), self.atom_label_style.text_color);
+                        }
+                        ui.painter().galley(origin, galley, self.atom_label_style.text_color);
+                    }
+                }
 
                 // Measurement labels: 2D screen-space overlays (not 3D
                 // geometry) projected from each measurement's atom
