@@ -8,7 +8,7 @@ use crate::camera::OrbitCamera;
 use crate::consts::{DEPTH_FORMAT, MSAA_SAMPLES};
 use crate::instances::{
     build_atom_highlight_instances, build_atom_instances, build_bond_highlight_instances, build_bond_instances,
-    AtomInstance, BondInstance, BondVisualStyle,
+    build_measurement_instances, AtomInstance, BondInstance, BondVisualStyle,
 };
 use crate::material::Material;
 use crate::mesh::{build_unit_cylinder, CylinderVertex};
@@ -55,6 +55,7 @@ pub struct ViewportResources {
     bond_instances: Option<(wgpu::Buffer, u32)>,
     atom_highlight_instances: Option<(wgpu::Buffer, u32)>,
     bond_highlight_instances: Option<(wgpu::Buffer, u32)>,
+    measurement_instances: Option<(wgpu::Buffer, u32)>,
 }
 
 impl ViewportResources {
@@ -236,14 +237,16 @@ impl ViewportResources {
             bond_instances: None,
             atom_highlight_instances: None,
             bond_highlight_instances: None,
+            measurement_instances: None,
         }
     }
 
     /// Initial upload when a molecule is opened — everything visible, no
-    /// selection, all bonds solid.
+    /// selection, all bonds solid, no measurements.
     pub fn load_molecule(&mut self, device: &wgpu::Device, molecule: &Molecule) {
         self.update_geometry(device, molecule, &HashSet::new(), &HashSet::new(), &[]);
         self.update_highlights(device, molecule, &[], &[]);
+        self.update_measurements(device, molecule, &[], [0.0, 0.0, 0.0]);
     }
 
     /// Rebuilds the atom/bond instance buffers from current hide/style
@@ -303,6 +306,19 @@ impl ViewportResources {
         self.bond_highlight_instances = Some((bond_buffer, bond_data.len() as u32));
     }
 
+    /// Rebuilds the Analysis-panel measurement-line buffer. `segments` are
+    /// atom-index pairs (see `MeasurementKind::segments`), flattened across
+    /// every committed measurement by the caller.
+    pub fn update_measurements(&mut self, device: &wgpu::Device, molecule: &Molecule, segments: &[(usize, usize)], color: [f32; 3]) {
+        let data = build_measurement_instances(molecule, segments, color);
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("measurement_instance_buffer"),
+            contents: bytemuck::cast_slice(&data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        self.measurement_instances = Some((buffer, data.len() as u32));
+    }
+
     fn write_uniforms(&self, queue: &wgpu::Queue, uniforms: &SceneUniforms) {
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
     }
@@ -353,6 +369,19 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             render_pass.set_pipeline(&resources.atom_pipeline);
             render_pass.set_vertex_buffer(0, buffer.slice(..));
             render_pass.draw(0..6, 0..*count);
+        }
+
+        // Analysis-panel measurement lines — opaque and depth-tested like
+        // real bonds (via the same pipeline, reusing its dashed-thin-line
+        // path), so they correctly interleave with the molecule.
+        if let Some((buffer, count)) = &resources.measurement_instances {
+            if *count > 0 {
+                render_pass.set_pipeline(&resources.cylinder_pipeline);
+                render_pass.set_vertex_buffer(0, resources.cylinder_vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, buffer.slice(..));
+                render_pass.set_index_buffer(resources.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..resources.cylinder_index_count, 0, 0..*count);
+            }
         }
 
         // Highlight overlays last, alpha-blended on top of the opaque pass.

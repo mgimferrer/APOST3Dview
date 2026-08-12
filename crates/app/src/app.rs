@@ -1,11 +1,12 @@
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
-use apost3dview_core::{element_data, format_coordinates, parse_xyz, Bond, CoordinateFormat, LengthUnit, Molecule};
+use apost3dview_core::{element_data, format_coordinates, measure, parse_xyz, Bond, CoordinateFormat, LengthUnit, MeasurementKind, Molecule};
 use apost3dview_render::{
     pick_atom, pick_bond, ray_from_ndc, BondVisualStyle, Material, OrbitCamera, ViewportCallback, ViewportResources,
 };
 use egui::{Color32, Slider};
+use glam::{Vec3, Vec4};
 
 /// Minimum time the splash screen stays up, regardless of how fast startup
 /// actually finishes.
@@ -32,11 +33,71 @@ fn find_bond_between(molecule: &Molecule, a: usize, b: usize) -> Option<usize> {
     molecule.bonds.iter().position(|bond| (bond.atom_a == a && bond.atom_b == b) || (bond.atom_a == b && bond.atom_b == a))
 }
 
+fn format_measurement(kind: MeasurementKind, value: f32, unit: LengthUnit, decimals: usize) -> String {
+    match kind {
+        MeasurementKind::Distance(..) => {
+            let converted = unit.from_angstrom(value as f64);
+            let unit_label = match unit {
+                LengthUnit::Angstrom => "Å",
+                LengthUnit::Bohr => "a.u.",
+            };
+            format!("{converted:.decimals$} {unit_label}")
+        }
+        MeasurementKind::Angle(..) | MeasurementKind::Dihedral(..) => format!("{value:.decimals$}\u{b0}"),
+    }
+}
+
+/// Centroid of a measurement's involved atoms — the default label anchor
+/// before the user's own drag offset is applied.
+fn measurement_anchor(molecule: &Molecule, kind: MeasurementKind) -> Vec3 {
+    let atoms = kind.atoms();
+    let sum = atoms.iter().fold(Vec3::ZERO, |acc, &i| acc + molecule.positions[i]);
+    sum / atoms.len() as f32
+}
+
+/// Projects a world-space point through the camera into screen pixels
+/// within `rect`. `None` if it's behind the camera.
+fn project_to_screen(camera: &OrbitCamera, aspect_ratio: f32, rect: egui::Rect, world_pos: Vec3) -> Option<egui::Pos2> {
+    let clip = camera.view_projection_matrix(aspect_ratio) * Vec4::new(world_pos.x, world_pos.y, world_pos.z, 1.0);
+    if clip.w <= 1e-4 {
+        return None;
+    }
+    let ndc_x = clip.x / clip.w;
+    let ndc_y = clip.y / clip.w;
+    let x = rect.left() + (ndc_x * 0.5 + 0.5) * rect.width();
+    let y = rect.top() + (1.0 - (ndc_y * 0.5 + 0.5)) * rect.height();
+    Some(egui::pos2(x, y))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SelectionMode {
     None,
     Atoms,
     Bonds,
+    Measure,
+}
+
+/// A committed distance/angle/dihedral, with a screen-space label position
+/// the user can drag away from the default (the involved atoms' centroid)
+/// — for composing publication images without labels overlapping.
+struct Measurement {
+    kind: MeasurementKind,
+    label_offset: egui::Vec2,
+}
+
+/// Shared across every measurement/structure — tune once, applies
+/// everywhere, same reasoning as Style/Material.
+struct MeasurementStyle {
+    font_size: f32,
+    decimal_places: usize,
+    text_color: Color32,
+    line_color: [f32; 3],
+}
+
+impl Default for MeasurementStyle {
+    fn default() -> Self {
+        Self { font_size: 16.0, decimal_places: 2, text_color: Color32::from_rgb(20, 20, 20), line_color: [0.05, 0.05, 0.05] }
+    }
 }
 
 /// One opened structure — its own geometry and its own hide/selection/
@@ -51,6 +112,10 @@ struct LoadedStructure {
     bond_styles: Vec<BondVisualStyle>,
     selected_atoms: Vec<usize>,
     selected_bonds: Vec<usize>,
+    measurements: Vec<Measurement>,
+    /// Ordered atom picks awaiting a commit (via the Analysis window's
+    /// "Add" button) into `measurements`.
+    pending_measurement: Vec<usize>,
 }
 
 impl LoadedStructure {
@@ -64,6 +129,8 @@ impl LoadedStructure {
             bond_styles,
             selected_atoms: Vec::new(),
             selected_bonds: Vec::new(),
+            measurements: Vec::new(),
+            pending_measurement: Vec::new(),
         }
     }
 }
@@ -84,11 +151,13 @@ pub struct App {
     show_style: bool,
     show_xyz: bool,
     show_visualization: bool,
+    show_analysis: bool,
     show_structures: bool,
     show_about: bool,
 
     coordinate_unit: LengthUnit,
     coordinate_format: CoordinateFormat,
+    measurement_style: MeasurementStyle,
 
     selection_mode: SelectionMode,
     warning: Option<(String, Instant)>,
@@ -117,10 +186,12 @@ impl App {
             show_style: true,
             show_xyz: false,
             show_visualization: false,
+            show_analysis: false,
             show_structures: true,
             show_about: false,
             coordinate_unit: LengthUnit::Angstrom,
             coordinate_format: CoordinateFormat::AtomicNumberTable,
+            measurement_style: MeasurementStyle::default(),
             selection_mode: SelectionMode::None,
             warning: None,
         }
@@ -150,6 +221,16 @@ impl App {
         }
     }
 
+    fn rebuild_measurements(&self) {
+        let Some(active) = self.active_structure else { return };
+        let Some(structure) = self.structures.get(active) else { return };
+        let segments: Vec<(usize, usize)> = structure.measurements.iter().flat_map(|m| m.kind.segments()).collect();
+        let mut renderer = self.render_state.renderer.write();
+        if let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() {
+            resources.update_measurements(&self.render_state.device, &structure.molecule, &segments, self.measurement_style.line_color);
+        }
+    }
+
     fn show_warning(&mut self, message: impl Into<String>) {
         self.warning = Some((message.into(), Instant::now()));
     }
@@ -175,6 +256,7 @@ impl App {
         }
         self.rebuild_geometry();
         self.rebuild_highlights();
+        self.rebuild_measurements();
     }
 
     fn open_fchk(&mut self) {
@@ -246,6 +328,9 @@ impl App {
                 }
                 if ui.selectable_label(self.show_visualization, "Visualization").clicked() {
                     self.show_visualization = !self.show_visualization;
+                }
+                if ui.selectable_label(self.show_analysis, "Analysis").clicked() {
+                    self.show_analysis = !self.show_analysis;
                 }
                 if ui.selectable_label(self.show_about, "About").clicked() {
                     self.show_about = !self.show_about;
@@ -516,6 +601,9 @@ impl App {
                     SelectionMode::None => {
                         ui.label(egui::RichText::new("Turn on Atoms or Bonds mode to select.").weak());
                     }
+                    SelectionMode::Measure => {
+                        ui.label(egui::RichText::new("Measure mode is active — see the Analysis panel.").weak());
+                    }
                 }
 
                 ui.add_space(10.0);
@@ -548,6 +636,126 @@ impl App {
                 });
             });
         self.show_visualization = open;
+    }
+
+    fn show_analysis_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_analysis;
+        egui::Window::new("Analysis")
+            .open(&mut open)
+            .default_pos([320.0, 460.0])
+            .default_width(280.0)
+            .show(ctx, |ui| {
+                ui.label("Selection mode");
+                ui.horizontal(|ui| {
+                    let previous_mode = self.selection_mode;
+                    ui.selectable_value(&mut self.selection_mode, SelectionMode::None, "Off");
+                    ui.selectable_value(&mut self.selection_mode, SelectionMode::Measure, "Measure");
+                    if previous_mode != self.selection_mode {
+                        if let Some(active) = self.active_structure {
+                            if previous_mode == SelectionMode::Measure {
+                                self.structures[active].pending_measurement.clear();
+                            }
+                            if previous_mode == SelectionMode::Atoms || previous_mode == SelectionMode::Bonds {
+                                self.clear_selection();
+                            }
+                        }
+                    }
+                });
+                if self.selection_mode == SelectionMode::Measure {
+                    ui.label(
+                        egui::RichText::new("Click 2 atoms for a distance, 3 for an angle, 4 for a dihedral.")
+                            .small()
+                            .italics(),
+                    );
+                }
+
+                ui.add_space(10.0);
+                ui.separator();
+
+                let Some(active) = self.active_structure else {
+                    ui.label(egui::RichText::new("Open a structure first.").weak());
+                    return;
+                };
+
+                let pending_len = self.structures[active].pending_measurement.len();
+                let pending_summary = self.structures[active]
+                    .pending_measurement
+                    .iter()
+                    .map(|&i| format!("{}{}", element_data(self.structures[active].molecule.atomic_numbers[i]).symbol, i + 1))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                ui.label(format!("Picking: {pending_len} atom(s)"));
+                if !pending_summary.is_empty() {
+                    ui.label(egui::RichText::new(pending_summary).small());
+                }
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(pending_len >= 2, egui::Button::new("Add")).clicked() {
+                        let picks = std::mem::take(&mut self.structures[active].pending_measurement);
+                        if let Some(kind) = MeasurementKind::from_picks(&picks) {
+                            self.structures[active].measurements.push(Measurement { kind, label_offset: egui::Vec2::ZERO });
+                            self.rebuild_measurements();
+                        }
+                    }
+                    if ui.button("Clear picking").clicked() {
+                        self.structures[active].pending_measurement.clear();
+                    }
+                });
+
+                ui.add_space(10.0);
+                ui.separator();
+                ui.label("Measurements");
+                if self.structures[active].measurements.is_empty() {
+                    ui.label(egui::RichText::new("None yet.").weak());
+                } else {
+                    let mut remove_index = None;
+                    for (index, measurement) in self.structures[active].measurements.iter().enumerate() {
+                        let value = measure(&self.structures[active].molecule, measurement.kind);
+                        let text = format_measurement(measurement.kind, value, self.coordinate_unit, self.measurement_style.decimal_places);
+                        ui.horizontal(|ui| {
+                            ui.label(text);
+                            if ui.small_button("×").clicked() {
+                                remove_index = Some(index);
+                            }
+                        });
+                    }
+                    if let Some(index) = remove_index {
+                        self.structures[active].measurements.remove(index);
+                        self.rebuild_measurements();
+                    }
+                    if ui.button("Clear all").clicked() {
+                        self.structures[active].measurements.clear();
+                        self.rebuild_measurements();
+                    }
+                }
+
+                ui.add_space(10.0);
+                ui.separator();
+                ui.label("Label style");
+                ui.add(Slider::new(&mut self.measurement_style.font_size, 8.0..=32.0).text("font size"));
+                let mut decimals = self.measurement_style.decimal_places as u32;
+                if ui.add(Slider::new(&mut decimals, 0..=4).text("decimal places")).changed() {
+                    self.measurement_style.decimal_places = decimals as usize;
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Text color:");
+                    ui.color_edit_button_srgba(&mut self.measurement_style.text_color);
+                });
+                let mut line_color = Color32::from_rgb(
+                    (self.measurement_style.line_color[0] * 255.0) as u8,
+                    (self.measurement_style.line_color[1] * 255.0) as u8,
+                    (self.measurement_style.line_color[2] * 255.0) as u8,
+                );
+                ui.horizontal(|ui| {
+                    ui.label("Line color:");
+                    if ui.color_edit_button_srgba(&mut line_color).changed() {
+                        self.measurement_style.line_color =
+                            [line_color.r() as f32 / 255.0, line_color.g() as f32 / 255.0, line_color.b() as f32 / 255.0];
+                        self.rebuild_measurements();
+                    }
+                });
+                ui.label(egui::RichText::new("Drag a label in the viewport to reposition it.").small().weak());
+            });
+        self.show_analysis = open;
     }
 
     fn apply_bond_style(&mut self, style: BondVisualStyle) {
@@ -648,6 +856,7 @@ impl eframe::App for App {
         self.show_style_window(ui.ctx());
         self.show_xyz_window(ui.ctx());
         self.show_visualization_window(ui.ctx());
+        self.show_analysis_window(ui.ctx());
         self.show_about_window(ui.ctx());
 
         egui::CentralPanel::default()
@@ -726,7 +935,7 @@ impl eframe::App for App {
 
                         let structure = &self.structures[active];
                         let hit = match self.selection_mode {
-                            SelectionMode::Atoms => {
+                            SelectionMode::Atoms | SelectionMode::Measure => {
                                 pick_atom(&structure.molecule, origin, direction, self.material.atom_scale, &structure.hidden_atoms)
                             }
                             SelectionMode::Bonds => pick_bond(
@@ -744,6 +953,12 @@ impl eframe::App for App {
                             match self.selection_mode {
                                 SelectionMode::Atoms => toggle_selected(&mut self.structures[active].selected_atoms, index),
                                 SelectionMode::Bonds => toggle_selected(&mut self.structures[active].selected_bonds, index),
+                                SelectionMode::Measure => {
+                                    let pending = &mut self.structures[active].pending_measurement;
+                                    if pending.len() < 4 {
+                                        pending.push(index);
+                                    }
+                                }
                                 SelectionMode::None => {}
                             }
                             self.rebuild_highlights();
@@ -759,9 +974,41 @@ impl eframe::App for App {
                 ui.painter()
                     .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
 
+                // Measurement labels: 2D screen-space overlays (not 3D
+                // geometry) projected from each measurement's atom
+                // centroid each frame, offset by whatever the user has
+                // dragged them to. Screen-space rather than world-space so
+                // they stay upright and legible at any rotation.
+                let mut label_updates: Vec<(usize, egui::Vec2)> = Vec::new();
+                for (index, measurement) in self.structures[active].measurements.iter().enumerate() {
+                    let anchor = measurement_anchor(&self.structures[active].molecule, measurement.kind);
+                    let Some(screen_pos) = project_to_screen(&self.camera, aspect_ratio, rect, anchor) else { continue };
+                    let label_pos = screen_pos + measurement.label_offset;
+
+                    let value = measure(&self.structures[active].molecule, measurement.kind);
+                    let text = format_measurement(measurement.kind, value, self.coordinate_unit, self.measurement_style.decimal_places);
+                    let font_id = egui::FontId::proportional(self.measurement_style.font_size);
+                    let galley = ui.painter().layout_no_wrap(text, font_id, self.measurement_style.text_color);
+                    let text_rect = egui::Rect::from_center_size(label_pos, galley.size() + egui::vec2(8.0, 4.0));
+
+                    ui.painter().rect_filled(text_rect, 3.0, Color32::from_white_alpha(215));
+                    ui.painter().galley(text_rect.center() - galley.size() * 0.5, galley, self.measurement_style.text_color);
+
+                    let label_response = ui.interact(text_rect, ui.id().with(("measurement_label", active, index)), egui::Sense::drag());
+                    if label_response.dragged() {
+                        label_updates.push((index, measurement.label_offset + label_response.drag_delta()));
+                    }
+                }
+                let any_label_dragged = !label_updates.is_empty();
+                for (index, offset) in label_updates {
+                    if let Some(measurement) = self.structures[active].measurements.get_mut(index) {
+                        measurement.label_offset = offset;
+                    }
+                }
+
                 self.show_warning_overlay(ui.ctx(), rect);
 
-                if response.dragged() || scroll_delta != 0.0 || keyboard_rotating {
+                if response.dragged() || scroll_delta != 0.0 || keyboard_rotating || any_label_dragged {
                     ui.ctx().request_repaint();
                 }
             });

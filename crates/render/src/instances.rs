@@ -163,3 +163,27 @@ pub fn build_bond_highlight_instances(molecule: &Molecule, selected_bonds: &[usi
     }
     instances
 }
+
+/// Analysis-panel measurement lines (distance/angle/dihedral) — thin
+/// dashed segments in a user-chosen color, drawn via the same cylinder
+/// pipeline as everything else (dashing/thinning is already tied to the
+/// `dashed` flag there). Not molecular bonds, so not stored on
+/// `Molecule` — the caller passes whichever atom-index pairs it wants
+/// connected.
+pub fn build_measurement_instances(molecule: &Molecule, segments: &[(usize, usize)], color: [f32; 3]) -> Vec<BondInstance> {
+    segments
+        .iter()
+        .filter_map(|&(a, b)| {
+            let start = *molecule.positions.get(a)?;
+            let end = *molecule.positions.get(b)?;
+            let segment = end - start;
+            let length = segment.length();
+            if length < 1e-5 {
+                return None;
+            }
+            let axis = segment / length;
+            let center = (start + end) * 0.5;
+            Some(BondInstance { center: center.to_array(), length, axis: axis.to_array(), dashed: 1.0, color, _padding: 0.0 })
+        })
+        .collect()
+}
