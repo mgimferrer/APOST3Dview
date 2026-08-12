@@ -712,6 +712,10 @@ impl eframe::App for App {
                     self.camera.orbit(key_yaw * ARROW_ROTATE_SPEED * dt, key_pitch * ARROW_ROTATE_SPEED * dt);
                 }
 
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.clear_selection();
+                }
+
                 let aspect_ratio = if rect.height() > 0.0 { rect.width() / rect.height() } else { 1.0 };
 
                 if self.selection_mode != SelectionMode::None && response.clicked() {
