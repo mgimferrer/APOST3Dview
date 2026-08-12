@@ -11,6 +11,7 @@ use crate::instances::{
     build_atom_highlight_instances, build_atom_instances, build_bond_highlight_instances, build_bond_instances,
     build_measurement_instances, AtomInstance, BondInstance, BondVisualStyle,
 };
+use crate::isosurface_mesh::{IsosurfaceMaterial, IsosurfaceVertex};
 use crate::label::GlyphInstance;
 use crate::material::Material;
 use crate::mesh::{build_unit_cylinder, CylinderVertex};
@@ -66,6 +67,17 @@ pub struct ViewportResources {
     atom_highlight_instances: Option<(wgpu::Buffer, u32)>,
     bond_highlight_instances: Option<(wgpu::Buffer, u32)>,
     measurement_instances: Option<(wgpu::Buffer, u32)>,
+
+    // Isosurfaces (Phase 2, .cube orbitals/densities): an ordinary
+    // rasterized/lit triangle mesh (marching tetrahedra output), not a
+    // raymarched impostor like atoms/bonds — translucent, alpha-blended,
+    // no depth write (so several overlapping lobes/kept surfaces layer
+    // without fighting each other), and its own material uniform kept
+    // entirely separate from the atom/bond one.
+    isosurface_pipeline: wgpu::RenderPipeline,
+    isosurface_material_buffer: wgpu::Buffer,
+    isosurface_material_bind_group: wgpu::BindGroup,
+    isosurface_vertices: Option<(wgpu::Buffer, u32)>,
 }
 
 impl ViewportResources {
@@ -321,6 +333,84 @@ impl ViewportResources {
             cache: None,
         });
 
+        // Isosurfaces: an ordinary rasterized/lit triangle mesh, not a
+        // raymarched impostor, so no custom fragment depth override is
+        // needed — but it is translucent and shouldn't write depth (so
+        // several overlapping lobes/kept surfaces blend rather than
+        // fighting each other for the depth test), same shape as the
+        // highlight overlay's depth state above.
+        let isosurface_depth = Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        });
+
+        let isosurface_material_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("isosurface_material_bind_group_layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                count: None,
+            }],
+        });
+        let isosurface_material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("isosurface_material_buffer"),
+            contents: bytemuck::bytes_of(&IsosurfaceMaterial::default()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let isosurface_material_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("isosurface_material_bind_group"),
+            layout: &isosurface_material_layout,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: isosurface_material_buffer.as_entire_binding() }],
+        });
+        let isosurface_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("isosurface_pipeline_layout"),
+            bind_group_layouts: &[Some(&bind_group_layout), Some(&isosurface_material_layout)],
+            immediate_size: 0,
+        });
+        let isosurface_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("isosurface_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/isosurface.wgsl").into()),
+        });
+        let isosurface_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<IsosurfaceVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x3 },
+                wgpu::VertexAttribute { offset: 16, shader_location: 1, format: wgpu::VertexFormat::Float32x3 },
+                wgpu::VertexAttribute { offset: 32, shader_location: 2, format: wgpu::VertexFormat::Float32x3 },
+                wgpu::VertexAttribute { offset: 44, shader_location: 3, format: wgpu::VertexFormat::Float32 },
+            ],
+        };
+        let isosurface_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("isosurface_pipeline"),
+            layout: Some(&isosurface_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &isosurface_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(isosurface_vertex_layout)],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &isosurface_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: isosurface_depth,
+            multisample,
+            multiview_mask: None,
+            cache: None,
+        });
+
         Self {
             uniform_buffer,
             bind_group,
@@ -339,6 +429,10 @@ impl ViewportResources {
             atom_highlight_instances: None,
             bond_highlight_instances: None,
             measurement_instances: None,
+            isosurface_pipeline,
+            isosurface_material_buffer,
+            isosurface_material_bind_group,
+            isosurface_vertices: None,
         }
     }
 
@@ -441,8 +535,257 @@ impl ViewportResources {
         self.text_instances = Some((buffer, instances.len() as u32));
     }
 
+    /// Rebuilds the isosurface vertex buffer — called whenever the caller
+    /// (`App`) changes anything that affects what should be drawn: the
+    /// active structure's own isovalue/refinement/colors/opacity, whether
+    /// it's shown at all, or the "kept" surfaces list. `vertices` is
+    /// already the full combined set (live + kept) — see
+    /// `crate::isosurface_mesh::push_isosurface_vertices`.
+    pub fn update_isosurface(&mut self, device: &wgpu::Device, vertices: &[IsosurfaceVertex]) {
+        if vertices.is_empty() {
+            self.isosurface_vertices = None;
+            return;
+        }
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("isosurface_vertex_buffer"),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        self.isosurface_vertices = Some((buffer, vertices.len() as u32));
+    }
+
+    pub fn update_isosurface_material(&self, queue: &wgpu::Queue, material: &IsosurfaceMaterial) {
+        queue.write_buffer(&self.isosurface_material_buffer, 0, bytemuck::bytes_of(material));
+    }
+
     fn write_uniforms(&self, queue: &wgpu::Queue, uniforms: &SceneUniforms) {
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
+    }
+
+    /// The actual draw call sequence — shared by the live egui-wgpu
+    /// callback (`ViewportCallback::paint`, below) and the offscreen PNG
+    /// export path (`render_offscreen`), so the two can never drift apart.
+    fn draw_into_pass(&self, render_pass: &mut wgpu::RenderPass<'_>) {
+        render_pass.set_bind_group(0, &self.bind_group, &[]);
+
+        if let Some((buffer, count)) = &self.bond_instances {
+            render_pass.set_pipeline(&self.cylinder_pipeline);
+            render_pass.set_vertex_buffer(0, self.cylinder_vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, buffer.slice(..));
+            render_pass.set_index_buffer(self.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.draw_indexed(0..self.cylinder_index_count, 0, 0..*count);
+        }
+
+        if let Some((buffer, count)) = &self.atom_instances {
+            render_pass.set_pipeline(&self.atom_pipeline);
+            render_pass.set_vertex_buffer(0, buffer.slice(..));
+            render_pass.draw(0..6, 0..*count);
+        }
+
+        // Analysis-panel measurement lines — opaque and depth-tested like
+        // real bonds (via the same pipeline, reusing its dashed-thin-line
+        // path), so they correctly interleave with the molecule.
+        if let Some((buffer, count)) = &self.measurement_instances {
+            if *count > 0 {
+                render_pass.set_pipeline(&self.cylinder_pipeline);
+                render_pass.set_vertex_buffer(0, self.cylinder_vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, buffer.slice(..));
+                render_pass.set_index_buffer(self.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..self.cylinder_index_count, 0, 0..*count);
+            }
+        }
+
+        // 3D labels (atom tags, measurement values) — real depth-tested
+        // billboard glyph quads, drawn opaque-ish (alpha-to-coverage, see
+        // the pipeline) so they're correctly, precisely occluded by
+        // whatever's actually in front of them.
+        if let Some((buffer, count)) = &self.text_instances {
+            if *count > 0 {
+                render_pass.set_pipeline(&self.text_pipeline);
+                render_pass.set_bind_group(1, &self.glyph_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, buffer.slice(..));
+                render_pass.draw(0..6, 0..*count);
+            }
+        }
+
+        // Isosurfaces (Phase 2 .cube orbitals/densities) — translucent lit
+        // mesh, drawn after the opaque/text passes so it's correctly
+        // depth-tested against them, before the highlight overlay so a
+        // selection highlight (if any) still reads on top.
+        if let Some((buffer, count)) = &self.isosurface_vertices {
+            if *count > 0 {
+                render_pass.set_pipeline(&self.isosurface_pipeline);
+                render_pass.set_bind_group(1, &self.isosurface_material_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, buffer.slice(..));
+                render_pass.draw(0..*count, 0..1);
+            }
+        }
+
+        // Highlight overlays last, alpha-blended on top of the opaque pass.
+        if let Some((buffer, count)) = &self.bond_highlight_instances {
+            if *count > 0 {
+                render_pass.set_pipeline(&self.cylinder_highlight_pipeline);
+                render_pass.set_vertex_buffer(0, self.cylinder_vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, buffer.slice(..));
+                render_pass.set_index_buffer(self.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..self.cylinder_index_count, 0, 0..*count);
+            }
+        }
+
+        if let Some((buffer, count)) = &self.atom_highlight_instances {
+            if *count > 0 {
+                render_pass.set_pipeline(&self.atom_highlight_pipeline);
+                render_pass.set_vertex_buffer(0, buffer.slice(..));
+                render_pass.draw(0..6, 0..*count);
+            }
+        }
+    }
+
+    /// Renders the scene already uploaded into this `ViewportResources`
+    /// (atom/bond/highlight geometry is pure world-space data, independent
+    /// of camera or output size, so it doesn't need re-uploading here) to
+    /// an offscreen texture and reads it back as RGBA8 pixels — for PNG
+    /// export, not the live view. `uniforms` should already reflect the
+    /// camera/material/aspect-ratio to render with, and `label_instances`
+    /// the already-laid-out glyph quads (the caller — `App`, in the app
+    /// crate — is what knows about atom-label mode, measurement text, etc,
+    /// same division of responsibility as the live view).
+    ///
+    /// Blocks the calling thread until the GPU finishes and the readback
+    /// completes. That's fine for a one-shot, explicitly user-triggered
+    /// export — this is not called every frame.
+    pub fn render_offscreen(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target_format: wgpu::TextureFormat,
+        uniforms: &SceneUniforms,
+        label_instances: &[GlyphInstance],
+        settings: &crate::export::ExportSettings,
+    ) -> Result<Vec<u8>, String> {
+        self.write_uniforms(queue, uniforms);
+        self.update_labels(device, label_instances);
+
+        let supersample = settings.supersample.max(1);
+        let render_width = settings.width * supersample;
+        let render_height = settings.height * supersample;
+        if render_width == 0 || render_height == 0 {
+            return Err("export resolution must be non-zero".to_string());
+        }
+
+        let size = wgpu::Extent3d { width: render_width, height: render_height, depth_or_array_layers: 1 };
+
+        let msaa_color = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("export_msaa_color"),
+            size,
+            mip_level_count: 1,
+            sample_count: MSAA_SAMPLES,
+            dimension: wgpu::TextureDimension::D2,
+            format: target_format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let msaa_view = msaa_color.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let resolve_color = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("export_resolve_color"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: target_format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let resolve_view = resolve_color.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("export_depth"),
+            size,
+            mip_level_count: 1,
+            sample_count: MSAA_SAMPLES,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let clear_color = settings.background.map_or(wgpu::Color::TRANSPARENT, |[r, g, b, a]| wgpu::Color {
+            r: r as f64,
+            g: g as f64,
+            b: b as f64,
+            a: a as f64,
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("export_encoder") });
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("export_render_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &msaa_view,
+                    resolve_target: Some(&resolve_view),
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear_color), store: wgpu::StoreOp::Store },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            self.draw_into_pass(&mut render_pass);
+        }
+
+        // Row byte stride for a buffer copy must be padded to wgpu's
+        // required alignment — the actual pixel data stays tightly packed
+        // once we strip that padding back out below.
+        let bytes_per_pixel = 4u32;
+        let unpadded_bytes_per_row = render_width * bytes_per_pixel;
+        let padded_bytes_per_row = unpadded_bytes_per_row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+
+        let readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("export_readback_buffer"),
+            size: (padded_bytes_per_row * render_height) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo { texture: &resolve_color, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readback_buffer,
+                layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded_bytes_per_row), rows_per_image: Some(render_height) },
+            },
+            size,
+        );
+
+        queue.submit(Some(encoder.finish()));
+
+        let slice = readback_buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).map_err(|err| format!("GPU poll failed: {err}"))?;
+        rx.recv().map_err(|_| "readback channel closed unexpectedly".to_string())?.map_err(|err| format!("failed to map readback buffer: {err}"))?;
+
+        let padded = slice.get_mapped_range().map_err(|err| format!("failed to get mapped range: {err}"))?;
+        let mut rendered = vec![0u8; (unpadded_bytes_per_row * render_height) as usize];
+        for row in 0..render_height as usize {
+            let src_start = row * padded_bytes_per_row as usize;
+            let dst_start = row * unpadded_bytes_per_row as usize;
+            rendered[dst_start..dst_start + unpadded_bytes_per_row as usize]
+                .copy_from_slice(&padded[src_start..src_start + unpadded_bytes_per_row as usize]);
+        }
+        drop(padded);
+        readback_buffer.unmap();
+
+        let (final_pixels, _, _) = crate::export::downsample_rgba(&rendered, render_width, render_height, supersample);
+        Ok(final_pixels)
     }
 }
 
@@ -481,66 +824,6 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
         callback_resources: &egui_wgpu::CallbackResources,
     ) {
         let resources: &ViewportResources = callback_resources.get().expect("ViewportResources not registered");
-
-        render_pass.set_bind_group(0, &resources.bind_group, &[]);
-
-        if let Some((buffer, count)) = &resources.bond_instances {
-            render_pass.set_pipeline(&resources.cylinder_pipeline);
-            render_pass.set_vertex_buffer(0, resources.cylinder_vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, buffer.slice(..));
-            render_pass.set_index_buffer(resources.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            render_pass.draw_indexed(0..resources.cylinder_index_count, 0, 0..*count);
-        }
-
-        if let Some((buffer, count)) = &resources.atom_instances {
-            render_pass.set_pipeline(&resources.atom_pipeline);
-            render_pass.set_vertex_buffer(0, buffer.slice(..));
-            render_pass.draw(0..6, 0..*count);
-        }
-
-        // Analysis-panel measurement lines — opaque and depth-tested like
-        // real bonds (via the same pipeline, reusing its dashed-thin-line
-        // path), so they correctly interleave with the molecule.
-        if let Some((buffer, count)) = &resources.measurement_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(&resources.cylinder_pipeline);
-                render_pass.set_vertex_buffer(0, resources.cylinder_vertex_buffer.slice(..));
-                render_pass.set_vertex_buffer(1, buffer.slice(..));
-                render_pass.set_index_buffer(resources.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..resources.cylinder_index_count, 0, 0..*count);
-            }
-        }
-
-        // 3D labels (atom tags, measurement values) — real depth-tested
-        // billboard glyph quads, drawn opaque-ish (alpha-to-coverage, see
-        // the pipeline) so they're correctly, precisely occluded by
-        // whatever's actually in front of them.
-        if let Some((buffer, count)) = &resources.text_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(&resources.text_pipeline);
-                render_pass.set_bind_group(1, &resources.glyph_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, buffer.slice(..));
-                render_pass.draw(0..6, 0..*count);
-            }
-        }
-
-        // Highlight overlays last, alpha-blended on top of the opaque pass.
-        if let Some((buffer, count)) = &resources.bond_highlight_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(&resources.cylinder_highlight_pipeline);
-                render_pass.set_vertex_buffer(0, resources.cylinder_vertex_buffer.slice(..));
-                render_pass.set_vertex_buffer(1, buffer.slice(..));
-                render_pass.set_index_buffer(resources.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..resources.cylinder_index_count, 0, 0..*count);
-            }
-        }
-
-        if let Some((buffer, count)) = &resources.atom_highlight_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(&resources.atom_highlight_pipeline);
-                render_pass.set_vertex_buffer(0, buffer.slice(..));
-                render_pass.draw(0..6, 0..*count);
-            }
-        }
+        resources.draw_into_pass(render_pass);
     }
 }

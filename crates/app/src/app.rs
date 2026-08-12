@@ -1,11 +1,16 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use apost3dview_core::{element_data, format_coordinates, measure, parse_xyz, Bond, CoordinateFormat, LengthUnit, MeasurementKind, Molecule};
+use apost3dview_core::{
+    element_data, extract_isosurface, format_coordinates, measure, parse_cube, parse_xyz, refine_grid, Bond, CoordinateFormat, LengthUnit,
+    MeasurementKind, Molecule,
+};
 use apost3dview_render::{
-    glyph_scale_for_font_size, glyph_scale_for_world_size, layout_label, pick_atom, pick_bond, ray_from_ndc, BondVisualStyle,
-    GlyphAtlas, GlyphInstance, Material, OrbitCamera, ViewportCallback, ViewportResources,
+    glyph_scale_for_font_size, glyph_scale_for_world_size, layout_label, pick_atom, pick_bond, push_isosurface_vertices, ray_from_ndc,
+    BondVisualStyle, ExportSettings, GlyphAtlas, GlyphInstance, IsosurfaceMaterial, IsosurfaceVertex, Material, OrbitCamera, SceneUniforms,
+    ViewportCallback, ViewportResources,
 };
 use egui::{Color32, Slider};
 use glam::{Vec3, Vec4};
@@ -84,6 +89,19 @@ fn project_to_screen(camera: &OrbitCamera, aspect_ratio: f32, rect: egui::Rect, 
 
 fn color32_to_rgb(color: Color32) -> [f32; 3] {
     [color.r() as f32 / 255.0, color.g() as f32 / 255.0, color.b() as f32 / 255.0]
+}
+
+/// Whether two molecules describe the same geometry (same atoms, same
+/// positions within a small tolerance) — used to decide whether switching
+/// the active structure should reframe the camera. `.cube` files sharing
+/// one `.xyz`/`.fchk` geometry (several orbitals of one molecule) are the
+/// motivating case: switching between them should feel like changing a
+/// setting, not opening a different structure.
+fn molecules_share_geometry(a: &Molecule, b: &Molecule) -> bool {
+    if a.atomic_numbers != b.atomic_numbers {
+        return false;
+    }
+    a.positions.iter().zip(&b.positions).all(|(pa, pb)| pa.distance(*pb) < 1e-3)
 }
 
 /// SDF edge-threshold constants controlling stroke weight (see
@@ -180,6 +198,116 @@ impl Default for AtomLabelStyle {
     }
 }
 
+/// PNG export quality tier. Medium/High are one-click presets so a
+/// chemist without rendering background gets a good result without
+/// needing to understand resolution/supersampling; Custom exposes both
+/// directly for anyone who wants exact control (e.g. a journal's required
+/// pixel dimensions).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RenderPreset {
+    Medium,
+    High,
+    Custom,
+}
+
+/// Long edge (px) and supersample factor for each one-click preset. The
+/// short edge is derived from the current viewport's aspect ratio, so the
+/// export always frames exactly what's on screen (WYSIWYG), just denser —
+/// see `App::resolve_export_settings`. Chosen so Medium is fast (no
+/// supersampling, relies on the live view's existing MSAA) for slides/
+/// sharing, and High is meaningfully smoother for print/publication
+/// without the render time and memory of a much larger supersample factor
+/// (2x already quadruples the pixel count actually rendered).
+const RENDER_PRESET_MEDIUM: (u32, u32) = (1920, 1);
+const RENDER_PRESET_HIGH: (u32, u32) = (3840, 2);
+
+struct RenderExportState {
+    preset: RenderPreset,
+    custom_width: u32,
+    custom_height: u32,
+    custom_supersample: u32,
+    transparent_background: bool,
+}
+
+impl Default for RenderExportState {
+    fn default() -> Self {
+        Self { preset: RenderPreset::Medium, custom_width: 1920, custom_height: 1080, custom_supersample: 2, transparent_background: false }
+    }
+}
+
+/// Per-structure isosurface state — only present for structures opened
+/// from a `.cube` file. Isovalue/refinement/both-signs changes don't
+/// re-extract automatically (marching tetrahedra over a refined grid is a
+/// real cost, seconds in a debug build) — only an explicit "Update
+/// surface" click (or the one-time automatic extraction the first time a
+/// cube structure becomes active) does, tracked via `extracted`.
+struct IsosurfaceState {
+    grid: apost3dview_core::ScalarGrid,
+    show: bool,
+    isovalue: f32,
+    /// 1x/2x/3x — see `apost3dview_core::refine_grid`.
+    refinement: usize,
+    both_signs: bool,
+    positive_color: Color32,
+    negative_color: Color32,
+    opacity: f32,
+    /// When false, the isosurface renders fully opaque regardless of
+    /// `opacity` — the tick-box toggle between the translucent look and a
+    /// solid one.
+    transparent: bool,
+    cached_positive: Option<apost3dview_core::IsosurfaceMesh>,
+    cached_negative: Option<apost3dview_core::IsosurfaceMesh>,
+    extracted: bool,
+}
+
+/// Isovalue is a fixed constant rather than derived from each grid's own
+/// data (an earlier approach: 25% of the grid's max |value|) — Martí's
+/// explicit preference after tuning it live against the real EFFAO test
+/// cubes, simpler and more predictable than a per-file heuristic.
+const DEFAULT_ISOSURFACE_ISOVALUE: f32 = 0.1;
+const DEFAULT_ISOSURFACE_OPACITY: f32 = 0.75;
+
+impl IsosurfaceState {
+    fn new(grid: apost3dview_core::ScalarGrid) -> Self {
+        Self {
+            grid,
+            show: true,
+            isovalue: DEFAULT_ISOSURFACE_ISOVALUE,
+            refinement: 1,
+            both_signs: true,
+            positive_color: Color32::from_rgb(60, 90, 230),
+            negative_color: Color32::from_rgb(220, 70, 60),
+            opacity: DEFAULT_ISOSURFACE_OPACITY,
+            transparent: true,
+            cached_positive: None,
+            cached_negative: None,
+            extracted: false,
+        }
+    }
+
+    /// Resets every tunable appearance setting back to the defaults —
+    /// the Isosurfaces panel's "Default" button, mirroring Style's. Only
+    /// touches settings, not the grid or any already-extracted mesh (the
+    /// caller re-extracts afterward so the shown surface matches the
+    /// isovalue that just reset).
+    fn reset_to_default(&mut self) {
+        self.show = true;
+        self.isovalue = DEFAULT_ISOSURFACE_ISOVALUE;
+        self.refinement = 1;
+        self.both_signs = true;
+        self.positive_color = Color32::from_rgb(60, 90, 230);
+        self.negative_color = Color32::from_rgb(220, 70, 60);
+        self.opacity = DEFAULT_ISOSURFACE_OPACITY;
+        self.transparent = true;
+    }
+}
+
+/// A frozen isosurface snapshot taken by "Keep surface" — see
+/// `App::kept_isosurfaces`.
+struct KeptIsosurface {
+    vertices: Vec<IsosurfaceVertex>,
+}
+
 /// One opened structure — its own geometry and its own hide/selection/
 /// bond-style state. Deliberately does NOT own a Style/Material — that
 /// stays a single value shared across every structure, so tuning it once
@@ -187,6 +315,10 @@ impl Default for AtomLabelStyle {
 struct LoadedStructure {
     label: String,
     molecule: Molecule,
+    /// The file this structure was opened from, if any — used e.g. to
+    /// default a "save coordinates as .xyz" export next to the source
+    /// `.fchk`.
+    source_path: Option<PathBuf>,
     hidden_atoms: HashSet<usize>,
     hidden_bonds: HashSet<usize>,
     bond_styles: Vec<BondVisualStyle>,
@@ -196,14 +328,17 @@ struct LoadedStructure {
     /// Ordered atom picks awaiting a commit (via the Analysis window's
     /// "Add" button) into `measurements`.
     pending_measurement: Vec<usize>,
+    /// `Some` only for structures opened from a `.cube` file.
+    isosurface: Option<IsosurfaceState>,
 }
 
 impl LoadedStructure {
-    fn new(label: String, molecule: Molecule) -> Self {
+    fn new(label: String, molecule: Molecule, source_path: Option<PathBuf>) -> Self {
         let bond_styles = vec![BondVisualStyle::Single; molecule.bonds.len()];
         Self {
             label,
             molecule,
+            source_path,
             hidden_atoms: HashSet::new(),
             hidden_bonds: HashSet::new(),
             bond_styles,
@@ -211,6 +346,7 @@ impl LoadedStructure {
             selected_bonds: Vec::new(),
             measurements: Vec::new(),
             pending_measurement: Vec::new(),
+            isosurface: None,
         }
     }
 }
@@ -239,15 +375,35 @@ pub struct App {
     show_analysis: bool,
     show_structures: bool,
     show_about: bool,
+    show_render: bool,
 
     coordinate_unit: LengthUnit,
     coordinate_format: CoordinateFormat,
     measurement_style: MeasurementStyle,
     atom_label_mode: AtomLabelMode,
     atom_label_style: AtomLabelStyle,
+    render_export: RenderExportState,
+    /// Updated every viewport repaint from the actual on-screen rect —
+    /// the Render window reads this (rather than recomputing it itself,
+    /// since it doesn't have direct access to the viewport rect) so
+    /// Medium/High presets can frame the export exactly like the current
+    /// on-screen view.
+    last_aspect_ratio: f32,
+
+    /// Isosurface lighting response — deliberately separate from
+    /// `material` (the atom/bond one), shared across every structure the
+    /// same way `material` is.
+    isosurface_material: IsosurfaceMaterial,
+    /// Snapshots taken by the Isosurfaces "Keep surface" button — frozen
+    /// geometry *and* color/opacity as they were at that moment, rendered
+    /// every frame regardless of which structure is currently active, so
+    /// several `.cube` files sharing one geometry (the common case:
+    /// several orbitals of one molecule) can be composed into one image.
+    /// "Clean" empties this back out.
+    kept_isosurfaces: Vec<KeptIsosurface>,
 
     selection_mode: SelectionMode,
-    warning: Option<(String, Instant)>,
+    warning: Option<(String, Color32, Instant)>,
 }
 
 impl App {
@@ -272,17 +428,22 @@ impl App {
             glyph_atlas,
             start_time: Instant::now(),
             render_state,
-            show_style: true,
+            show_style: false,
             show_xyz: false,
             show_visualization: false,
             show_analysis: false,
             show_structures: true,
             show_about: false,
+            show_render: false,
             coordinate_unit: LengthUnit::Angstrom,
             coordinate_format: CoordinateFormat::AtomicNumberTable,
             measurement_style: MeasurementStyle::default(),
             atom_label_mode: AtomLabelMode::None,
             atom_label_style: AtomLabelStyle::default(),
+            render_export: RenderExportState::default(),
+            last_aspect_ratio: 16.0 / 9.0,
+            isosurface_material: IsosurfaceMaterial::default(),
+            kept_isosurfaces: Vec::new(),
             selection_mode: SelectionMode::Select,
             warning: None,
         }
@@ -322,8 +483,136 @@ impl App {
         }
     }
 
+    /// Combines the active structure's live isosurface (if it has one,
+    /// shown, and already extracted) with every "kept" snapshot into one
+    /// vertex buffer and uploads it — cheap (just concatenating already-
+    /// computed vertex data), safe to call every time anything isosurface-
+    /// related changes, unlike the actual extraction.
+    fn rebuild_isosurface(&self) {
+        let mut vertices: Vec<IsosurfaceVertex> = Vec::new();
+        for kept in &self.kept_isosurfaces {
+            vertices.extend_from_slice(&kept.vertices);
+        }
+        if let Some(active) = self.active_structure {
+            if let Some(iso) = self.structures.get(active).and_then(|s| s.isosurface.as_ref()) {
+                if iso.show {
+                    let opacity = if iso.transparent { iso.opacity } else { 1.0 };
+                    if let Some(mesh) = &iso.cached_positive {
+                        push_isosurface_vertices(&mut vertices, mesh, color32_to_rgb(iso.positive_color), opacity);
+                    }
+                    if iso.both_signs {
+                        if let Some(mesh) = &iso.cached_negative {
+                            push_isosurface_vertices(&mut vertices, mesh, color32_to_rgb(iso.negative_color), opacity);
+                        }
+                    }
+                }
+            }
+        }
+        let mut renderer = self.render_state.renderer.write();
+        if let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() {
+            resources.update_isosurface(&self.render_state.device, &vertices);
+            resources.update_isosurface_material(&self.render_state.queue, &self.isosurface_material);
+        }
+    }
+
+    /// Re-runs marching tetrahedra for the active structure's isosurface
+    /// at its current isovalue/refinement/both-signs settings — the real
+    /// cost (a refined grid can take seconds in a debug build), so this
+    /// only runs on an explicit "Update surface" click or the one-time
+    /// automatic extraction the first time a `.cube` structure becomes
+    /// active (see `set_active`), never continuously while adjusting a
+    /// slider.
+    fn extract_active_isosurface(&mut self) {
+        let Some(active) = self.active_structure else { return };
+        let Some(structure) = self.structures.get_mut(active) else { return };
+        let Some(iso) = &mut structure.isosurface else { return };
+
+        let isovalue = iso.isovalue;
+        let refinement = iso.refinement;
+        let both_signs = iso.both_signs;
+
+        let refined_grid;
+        let grid_ref = if refinement > 1 {
+            refined_grid = refine_grid(&iso.grid, refinement);
+            &refined_grid
+        } else {
+            &iso.grid
+        };
+
+        let positive = extract_isosurface(grid_ref, isovalue);
+        let negative = if both_signs { Some(extract_isosurface(&grid_ref.negated(), isovalue)) } else { None };
+
+        iso.cached_positive = Some(positive);
+        iso.cached_negative = negative;
+        iso.extracted = true;
+
+        self.rebuild_isosurface();
+    }
+
+    /// Resets the active structure's isosurface settings (isovalue,
+    /// refinement, colors, opacity, ...) *and* the shared isosurface
+    /// material (ambient/diffuse/specular/shininess) back to the defaults,
+    /// then re-extracts immediately — the "Default" button in the
+    /// Isosurfaces panel, mirroring Style's "Default" for the atom/bond
+    /// material.
+    fn reset_active_isosurface_to_default(&mut self) {
+        self.isosurface_material = IsosurfaceMaterial::default();
+        let Some(active) = self.active_structure else { return };
+        let Some(structure) = self.structures.get_mut(active) else { return };
+        let Some(iso) = &mut structure.isosurface else { return };
+        iso.reset_to_default();
+        self.extract_active_isosurface();
+    }
+
+    /// Freezes the active structure's current isosurface (geometry *and*
+    /// its color/opacity at this exact moment) into `kept_isosurfaces`,
+    /// so it stays visible even after switching to a different structure.
+    /// The natural way to compose several `.cube` files sharing one
+    /// geometry (several orbitals of one molecule) into a single image.
+    fn keep_active_isosurface(&mut self) {
+        let Some(active) = self.active_structure else { return };
+        let Some(iso) = self.structures.get(active).and_then(|s| s.isosurface.as_ref()) else { return };
+        if !iso.show {
+            self.show_warning("Isosurface is hidden — nothing to keep");
+            return;
+        }
+        let mut vertices = Vec::new();
+        let opacity = if iso.transparent { iso.opacity } else { 1.0 };
+        if let Some(mesh) = &iso.cached_positive {
+            push_isosurface_vertices(&mut vertices, mesh, color32_to_rgb(iso.positive_color), opacity);
+        }
+        if iso.both_signs {
+            if let Some(mesh) = &iso.cached_negative {
+                push_isosurface_vertices(&mut vertices, mesh, color32_to_rgb(iso.negative_color), opacity);
+            }
+        }
+        if vertices.is_empty() {
+            self.show_warning("Nothing extracted yet — click Update surface first");
+            return;
+        }
+        self.kept_isosurfaces.push(KeptIsosurface { vertices });
+        self.show_status("Isosurface kept");
+    }
+
+    /// Removes every kept isosurface *and* hides the active structure's
+    /// own live one — a full reset back to no isosurfaces shown at all.
+    fn clean_isosurfaces(&mut self) {
+        self.kept_isosurfaces.clear();
+        if let Some(active) = self.active_structure {
+            if let Some(iso) = self.structures.get_mut(active).and_then(|s| s.isosurface.as_mut()) {
+                iso.show = false;
+            }
+        }
+        self.rebuild_isosurface();
+        self.show_status("Cleared all isosurfaces");
+    }
+
     fn show_warning(&mut self, message: impl Into<String>) {
-        self.warning = Some((message.into(), Instant::now()));
+        self.warning = Some((message.into(), Color32::from_rgb(196, 60, 40), Instant::now()));
+    }
+
+    fn show_status(&mut self, message: impl Into<String>) {
+        self.warning = Some((message.into(), Color32::from_rgb(45, 130, 80), Instant::now()));
     }
 
     fn clear_selection(&mut self) {
@@ -334,20 +623,40 @@ impl App {
         self.rebuild_highlights();
     }
 
-    /// Switches the active structure and re-frames the camera on it —
+    /// Switches the active structure. Re-frames the camera on it —
     /// different opened files can be wildly different sizes/positions
     /// (this is the main reason .xyz support exists: comparing unrelated
-    /// structures side by side, not orbital sets sharing one geometry —
-    /// that case, later, will want the opposite: freezing orientation).
+    /// structures side by side) — *unless* the structure being switched
+    /// away from and the one being switched to share the same geometry
+    /// (the common case for `.cube` files: several orbitals of one
+    /// molecule), in which case reframing on every switch would be an
+    /// annoying reset of a view you just set up. If the newly active
+    /// structure is a `.cube` one that's never had its isosurface
+    /// extracted yet, that happens now too — a one-time cost, not
+    /// something that repeats on every subsequent switch back to it.
     fn set_active(&mut self, index: usize) {
+        let should_reframe = match (self.active_structure.and_then(|p| self.structures.get(p)), self.structures.get(index)) {
+            (Some(previous), Some(next)) => !molecules_share_geometry(&previous.molecule, &next.molecule),
+            _ => true,
+        };
+
         self.active_structure = Some(index);
-        if let Some(structure) = self.structures.get(index) {
-            let (center, radius) = structure.molecule.bounding_sphere();
-            self.camera.frame_bounds(center, radius);
+        if should_reframe {
+            if let Some(structure) = self.structures.get(index) {
+                let (center, radius) = structure.molecule.bounding_sphere();
+                self.camera.frame_bounds(center, radius);
+            }
         }
         self.rebuild_geometry();
         self.rebuild_highlights();
         self.rebuild_measurements();
+
+        let needs_initial_extraction = self.structures.get(index).and_then(|s| s.isosurface.as_ref()).is_some_and(|iso| !iso.extracted);
+        if needs_initial_extraction {
+            self.extract_active_isosurface();
+        } else {
+            self.rebuild_isosurface();
+        }
     }
 
     fn open_fchk(&mut self) {
@@ -356,7 +665,7 @@ impl App {
             Ok(molecule) => {
                 let label = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled.fchk".into());
                 let index = self.structures.len();
-                self.structures.push(LoadedStructure::new(label, molecule));
+                self.structures.push(LoadedStructure::new(label, molecule, Some(path)));
                 self.set_active(index);
             }
             Err(err) => self.show_warning(format!("Could not load {}: {err}", path.display())),
@@ -371,7 +680,7 @@ impl App {
                 Ok(molecule) => {
                     let label = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled.xyz".into());
                     let index = self.structures.len();
-                    self.structures.push(LoadedStructure::new(label, molecule));
+                    self.structures.push(LoadedStructure::new(label, molecule, Some(path)));
                     first_new_index.get_or_insert(index);
                 }
                 Err(err) => self.show_warning(format!("Could not load {}: {err}", path.display())),
@@ -380,6 +689,256 @@ impl App {
         if let Some(index) = first_new_index {
             self.set_active(index);
         }
+    }
+
+    /// Opens one or more `.cube` files — same multi-select UX as `.xyz`.
+    /// Each becomes its own Structures entry with both a molecule (parsed
+    /// from the cube's own atom section) and an isosurface (see
+    /// `IsosurfaceState`); `set_active` handles the shared-geometry
+    /// camera-freeze and the one-time initial extraction.
+    fn open_cube(&mut self) {
+        let Some(paths) = rfd::FileDialog::new().add_filter("Gaussian cube", &["cube"]).pick_files() else { return };
+        let mut first_new_index = None;
+        for path in paths {
+            match parse_cube(&path) {
+                Ok(cube_file) => {
+                    let label = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled.cube".into());
+                    let mut structure = LoadedStructure::new(label, cube_file.molecule, Some(path));
+                    structure.isosurface = Some(IsosurfaceState::new(cube_file.grid));
+                    let index = self.structures.len();
+                    self.structures.push(structure);
+                    first_new_index.get_or_insert(index);
+                }
+                Err(err) => self.show_warning(format!("Could not load {}: {err}", path.display())),
+            }
+        }
+        if let Some(index) = first_new_index {
+            self.set_active(index);
+        }
+    }
+
+    /// Writes the active structure's coordinates to a standard `.xyz` file
+    /// next to its source `.fchk`, same base name, `.xyz` extension —
+    /// always in Angstrom regardless of the viewer's current unit toggle,
+    /// since that's what makes it a valid, portable `.xyz` file.
+    fn export_active_xyz(&mut self, target: std::path::PathBuf) {
+        let Some(active) = self.active_structure else { return };
+        let structure = &self.structures[active];
+        let text = format_coordinates(&structure.molecule, LengthUnit::Angstrom, CoordinateFormat::XyzFile, &structure.label);
+        match std::fs::write(&target, text) {
+            Ok(()) => self.show_status(format!("Saved {}", target.display())),
+            Err(err) => self.show_warning(format!("Could not save {}: {err}", target.display())),
+        }
+    }
+
+    /// Turns the current preset (plus the live view's aspect ratio, for
+    /// Medium/High) into concrete pixel dimensions and background.
+    fn resolve_export_settings(&self) -> ExportSettings {
+        let background = if self.render_export.transparent_background {
+            None
+        } else {
+            let [r, g, b] = self.material.background;
+            Some([r, g, b, 1.0])
+        };
+        match self.render_export.preset {
+            RenderPreset::Medium => {
+                let (long_edge, supersample) = RENDER_PRESET_MEDIUM;
+                Self::long_edge_export_settings(long_edge, self.last_aspect_ratio, supersample, background)
+            }
+            RenderPreset::High => {
+                let (long_edge, supersample) = RENDER_PRESET_HIGH;
+                Self::long_edge_export_settings(long_edge, self.last_aspect_ratio, supersample, background)
+            }
+            RenderPreset::Custom => ExportSettings {
+                width: self.render_export.custom_width.max(1),
+                height: self.render_export.custom_height.max(1),
+                supersample: self.render_export.custom_supersample.max(1),
+                background,
+            },
+        }
+    }
+
+    /// Scales `long_edge` to fit the given aspect ratio (long edge on
+    /// whichever dimension is actually longer) — the export then frames
+    /// exactly what's on screen, just at a higher pixel density, rather
+    /// than reframing to some fixed shape.
+    fn long_edge_export_settings(long_edge: u32, aspect_ratio: f32, supersample: u32, background: Option<[f32; 4]>) -> ExportSettings {
+        let aspect_ratio = if aspect_ratio > 0.0 { aspect_ratio } else { 1.0 };
+        let (width, height) = if aspect_ratio >= 1.0 {
+            (long_edge, ((long_edge as f32 / aspect_ratio).round() as u32).max(1))
+        } else {
+            (((long_edge as f32 * aspect_ratio).round() as u32).max(1), long_edge)
+        };
+        ExportSettings { width, height, supersample, background }
+    }
+
+    /// Builds the same atom/measurement label geometry the live view
+    /// does (see the central-panel label-building block), sized for
+    /// `target_height_px` — the export's own output height, not whatever
+    /// the on-screen viewport happens to be, so measurement labels (which
+    /// hold a constant *apparent* size relative to the render they're in)
+    /// come out proportioned exactly like the live view once the export
+    /// is viewed at its own native resolution. Deliberately a separate,
+    /// simplified copy rather than sharing code with the live-view block:
+    /// that block also does interactive drag hit-testing (needs `ui`,
+    /// mutates measurement state), which a one-shot export has no use for.
+    fn build_export_label_instances(&self, active: usize, target_height_px: f32) -> Vec<GlyphInstance> {
+        let mut label_instances: Vec<GlyphInstance> = Vec::new();
+        let structure = &self.structures[active];
+
+        if self.atom_label_mode != AtomLabelMode::None {
+            let color = color32_to_rgb(self.atom_label_style.text_color);
+            for (index, (&z, &position)) in structure.molecule.atomic_numbers.iter().zip(&structure.molecule.positions).enumerate() {
+                if structure.hidden_atoms.contains(&index) {
+                    continue;
+                }
+                let radius = element_data(z).vdw_radius * self.material.atom_scale;
+                let scale = glyph_scale_for_world_size(radius * self.atom_label_style.relative_size);
+                let text = match self.atom_label_mode {
+                    AtomLabelMode::Number => format!("{}", index + 1),
+                    AtomLabelMode::Type => element_data(z).symbol.to_string(),
+                    AtomLabelMode::NumberType => format!("{}{}", element_data(z).symbol, index + 1),
+                    AtomLabelMode::None => unreachable!(),
+                };
+                let to_camera = (self.camera.eye() - position).normalize_or_zero();
+                let label_anchor = position + to_camera * (radius * 1.15 + 0.02);
+                push_label(&mut label_instances, &self.glyph_atlas, &text, label_anchor, scale, color, EDGE_BIAS_ATOM_LABEL);
+            }
+        }
+
+        let (camera_right, camera_up) = self.camera.screen_basis();
+        let measurement_color = color32_to_rgb(self.measurement_style.text_color);
+        for measurement in &structure.measurements {
+            let anchor = measurement_anchor(&structure.molecule, measurement.kind);
+            let distance = (anchor - self.camera.eye()).length();
+            let world_per_pixel = self.camera.world_units_per_pixel(distance, target_height_px);
+            let world_offset = camera_right * (measurement.label_offset.x * world_per_pixel)
+                - camera_up * (measurement.label_offset.y * world_per_pixel);
+            let final_anchor = anchor + world_offset;
+
+            let value = measure(&structure.molecule, measurement.kind);
+            let text = format_measurement(measurement.kind, value, self.coordinate_unit, self.measurement_style.decimal_places);
+            let scale = glyph_scale_for_font_size(self.measurement_style.font_size, world_per_pixel);
+            let edge_bias = if self.measurement_style.bold { EDGE_BIAS_BOLD } else { EDGE_BIAS_NORMAL };
+            push_label(&mut label_instances, &self.glyph_atlas, &text, final_anchor, scale, measurement_color, edge_bias);
+        }
+
+        label_instances
+    }
+
+    /// Renders the active structure offscreen at `settings` and saves it
+    /// as a PNG, letting the user pick the name/location. Blocks the UI
+    /// thread briefly (see `ViewportResources::render_offscreen`) — an
+    /// acceptable one-shot cost for an explicit, infrequent action.
+    fn export_render_png(&mut self, settings: ExportSettings) {
+        let Some(active) = self.active_structure else {
+            self.show_warning("Open a structure first.");
+            return;
+        };
+
+        let default_name = self
+            .structures[active]
+            .source_path
+            .as_ref()
+            .and_then(|p| p.file_stem())
+            .map(|s| format!("{}.png", s.to_string_lossy()))
+            .unwrap_or_else(|| "render.png".to_string());
+        let Some(path) = rfd::FileDialog::new().add_filter("PNG image", &["png"]).set_file_name(default_name).save_file() else {
+            return;
+        };
+
+        let export_aspect = settings.width as f32 / settings.height.max(1) as f32;
+        let uniforms = SceneUniforms::new(&self.camera, export_aspect, &self.material);
+        let label_instances = self.build_export_label_instances(active, settings.height as f32);
+        let target_format = self.render_state.target_format;
+
+        let mut renderer = self.render_state.renderer.write();
+        let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() else {
+            drop(renderer);
+            self.show_warning("Renderer not ready.");
+            return;
+        };
+        let result = resources.render_offscreen(&self.render_state.device, &self.render_state.queue, target_format, &uniforms, &label_instances, &settings);
+        drop(renderer);
+
+        match result {
+            Ok(mut pixels) => {
+                // The swapchain format on some platforms/backends is
+                // BGRA rather than RGBA — the offscreen texture (and so
+                // the readback) is in whatever channel order that format
+                // uses, since the pipelines are fixed to it. Swap back to
+                // RGB order before handing to the PNG encoder, which
+                // always expects RGBA.
+                if matches!(target_format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb) {
+                    for px in pixels.chunks_mut(4) {
+                        px.swap(0, 2);
+                    }
+                }
+                match image::save_buffer(&path, &pixels, settings.width, settings.height, image::ColorType::Rgba8) {
+                    Ok(()) => self.show_status(format!("Saved {}", path.display())),
+                    Err(err) => self.show_warning(format!("Could not write {}: {err}", path.display())),
+                }
+            }
+            Err(err) => self.show_warning(format!("Render failed: {err}")),
+        }
+    }
+
+    fn show_render_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_render;
+        egui::Window::new("Render")
+            .open(&mut open)
+            .default_pos([320.0, 460.0])
+            .default_width(280.0)
+            .show(ctx, |ui| {
+                if self.active_structure.is_none() {
+                    ui.label(egui::RichText::new("Open a structure first.").weak());
+                    return;
+                }
+
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.render_export.preset, RenderPreset::Medium, "Medium");
+                    ui.selectable_value(&mut self.render_export.preset, RenderPreset::High, "High");
+                    ui.selectable_value(&mut self.render_export.preset, RenderPreset::Custom, "Custom");
+                });
+                ui.add_space(4.0);
+
+                match self.render_export.preset {
+                    RenderPreset::Medium => {
+                        ui.label(egui::RichText::new("1920 px long edge, no supersampling — fast, good for slides/sharing.").small().weak());
+                    }
+                    RenderPreset::High => {
+                        ui.label(egui::RichText::new("3840 px long edge, 2x supersampling — publication quality, slower.").small().weak());
+                    }
+                    RenderPreset::Custom => {
+                        ui.horizontal(|ui| {
+                            ui.label("Width:");
+                            ui.add(egui::DragValue::new(&mut self.render_export.custom_width).range(64..=16384));
+                            ui.label("Height:");
+                            ui.add(egui::DragValue::new(&mut self.render_export.custom_height).range(64..=16384));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Supersample:");
+                            ui.selectable_value(&mut self.render_export.custom_supersample, 1, "1x");
+                            ui.selectable_value(&mut self.render_export.custom_supersample, 2, "2x");
+                            ui.selectable_value(&mut self.render_export.custom_supersample, 4, "4x");
+                        });
+                    }
+                }
+
+                ui.add_space(6.0);
+                ui.checkbox(&mut self.render_export.transparent_background, "Transparent background");
+
+                ui.add_space(8.0);
+                ui.separator();
+                let settings = self.resolve_export_settings();
+                ui.label(egui::RichText::new(format!("Output: {} x {} px", settings.width, settings.height)).small().weak());
+                ui.add_space(6.0);
+
+                if ui.add_sized([ui.available_width(), 30.0], egui::Button::new("Render and save PNG...")).clicked() {
+                    self.export_render_png(settings);
+                }
+            });
+        self.show_render = open;
     }
 
     fn show_splash(&self, ui: &mut egui::Ui) {
@@ -423,6 +982,9 @@ impl App {
                 if ui.selectable_label(self.show_analysis, "Analysis").clicked() {
                     self.show_analysis = !self.show_analysis;
                 }
+                if ui.selectable_label(self.show_render, "Render").clicked() {
+                    self.show_render = !self.show_render;
+                }
                 if ui.selectable_label(self.show_about, "About").clicked() {
                     self.show_about = !self.show_about;
                 }
@@ -443,6 +1005,9 @@ impl App {
                     }
                     if ui.button("Open .xyz...").clicked() {
                         self.open_xyz();
+                    }
+                    if ui.button("Open .cube...").clicked() {
+                        self.open_cube();
                     }
                 });
 
@@ -558,6 +1123,25 @@ impl App {
                     ui.selectable_value(&mut self.coordinate_format, CoordinateFormat::AtomicNumberTable, "Standard");
                     ui.selectable_value(&mut self.coordinate_format, CoordinateFormat::XyzFile, "Symbol XYZ");
                 });
+                let export_target = self
+                    .active_structure
+                    .and_then(|i| self.structures.get(i))
+                    .and_then(|s| s.source_path.as_ref())
+                    .filter(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("fchk")))
+                    .map(|p| p.with_extension("xyz"));
+
+                if let Some(target) = &export_target {
+                    ui.add_space(4.0);
+                    let file_name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    if ui
+                        .add_sized([ui.available_width(), 28.0], egui::Button::new(format!("Save coordinates as {file_name}")))
+                        .on_hover_text(target.display().to_string())
+                        .clicked()
+                    {
+                        self.export_active_xyz(target.clone());
+                    }
+                }
+
                 ui.separator();
 
                 match self.active_structure.and_then(|i| self.structures.get(i)) {
@@ -608,6 +1192,7 @@ impl App {
                     return;
                 };
 
+                ui.label(egui::RichText::new("Atoms").strong());
                 let summary = self.structures[active]
                     .selected_atoms
                     .iter()
@@ -671,6 +1256,7 @@ impl App {
                 ui.add_space(10.0);
                 ui.separator();
 
+                ui.label(egui::RichText::new("Bonds").strong());
                 ui.label(format!("Selected bonds: {}", self.structures[active].selected_bonds.len()));
                 ui.horizontal(|ui| {
                     if ui.button("Single").clicked() {
@@ -724,6 +1310,99 @@ impl App {
                         self.rebuild_highlights();
                     }
                 });
+
+                ui.add_space(10.0);
+                ui.separator();
+                ui.label(egui::RichText::new("Isosurfaces").strong());
+
+                let has_isosurface = self.structures[active].isosurface.is_some();
+                if has_isosurface {
+                    if ui.button("Default").clicked() {
+                        self.reset_active_isosurface_to_default();
+                    }
+
+                    let mut needs_recomposite = false;
+                    {
+                        let iso = self.structures[active].isosurface.as_mut().unwrap();
+                        if ui.checkbox(&mut iso.show, "Show isosurface").changed() {
+                            needs_recomposite = true;
+                        }
+                        ui.horizontal(|ui| {
+                            ui.label("Isovalue:");
+                            ui.add(egui::DragValue::new(&mut iso.isovalue).speed(0.001).range(0.0..=f32::MAX));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Refinement:");
+                            ui.selectable_value(&mut iso.refinement, 1, "1x");
+                            ui.selectable_value(&mut iso.refinement, 2, "2x");
+                            ui.selectable_value(&mut iso.refinement, 3, "3x");
+                        });
+                        if ui.checkbox(&mut iso.both_signs, "Both signs (+/-)").changed() {
+                            needs_recomposite = true;
+                        }
+                        if ui.checkbox(&mut iso.transparent, "Transparent").changed() {
+                            needs_recomposite = true;
+                        }
+                        if iso.transparent && ui.add(Slider::new(&mut iso.opacity, 0.05..=1.0).text("opacity")).changed() {
+                            needs_recomposite = true;
+                        }
+                        ui.horizontal(|ui| {
+                            ui.label("Positive:");
+                            if ui.color_edit_button_srgba(&mut iso.positive_color).changed() {
+                                needs_recomposite = true;
+                            }
+                            ui.label("Negative:");
+                            if ui.color_edit_button_srgba(&mut iso.negative_color).changed() {
+                                needs_recomposite = true;
+                            }
+                        });
+                        if ui.button("Invert colors").clicked() {
+                            std::mem::swap(&mut iso.positive_color, &mut iso.negative_color);
+                            needs_recomposite = true;
+                        }
+                    }
+                    if needs_recomposite {
+                        self.rebuild_isosurface();
+                    }
+
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new("Isovalue/refinement/both-signs changes need Update surface (re-extraction is a real cost).")
+                            .small()
+                            .weak(),
+                    );
+                    if ui.add_sized([ui.available_width(), 26.0], egui::Button::new("Update surface")).clicked() {
+                        self.extract_active_isosurface();
+                    }
+                } else {
+                    ui.label(egui::RichText::new("This structure has no .cube isosurface.").small().weak());
+                }
+
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Keep surface").clicked() {
+                        self.keep_active_isosurface();
+                    }
+                    if ui.button("Clean").clicked() {
+                        self.clean_isosurfaces();
+                    }
+                });
+                if !self.kept_isosurfaces.is_empty() {
+                    ui.label(egui::RichText::new(format!("{} isosurface(s) kept", self.kept_isosurfaces.len())).small().weak());
+                }
+
+                ui.add_space(10.0);
+                ui.separator();
+                ui.label(egui::RichText::new("Isosurface material").strong());
+                ui.label(egui::RichText::new("Independent from the atom/bond material in Style.").small().weak());
+                let mut material_changed = false;
+                material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[0], 0.0..=1.0).text("ambient")).changed();
+                material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[1], 0.0..=1.0).text("diffuse")).changed();
+                material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[2], 0.0..=1.0).text("specular")).changed();
+                material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[3], 1.0..=128.0).text("shininess")).changed();
+                if material_changed {
+                    self.rebuild_isosurface();
+                }
             });
         self.show_visualization = open;
     }
@@ -891,7 +1570,7 @@ impl App {
     }
 
     fn show_warning_overlay(&mut self, ctx: &egui::Context, rect: egui::Rect) {
-        let Some((message, shown_at)) = &self.warning else { return };
+        let Some((message, color, shown_at)) = &self.warning else { return };
         if shown_at.elapsed() > WARNING_DURATION {
             self.warning = None;
             return;
@@ -901,7 +1580,7 @@ impl App {
             .fixed_pos(egui::pos2(rect.center().x - 90.0, rect.top() + 20.0))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
-                egui::Frame::popup(ui.style()).fill(Color32::from_rgb(196, 60, 40)).show(ui, |ui| {
+                egui::Frame::popup(ui.style()).fill(*color).show(ui, |ui| {
                     ui.label(egui::RichText::new(message).color(Color32::WHITE).strong());
                 });
             });
@@ -946,6 +1625,7 @@ impl eframe::App for App {
         self.show_xyz_window(ui.ctx());
         self.show_visualization_window(ui.ctx());
         self.show_analysis_window(ui.ctx());
+        self.show_render_window(ui.ctx());
         self.show_about_window(ui.ctx());
 
         egui::CentralPanel::default()
@@ -1020,6 +1700,7 @@ impl eframe::App for App {
                 }
 
                 let aspect_ratio = if rect.height() > 0.0 { rect.width() / rect.height() } else { 1.0 };
+                self.last_aspect_ratio = aspect_ratio;
 
                 // Left-click always does something useful: in Measure
                 // mode it extends the pending pick, otherwise it selects

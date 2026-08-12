@@ -16,8 +16,9 @@ __pycache__/
 CLAUDE.md
 PROJECT-ROADMAP.md
 
-# APOST-3D test data (.fchk/.inp/.xyz) used for local testing — not
+# APOST-3D test data (.fchk/.inp/.xyz/.cube) used for local testing — not
 # committed, these are your own calculation files, not project source
 *.fchk
 *.inp
 *.xyz
+*.cube
