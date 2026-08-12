@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use apost3dview_core::{element_data, format_coordinates, CoordinateFormat, LengthUnit, Molecule};
+use apost3dview_core::{element_data, format_coordinates, Bond, CoordinateFormat, LengthUnit, Molecule};
 use apost3dview_render::{
     pick_atom, pick_bond, ray_from_ndc, BondVisualStyle, Material, OrbitCamera, ViewportCallback, ViewportResources,
 };
@@ -31,6 +31,10 @@ fn toggle_selected(list: &mut Vec<usize>, index: usize) {
     } else {
         list.push(index);
     }
+}
+
+fn find_bond_between(molecule: &Molecule, a: usize, b: usize) -> Option<usize> {
+    molecule.bonds.iter().position(|bond| (bond.atom_a == a && bond.atom_b == b) || (bond.atom_a == b && bond.atom_b == a))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -356,6 +360,48 @@ impl App {
                                     self.clear_selection();
                                 }
                             });
+
+                            // Manual bond management: pick exactly two
+                            // atoms and either create a bond between them
+                            // (useful for depicting a forming/breaking
+                            // contact too long for automatic perception to
+                            // catch) or toggle the visibility of one that
+                            // already exists — a shortcut so this doesn't
+                            // require switching to Bonds mode separately.
+                            if self.selected_atoms.len() == 2 {
+                                let a = self.selected_atoms[0];
+                                let b = self.selected_atoms[1];
+                                // A fresh, short-lived borrow (rather than
+                                // reusing the outer `molecule` binding)
+                                // so it doesn't force that borrow to stay
+                                // alive across the `&mut self` calls below.
+                                let existing_bond = self.molecule.as_ref().and_then(|m| find_bond_between(m, a, b));
+
+                                ui.add_space(6.0);
+                                match existing_bond {
+                                    None => {
+                                        if ui.button("Create bond").clicked() {
+                                            if let Some(m) = self.molecule.as_mut() {
+                                                m.bonds.push(Bond { atom_a: a, atom_b: b });
+                                            }
+                                            self.bond_styles.push(BondVisualStyle::Single);
+                                            self.rebuild_geometry();
+                                        }
+                                    }
+                                    Some(bond_index) => {
+                                        let is_hidden = self.hidden_bonds.contains(&bond_index);
+                                        let label = if is_hidden { "Show bond" } else { "Hide bond" };
+                                        if ui.button(label).clicked() {
+                                            if is_hidden {
+                                                self.hidden_bonds.remove(&bond_index);
+                                            } else {
+                                                self.hidden_bonds.insert(bond_index);
+                                            }
+                                            self.rebuild_geometry();
+                                        }
+                                    }
+                                }
+                            }
                         }
                         SelectionMode::Bonds => {
                             ui.label(format!("Selected bonds: {}", self.selected_bonds.len()));
