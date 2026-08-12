@@ -198,8 +198,8 @@ impl App {
                 });
                 ui.horizontal(|ui| {
                     ui.label("Format:");
-                    ui.selectable_value(&mut self.coordinate_format, CoordinateFormat::AtomicNumberTable, "Z x y z");
-                    ui.selectable_value(&mut self.coordinate_format, CoordinateFormat::XyzFile, "xyz");
+                    ui.selectable_value(&mut self.coordinate_format, CoordinateFormat::AtomicNumberTable, "Standard");
+                    ui.selectable_value(&mut self.coordinate_format, CoordinateFormat::XyzFile, "Symbol XYZ");
                 });
                 ui.separator();
 
