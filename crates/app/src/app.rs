@@ -102,11 +102,15 @@ fn push_label(instances: &mut Vec<GlyphInstance>, atlas: &GlyphAtlas, text: &str
     instances.extend(base);
 }
 
+/// What a left-click in the viewport does. Right-click always orbits, so
+/// there's no need for a separate "off" state here — `Select` (atom if
+/// one's under the cursor, else a bond) is the permanent default; `Measure`
+/// is the one explicit override, toggled from the Analysis window, since
+/// its click semantics genuinely differ (an ordered pick sequence, not a
+/// toggle-selection).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SelectionMode {
-    None,
-    Atoms,
-    Bonds,
+    Select,
     Measure,
 }
 
@@ -270,7 +274,7 @@ impl App {
             measurement_style: MeasurementStyle::default(),
             atom_label_mode: AtomLabelMode::None,
             atom_label_style: AtomLabelStyle::default(),
-            selection_mode: SelectionMode::None,
+            selection_mode: SelectionMode::Select,
             warning: None,
         }
     }
@@ -523,7 +527,7 @@ impl App {
 
                 ui.add_space(16.0);
                 ui.separator();
-                ui.label("Drag to orbit, scroll/arrows to zoom/rotate, shift-drag to pan.");
+                ui.label("Right-drag to orbit, shift+right-drag to pan, scroll/arrows to zoom/rotate. Left-click selects.");
                 ui.label(egui::RichText::new("Shared across every loaded structure.").small().weak());
             });
         self.show_style = open;
@@ -574,20 +578,13 @@ impl App {
             .default_pos([40.0, 460.0])
             .default_width(260.0)
             .show(ctx, |ui| {
-                ui.label("Selection mode");
-                ui.horizontal(|ui| {
-                    let changed_from_atoms = self.selection_mode == SelectionMode::Atoms;
-                    let changed_from_bonds = self.selection_mode == SelectionMode::Bonds;
-                    ui.selectable_value(&mut self.selection_mode, SelectionMode::None, "Off");
-                    ui.selectable_value(&mut self.selection_mode, SelectionMode::Atoms, "Atoms");
-                    ui.selectable_value(&mut self.selection_mode, SelectionMode::Bonds, "Bonds");
-                    let switched_away_from_atoms = changed_from_atoms && self.selection_mode != SelectionMode::Atoms;
-                    let switched_away_from_bonds = changed_from_bonds && self.selection_mode != SelectionMode::Bonds;
-                    if (switched_away_from_atoms || switched_away_from_bonds) && self.active_structure.is_some() {
-                        self.clear_selection();
-                    }
-                });
-                if self.selection_mode != SelectionMode::None {
+                if self.selection_mode == SelectionMode::Measure {
+                    ui.label(
+                        egui::RichText::new("Measure mode is active (see Analysis) — clicking builds a measurement instead.")
+                            .small()
+                            .italics(),
+                    );
+                } else {
                     ui.label(
                         egui::RichText::new("Click atoms/bonds in the viewport to select them.")
                             .small()
@@ -603,103 +600,93 @@ impl App {
                     return;
                 };
 
-                match self.selection_mode {
-                    SelectionMode::Atoms => {
-                        let summary = self.structures[active]
-                            .selected_atoms
-                            .iter()
-                            .map(|&i| format!("{}{}", element_data(self.structures[active].molecule.atomic_numbers[i]).symbol, i + 1))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        ui.label(format!("Selected atoms: {}", self.structures[active].selected_atoms.len()));
-                        if !summary.is_empty() {
-                            ui.label(egui::RichText::new(summary).small());
-                        }
-                        ui.horizontal(|ui| {
-                            if ui.button("Hide atoms").clicked() {
-                                if self.structures[active].selected_atoms.is_empty() {
-                                    self.show_warning("No atoms selected");
-                                } else {
-                                    let selected = std::mem::take(&mut self.structures[active].selected_atoms);
-                                    self.structures[active].hidden_atoms.extend(selected);
-                                    self.rebuild_geometry();
-                                    self.rebuild_highlights();
-                                }
-                            }
-                            if ui.button("Clear selection").clicked() {
-                                self.clear_selection();
-                            }
-                        });
-
-                        // Manual bond management: pick exactly two atoms
-                        // and either create a bond between them (useful
-                        // for depicting a forming/breaking contact too
-                        // long for automatic perception to catch) or
-                        // toggle the visibility of one that already
-                        // exists — a shortcut so this doesn't require
-                        // switching to Bonds mode separately.
-                        if self.structures[active].selected_atoms.len() == 2 {
-                            let a = self.structures[active].selected_atoms[0];
-                            let b = self.structures[active].selected_atoms[1];
-                            let existing_bond = find_bond_between(&self.structures[active].molecule, a, b);
-
-                            ui.add_space(6.0);
-                            match existing_bond {
-                                None => {
-                                    if ui.button("Create bond").clicked() {
-                                        self.structures[active].molecule.bonds.push(Bond { atom_a: a, atom_b: b });
-                                        self.structures[active].bond_styles.push(BondVisualStyle::Single);
-                                        self.rebuild_geometry();
-                                    }
-                                }
-                                Some(bond_index) => {
-                                    let is_hidden = self.structures[active].hidden_bonds.contains(&bond_index);
-                                    let label = if is_hidden { "Show bond" } else { "Hide bond" };
-                                    if ui.button(label).clicked() {
-                                        if is_hidden {
-                                            self.structures[active].hidden_bonds.remove(&bond_index);
-                                        } else {
-                                            self.structures[active].hidden_bonds.insert(bond_index);
-                                        }
-                                        self.rebuild_geometry();
-                                    }
-                                }
-                            }
+                let summary = self.structures[active]
+                    .selected_atoms
+                    .iter()
+                    .map(|&i| format!("{}{}", element_data(self.structures[active].molecule.atomic_numbers[i]).symbol, i + 1))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                ui.label(format!("Selected atoms: {}", self.structures[active].selected_atoms.len()));
+                if !summary.is_empty() {
+                    ui.label(egui::RichText::new(summary).small());
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("Hide atoms").clicked() {
+                        if self.structures[active].selected_atoms.is_empty() {
+                            self.show_warning("No atoms selected");
+                        } else {
+                            let selected = std::mem::take(&mut self.structures[active].selected_atoms);
+                            self.structures[active].hidden_atoms.extend(selected);
+                            self.rebuild_geometry();
+                            self.rebuild_highlights();
                         }
                     }
-                    SelectionMode::Bonds => {
-                        ui.label(format!("Selected bonds: {}", self.structures[active].selected_bonds.len()));
-                        ui.horizontal(|ui| {
-                            if ui.button("Single").clicked() {
-                                self.apply_bond_style(BondVisualStyle::Single);
+                    if ui.button("Clear selection").clicked() {
+                        self.clear_selection();
+                    }
+                });
+
+                // Manual bond management: pick exactly two atoms and
+                // either create a bond between them (useful for depicting
+                // a forming/breaking contact too long for automatic
+                // perception to catch) or toggle the visibility of one
+                // that already exists.
+                if self.structures[active].selected_atoms.len() == 2 {
+                    let a = self.structures[active].selected_atoms[0];
+                    let b = self.structures[active].selected_atoms[1];
+                    let existing_bond = find_bond_between(&self.structures[active].molecule, a, b);
+
+                    ui.add_space(6.0);
+                    match existing_bond {
+                        None => {
+                            if ui.button("Create bond").clicked() {
+                                self.structures[active].molecule.bonds.push(Bond { atom_a: a, atom_b: b });
+                                self.structures[active].bond_styles.push(BondVisualStyle::Single);
+                                self.rebuild_geometry();
                             }
-                            if ui.button("TS").clicked() {
-                                self.apply_bond_style(BondVisualStyle::TransitionState);
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            if ui.button("Hide bonds").clicked() {
-                                if self.structures[active].selected_bonds.is_empty() {
-                                    self.show_warning("No bonds selected");
+                        }
+                        Some(bond_index) => {
+                            let is_hidden = self.structures[active].hidden_bonds.contains(&bond_index);
+                            let label = if is_hidden { "Show bond" } else { "Hide bond" };
+                            if ui.button(label).clicked() {
+                                if is_hidden {
+                                    self.structures[active].hidden_bonds.remove(&bond_index);
                                 } else {
-                                    let selected = std::mem::take(&mut self.structures[active].selected_bonds);
-                                    self.structures[active].hidden_bonds.extend(selected);
-                                    self.rebuild_geometry();
-                                    self.rebuild_highlights();
+                                    self.structures[active].hidden_bonds.insert(bond_index);
                                 }
+                                self.rebuild_geometry();
                             }
-                            if ui.button("Clear selection").clicked() {
-                                self.clear_selection();
-                            }
-                        });
-                    }
-                    SelectionMode::None => {
-                        ui.label(egui::RichText::new("Turn on Atoms or Bonds mode to select.").weak());
-                    }
-                    SelectionMode::Measure => {
-                        ui.label(egui::RichText::new("Measure mode is active — see the Analysis panel.").weak());
+                        }
                     }
                 }
+
+                ui.add_space(10.0);
+                ui.separator();
+
+                ui.label(format!("Selected bonds: {}", self.structures[active].selected_bonds.len()));
+                ui.horizontal(|ui| {
+                    if ui.button("Single").clicked() {
+                        self.apply_bond_style(BondVisualStyle::Single);
+                    }
+                    if ui.button("TS").clicked() {
+                        self.apply_bond_style(BondVisualStyle::TransitionState);
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("Hide bonds").clicked() {
+                        if self.structures[active].selected_bonds.is_empty() {
+                            self.show_warning("No bonds selected");
+                        } else {
+                            let selected = std::mem::take(&mut self.structures[active].selected_bonds);
+                            self.structures[active].hidden_bonds.extend(selected);
+                            self.rebuild_geometry();
+                            self.rebuild_highlights();
+                        }
+                    }
+                    if ui.button("Clear selection").clicked() {
+                        self.clear_selection();
+                    }
+                });
 
                 ui.add_space(10.0);
                 ui.separator();
@@ -743,16 +730,13 @@ impl App {
                 ui.label("Selection mode");
                 ui.horizontal(|ui| {
                     let previous_mode = self.selection_mode;
-                    ui.selectable_value(&mut self.selection_mode, SelectionMode::None, "Off");
+                    ui.selectable_value(&mut self.selection_mode, SelectionMode::Select, "Off");
                     ui.selectable_value(&mut self.selection_mode, SelectionMode::Measure, "Measure");
-                    if previous_mode != self.selection_mode {
+                    // Leaving Measure abandons whatever incomplete pick
+                    // was in progress rather than carrying it over.
+                    if previous_mode == SelectionMode::Measure && self.selection_mode != SelectionMode::Measure {
                         if let Some(active) = self.active_structure {
-                            if previous_mode == SelectionMode::Measure {
-                                self.structures[active].pending_measurement.clear();
-                            }
-                            if previous_mode == SelectionMode::Atoms || previous_mode == SelectionMode::Bonds {
-                                self.clear_selection();
-                            }
+                            self.structures[active].pending_measurement.clear();
                         }
                     }
                 });
@@ -980,8 +964,13 @@ impl eframe::App for App {
                     egui::Sense::click_and_drag(),
                 );
 
+                // Right-click drags the camera; left-click is reserved
+                // entirely for selection (below) — `dragged()` alone
+                // doesn't distinguish which button caused it, so this has
+                // to be `dragged_by` the specific button.
+                let camera_dragging = response.dragged_by(egui::PointerButton::Secondary);
                 let drag_delta = response.drag_delta();
-                if response.dragged() {
+                if camera_dragging {
                     if ui.input(|i| i.modifiers.shift) {
                         self.camera.pan(-drag_delta.x * 0.01, drag_delta.y * 0.01);
                     } else {
@@ -1024,40 +1013,47 @@ impl eframe::App for App {
 
                 let aspect_ratio = if rect.height() > 0.0 { rect.width() / rect.height() } else { 1.0 };
 
-                if self.selection_mode != SelectionMode::None && response.clicked() {
+                // Left-click always does something useful: in Measure
+                // mode it extends the pending pick, otherwise it selects
+                // whatever's under the cursor — an atom if one's there,
+                // a bond if not — for Visualization's hide/style actions.
+                // No separate "Atoms/Bonds/Off" mode needed for that
+                // anymore, since a click can only ever mean one thing at
+                // a time regardless.
+                if response.clicked() {
                     if let Some(pos) = response.interact_pointer_pos() {
                         let ndc_x = ((pos.x - rect.left()) / rect.width()) * 2.0 - 1.0;
                         let ndc_y = 1.0 - ((pos.y - rect.top()) / rect.height()) * 2.0;
                         let (origin, direction) = ray_from_ndc(&self.camera, aspect_ratio, ndc_x, ndc_y);
 
                         let structure = &self.structures[active];
-                        let hit = match self.selection_mode {
-                            SelectionMode::Atoms | SelectionMode::Measure => {
-                                pick_atom(&structure.molecule, origin, direction, self.material.atom_scale, &structure.hidden_atoms)
-                            }
-                            SelectionMode::Bonds => pick_bond(
+                        let atom_hit = pick_atom(&structure.molecule, origin, direction, self.material.atom_scale, &structure.hidden_atoms);
+                        let bond_hit = if atom_hit.is_none() && self.selection_mode != SelectionMode::Measure {
+                            pick_bond(
                                 &structure.molecule,
                                 origin,
                                 direction,
                                 self.material.bond_radius,
                                 &structure.hidden_atoms,
                                 &structure.hidden_bonds,
-                            ),
-                            SelectionMode::None => None,
+                            )
+                        } else {
+                            None
                         };
 
-                        if let Some(index) = hit {
-                            match self.selection_mode {
-                                SelectionMode::Atoms => toggle_selected(&mut self.structures[active].selected_atoms, index),
-                                SelectionMode::Bonds => toggle_selected(&mut self.structures[active].selected_bonds, index),
-                                SelectionMode::Measure => {
-                                    let pending = &mut self.structures[active].pending_measurement;
-                                    if pending.len() < 4 {
-                                        pending.push(index);
-                                    }
+                        if self.selection_mode == SelectionMode::Measure {
+                            if let Some(index) = atom_hit {
+                                let pending = &mut self.structures[active].pending_measurement;
+                                if pending.len() < 4 {
+                                    pending.push(index);
                                 }
-                                SelectionMode::None => {}
+                                self.rebuild_highlights();
                             }
+                        } else if let Some(index) = atom_hit {
+                            toggle_selected(&mut self.structures[active].selected_atoms, index);
+                            self.rebuild_highlights();
+                        } else if let Some(index) = bond_hit {
+                            toggle_selected(&mut self.structures[active].selected_bonds, index);
                             self.rebuild_highlights();
                         }
                     }
@@ -1153,7 +1149,7 @@ impl eframe::App for App {
 
                 self.show_warning_overlay(ui.ctx(), rect);
 
-                if response.dragged() || scroll_delta != 0.0 || keyboard_rotating || any_label_dragged {
+                if camera_dragging || scroll_delta != 0.0 || keyboard_rotating || any_label_dragged {
                     ui.ctx().request_repaint();
                 }
             });
