@@ -16,6 +16,10 @@ __pycache__/
 CLAUDE.md
 PROJECT-ROADMAP.md
 
+# Claude Code local tool config (permission allowlist etc.) — local
+# working setup, not project source, nothing here is sensitive either
+.claude/
+
 # APOST-3D test data (.fchk/.inp/.xyz/.cube) used for local testing — not
 # committed, these are your own calculation files, not project source
 *.fchk
