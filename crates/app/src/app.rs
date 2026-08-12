@@ -1,10 +1,11 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use apost3dview_core::{element_data, format_coordinates, measure, parse_xyz, Bond, CoordinateFormat, LengthUnit, MeasurementKind, Molecule};
 use apost3dview_render::{
-    is_atom_visible, pick_atom, pick_bond, ray_from_ndc, BondVisualStyle, Material, OrbitCamera, ViewportCallback,
-    ViewportResources,
+    glyph_scale_for_font_size, layout_label, pick_atom, pick_bond, ray_from_ndc, BondVisualStyle, GlyphAtlas,
+    GlyphInstance, Material, OrbitCamera, ViewportCallback, ViewportResources,
 };
 use egui::{Color32, Slider};
 use glam::{Vec3, Vec4};
@@ -79,6 +80,26 @@ fn project_to_screen(camera: &OrbitCamera, aspect_ratio: f32, rect: egui::Rect, 
     let x = rect.left() + (ndc_x * 0.5 + 0.5) * rect.width();
     let y = rect.top() + (1.0 - (ndc_y * 0.5 + 0.5)) * rect.height();
     Some(egui::pos2(x, y))
+}
+
+fn color32_to_rgb(color: Color32) -> [f32; 3] {
+    [color.r() as f32 / 255.0, color.g() as f32 / 255.0, color.b() as f32 / 255.0]
+}
+
+/// Lays out `text` as 3D glyph instances anchored at `anchor`, appending to
+/// `instances`. "Bold" is a second copy offset by a fraction of a glyph
+/// width — the bundled font has no true bold weight, same trick the old
+/// 2D rendering used, just now in world space instead of screen pixels.
+fn push_label(instances: &mut Vec<GlyphInstance>, atlas: &GlyphAtlas, text: &str, anchor: Vec3, scale: f32, color: [f32; 3], bold: bool) {
+    let base = layout_label(atlas, text, anchor, scale, color);
+    if bold {
+        let mut shifted = base.clone();
+        for glyph in &mut shifted {
+            glyph.local_offset[0] += scale * 0.6;
+        }
+        instances.extend(shifted);
+    }
+    instances.extend(base);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,6 +208,11 @@ pub struct App {
     structures: Vec<LoadedStructure>,
     active_structure: Option<usize>,
     logo_texture: egui::TextureHandle,
+    /// Also handed to `ViewportResources` at construction (for the GPU
+    /// texture) — kept here too since label layout is a CPU-side
+    /// computation done every frame in this crate, not inside the
+    /// renderer.
+    glyph_atlas: Arc<GlyphAtlas>,
     start_time: Instant,
     render_state: egui_wgpu::RenderState,
 
@@ -218,7 +244,8 @@ impl App {
             .clone()
             .expect("eframe must be running with the wgpu backend");
 
-        let resources = ViewportResources::new(&render_state.device, render_state.target_format);
+        let glyph_atlas = Arc::new(GlyphAtlas::new(&render_state.device, &render_state.queue));
+        let resources = ViewportResources::new(&render_state.device, render_state.target_format, &glyph_atlas);
         render_state.renderer.write().callback_resources.insert(resources);
 
         let logo_texture = load_texture(&cc.egui_ctx, "apost3d_logo", include_bytes!("../assets/logo.png"));
@@ -229,6 +256,7 @@ impl App {
             structures: Vec::new(),
             active_structure: None,
             logo_texture,
+            glyph_atlas,
             start_time: Instant::now(),
             render_state,
             show_style: true,
@@ -1035,17 +1063,15 @@ impl eframe::App for App {
                     }
                 }
 
-                let callback = ViewportCallback {
-                    camera: self.camera,
-                    material: self.material,
-                    aspect_ratio,
-                };
-                ui.painter()
-                    .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
+                // True 3D labels: real depth-tested billboard glyph quads
+                // (see crates/render/src/{glyphs,label,shaders/text.wgsl}),
+                // not a 2D UI overlay — so a bond or atom nearer the camera
+                // correctly, even partially, occludes them. Built fresh
+                // each repaint and handed to the wgpu callback below,
+                // since a label's world size (for constant apparent size)
+                // depends on its current distance from the camera.
+                let mut label_instances: Vec<GlyphInstance> = Vec::new();
 
-                // Atom labels (Number/Type/Number+Type) — same screen-
-                // space projection technique as measurement labels, but no
-                // drag offset: these should just track their atom.
                 if self.atom_label_mode != AtomLabelMode::None {
                     let structure = &self.structures[active];
                     // Carbon as the "typical" atom size reference — other
@@ -1053,78 +1079,60 @@ impl eframe::App for App {
                     // very small (H) or very large (Fr-scale) atom doesn't
                     // get an illegibly tiny or absurdly oversized label.
                     let reference_radius = element_data(6).vdw_radius;
+                    let color = color32_to_rgb(self.atom_label_style.text_color);
                     for (index, (&z, &position)) in structure.molecule.atomic_numbers.iter().zip(&structure.molecule.positions).enumerate()
                     {
                         if structure.hidden_atoms.contains(&index) {
                             continue;
                         }
-                        // Skip if something else (another atom, or a bond
-                        // not attached to this one) sits closer to the
-                        // camera along the ray to this atom's center — a
-                        // coarse but effective fix for labels floating
-                        // over an unrelated bond because their atom is
-                        // actually hidden behind a cluster in front of it.
-                        if !is_atom_visible(
-                            &structure.molecule,
-                            self.camera.eye(),
-                            index,
-                            self.material.atom_scale,
-                            self.material.bond_radius,
-                            &structure.hidden_atoms,
-                            &structure.hidden_bonds,
-                        ) {
-                            continue;
-                        }
-                        let Some(screen_pos) = project_to_screen(&self.camera, aspect_ratio, rect, position) else { continue };
-
+                        let distance = (position - self.camera.eye()).length();
+                        let world_per_pixel = self.camera.world_units_per_pixel(distance, rect.height());
                         let size_scale = (element_data(z).vdw_radius / reference_radius).clamp(0.55, 1.6);
-                        let font_id = egui::FontId::proportional(self.atom_label_style.font_size * size_scale);
+                        let scale = glyph_scale_for_font_size(self.atom_label_style.font_size * size_scale, world_per_pixel);
                         let text = match self.atom_label_mode {
                             AtomLabelMode::Number => format!("{}", index + 1),
                             AtomLabelMode::Type => element_data(z).symbol.to_string(),
                             AtomLabelMode::NumberType => format!("{}{}", element_data(z).symbol, index + 1),
                             AtomLabelMode::None => unreachable!(),
                         };
-                        let galley = ui.painter().layout_no_wrap(text, font_id, self.atom_label_style.text_color);
-                        let origin = screen_pos - galley.size() * 0.5;
-                        if self.atom_label_style.bold {
-                            ui.painter().galley(origin + egui::vec2(0.6, 0.0), galley.clone(), self.atom_label_style.text_color);
-                        }
-                        ui.painter().galley(origin, galley, self.atom_label_style.text_color);
+                        push_label(&mut label_instances, &self.glyph_atlas, &text, position, scale, color, self.atom_label_style.bold);
                     }
                 }
 
-                // Measurement labels: 2D screen-space overlays (not 3D
-                // geometry) projected from each measurement's atom
-                // centroid each frame, offset by whatever the user has
-                // dragged them to. Screen-space rather than world-space so
-                // they stay upright and legible at any rotation.
+                // Measurement labels still live in screen space for the
+                // *offset* the user drags them by (simplest way to keep
+                // "nudge it N pixels clear of the clutter" behavior
+                // whatever the current zoom/rotation) — but that offset
+                // is converted to a world-space position every frame
+                // before rendering, same as the atom labels above, so
+                // it's still real, depth-tested 3D geometry.
                 let mut label_updates: Vec<(usize, egui::Vec2)> = Vec::new();
+                let (camera_right, camera_up) = self.camera.screen_basis();
+                let measurement_color = color32_to_rgb(self.measurement_style.text_color);
                 for (index, measurement) in self.structures[active].measurements.iter().enumerate() {
                     let anchor = measurement_anchor(&self.structures[active].molecule, measurement.kind);
-                    let Some(screen_pos) = project_to_screen(&self.camera, aspect_ratio, rect, anchor) else { continue };
-                    let label_pos = screen_pos + measurement.label_offset;
+                    let distance = (anchor - self.camera.eye()).length();
+                    let world_per_pixel = self.camera.world_units_per_pixel(distance, rect.height());
+                    let world_offset = camera_right * (measurement.label_offset.x * world_per_pixel)
+                        - camera_up * (measurement.label_offset.y * world_per_pixel);
+                    let final_anchor = anchor + world_offset;
 
                     let value = measure(&self.structures[active].molecule, measurement.kind);
                     let text = format_measurement(measurement.kind, value, self.coordinate_unit, self.measurement_style.decimal_places);
-                    let font_id = egui::FontId::proportional(self.measurement_style.font_size);
-                    let galley = ui.painter().layout_no_wrap(text, font_id, self.measurement_style.text_color);
-                    let text_rect = egui::Rect::from_center_size(label_pos, galley.size() + egui::vec2(8.0, 4.0));
-                    let text_origin = text_rect.center() - galley.size() * 0.5;
+                    let scale = glyph_scale_for_font_size(self.measurement_style.font_size, world_per_pixel);
+                    push_label(&mut label_instances, &self.glyph_atlas, &text, final_anchor, scale, measurement_color, self.measurement_style.bold);
 
-                    // No background — fully transparent, so the label
-                    // doesn't obscure the molecule behind it. "Bold" is
-                    // faked by drawing the same galley twice, offset by a
-                    // fraction of a pixel, since the bundled fonts don't
-                    // include a true bold weight.
-                    if self.measurement_style.bold {
-                        ui.painter().galley(text_origin + egui::vec2(0.6, 0.0), galley.clone(), self.measurement_style.text_color);
-                    }
-                    ui.painter().galley(text_origin, galley, self.measurement_style.text_color);
-
-                    let label_response = ui.interact(text_rect, ui.id().with(("measurement_label", active, index)), egui::Sense::drag());
-                    if label_response.dragged() {
-                        label_updates.push((index, measurement.label_offset + label_response.drag_delta()));
+                    // Hit-test area for dragging: approximate (text length
+                    // × font size), since there's no 2D layout pass to get
+                    // an exact box from anymore.
+                    if let Some(screen_pos) = project_to_screen(&self.camera, aspect_ratio, rect, final_anchor) {
+                        let approx_width = text.chars().count() as f32 * self.measurement_style.font_size * 0.55;
+                        let approx_height = self.measurement_style.font_size * 1.3;
+                        let hit_rect = egui::Rect::from_center_size(screen_pos, egui::vec2(approx_width, approx_height));
+                        let label_response = ui.interact(hit_rect, ui.id().with(("measurement_label", active, index)), egui::Sense::drag());
+                        if label_response.dragged() {
+                            label_updates.push((index, measurement.label_offset + label_response.drag_delta()));
+                        }
                     }
                 }
                 let any_label_dragged = !label_updates.is_empty();
@@ -1133,6 +1141,15 @@ impl eframe::App for App {
                         measurement.label_offset = offset;
                     }
                 }
+
+                let callback = ViewportCallback {
+                    camera: self.camera,
+                    material: self.material,
+                    aspect_ratio,
+                    label_instances,
+                };
+                ui.painter()
+                    .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
 
                 self.show_warning_overlay(ui.ctx(), rect);
 

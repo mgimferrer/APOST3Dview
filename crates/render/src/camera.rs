@@ -95,4 +95,17 @@ impl OrbitCamera {
         self.target = center;
         self.distance = (radius / (self.fov_y_radians * 0.5).sin()).max(Self::MIN_DISTANCE);
     }
+
+    /// World units spanned by one screen pixel at a given distance from
+    /// the eye — the standard perspective-camera conversion. Used to size
+    /// 3D-anchored labels so they keep a constant *apparent* (on-screen)
+    /// size regardless of how far their anchor is from the camera, the
+    /// same way a 2D overlay would behave, despite now being real
+    /// world-space geometry.
+    pub fn world_units_per_pixel(&self, distance: f32, viewport_height_px: f32) -> f32 {
+        if viewport_height_px <= 0.0 {
+            return 0.0;
+        }
+        2.0 * distance * (self.fov_y_radians * 0.5).tan() / viewport_height_px
+    }
 }
