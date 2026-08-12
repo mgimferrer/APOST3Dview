@@ -28,11 +28,12 @@ impl Default for Material {
             diffuse: 0.75,
             specular: 0.45,
             shininess: 32.0,
-            // Aligned with the camera (see light_dir below) rather than
-            // offset from it, so no part of the visible hemisphere ever
-            // falls into shadow, at any orbit angle.
-            light_yaw: 0.0,
-            light_pitch: 0.0,
+            // Small offset from the camera (see light_dir below) — Martí
+            // tuned this by eye (2026-08-12): a slight angle here reads
+            // better than a dead-on flash, while staying subtle enough
+            // that no part of the visible hemisphere goes into shadow.
+            light_yaw: -0.5,
+            light_pitch: 0.20,
             background: [1.0, 1.0, 1.0],
             atom_scale: 0.20,
             bond_radius: 0.15,
@@ -45,11 +46,11 @@ impl Material {
     /// own (right, up, forward) basis — a "headlight" rig. Rotates with
     /// the camera so the lit/shadowed pattern on the molecule stays fixed
     /// relative to the screen as you orbit, instead of sweeping across the
-    /// molecule the way a world-fixed light direction would. At the
-    /// default zero offset the light sits exactly on the camera (a ring
-    /// light/flash rig): shading becomes a pure function of view
-    /// direction, so it's rotation-invariant, not just less noticeable —
-    /// no point on the visible hemisphere can fall into shadow.
+    /// molecule the way a world-fixed light direction would: since the
+    /// offset itself is defined relative to the camera, not the world,
+    /// shading is rotation-invariant regardless of how far off-axis it is
+    /// — a small offset (the default) just reads better visually than a
+    /// dead-on flash, without reintroducing the original problem.
     pub fn light_dir(&self, camera_right: Vec3, camera_up: Vec3, camera_forward: Vec3) -> Vec3 {
         // Subtract the forward component: a headlight sits near the
         // camera and shines into the scene, so the surface-to-light
