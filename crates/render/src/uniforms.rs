@@ -24,7 +24,7 @@ impl SceneUniforms {
         let view_proj = camera.view_projection_matrix(aspect_ratio);
         let eye = camera.eye();
         let (right, up) = camera.screen_basis();
-        let light_dir = material.light_dir();
+        let light_dir = material.light_dir(right, up, camera.forward());
         Self {
             view_proj: view_proj.to_cols_array_2d(),
             camera_eye: [eye.x, eye.y, eye.z, 0.0],

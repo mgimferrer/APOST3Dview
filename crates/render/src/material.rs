@@ -40,12 +40,18 @@ impl Default for Material {
 }
 
 impl Material {
-    pub fn light_dir(&self) -> Vec3 {
-        Vec3::new(
-            self.light_pitch.cos() * self.light_yaw.sin(),
-            self.light_pitch.sin(),
-            self.light_pitch.cos() * self.light_yaw.cos(),
-        )
+    /// Light direction as an offset from camera-forward, in the camera's
+    /// own (right, up, forward) basis — a "headlight" rig. Rotates with
+    /// the camera so the lit/shadowed pattern on the molecule stays fixed
+    /// relative to the screen as you orbit, instead of sweeping across the
+    /// molecule the way a world-fixed light direction would.
+    pub fn light_dir(&self, camera_right: Vec3, camera_up: Vec3, camera_forward: Vec3) -> Vec3 {
+        // Subtract the forward component: a headlight sits near the
+        // camera and shines into the scene, so the surface-to-light
+        // direction points back out toward the viewer, not further in.
+        (camera_right * self.light_pitch.cos() * self.light_yaw.sin()
+            + camera_up * self.light_pitch.sin()
+            - camera_forward * self.light_pitch.cos() * self.light_yaw.cos())
         .normalize()
     }
 }

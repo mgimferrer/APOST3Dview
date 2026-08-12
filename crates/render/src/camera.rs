@@ -75,10 +75,14 @@ impl OrbitCamera {
         self.distance = (self.distance - delta).clamp(Self::MIN_DISTANCE, Self::MAX_DISTANCE);
     }
 
+    pub fn forward(&self) -> Vec3 {
+        (self.target - self.eye()).normalize_or_zero()
+    }
+
     /// (right, up) camera basis vectors, used to billboard atom impostors
     /// toward the camera.
     pub fn screen_basis(&self) -> (Vec3, Vec3) {
-        let forward = (self.target - self.eye()).normalize_or_zero();
+        let forward = self.forward();
         let right = forward.cross(Vec3::Y).normalize_or_zero();
         let up = right.cross(forward).normalize_or_zero();
         (right, up)
