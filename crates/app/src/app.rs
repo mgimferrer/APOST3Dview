@@ -48,9 +48,14 @@ impl eframe::App for App {
                 ui.heading("Style");
                 ui.add_space(8.0);
 
-                if ui.button("Default").clicked() {
-                    self.material = Material::default();
-                }
+                ui.horizontal(|ui| {
+                    if ui.button("Default").clicked() {
+                        self.material = Material::default();
+                    }
+                    if ui.button("Publication").clicked() {
+                        self.material = Material::publication();
+                    }
+                });
 
                 ui.add_space(8.0);
                 ui.label("Geometry");

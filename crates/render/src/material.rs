@@ -42,6 +42,17 @@ impl Default for Material {
 }
 
 impl Material {
+    /// Same as [`Default`] but with the light dead-on the camera (zero
+    /// yaw/pitch offset) — for image export rather than interactive
+    /// viewing. The small default offset reads better on screen, but it
+    /// means two different orientations of the same molecule can show
+    /// visibly different highlight placement, which is undesirable when
+    /// the images are meant to sit side by side in a publication. Zero
+    /// offset removes that last bit of orientation-dependence entirely.
+    pub fn publication() -> Self {
+        Self { light_yaw: 0.0, light_pitch: 0.0, ..Self::default() }
+    }
+
     /// Light direction as an offset from camera-forward, in the camera's
     /// own (right, up, forward) basis — a "headlight" rig. Rotates with
     /// the camera so the lit/shadowed pattern on the molecule stays fixed
