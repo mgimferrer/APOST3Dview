@@ -1,13 +1,39 @@
+use std::collections::HashSet;
+
 use wgpu::util::DeviceExt;
 
 use apost3dview_core::Molecule;
 
 use crate::camera::OrbitCamera;
 use crate::consts::{DEPTH_FORMAT, MSAA_SAMPLES};
-use crate::instances::{build_atom_instances, build_bond_instances, AtomInstance, BondInstance};
+use crate::instances::{
+    build_atom_highlight_instances, build_atom_instances, build_bond_highlight_instances, build_bond_instances,
+    AtomInstance, BondInstance, BondVisualStyle,
+};
 use crate::material::Material;
 use crate::mesh::{build_unit_cylinder, CylinderVertex};
 use crate::uniforms::SceneUniforms;
+
+fn atom_instance_attributes() -> [wgpu::VertexAttribute; 3] {
+    [
+        wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x3 },
+        wgpu::VertexAttribute { offset: 12, shader_location: 1, format: wgpu::VertexFormat::Float32 },
+        wgpu::VertexAttribute { offset: 16, shader_location: 2, format: wgpu::VertexFormat::Float32x3 },
+    ]
+}
+
+fn bond_instance_attributes() -> [wgpu::VertexAttribute; 4] {
+    [
+        wgpu::VertexAttribute { offset: 0, shader_location: 2, format: wgpu::VertexFormat::Float32x3 },
+        wgpu::VertexAttribute { offset: 12, shader_location: 3, format: wgpu::VertexFormat::Float32 },
+        wgpu::VertexAttribute { offset: 16, shader_location: 4, format: wgpu::VertexFormat::Float32x3 },
+        wgpu::VertexAttribute { offset: 28, shader_location: 5, format: wgpu::VertexFormat::Float32 },
+    ]
+}
+
+fn bond_color_attribute() -> wgpu::VertexAttribute {
+    wgpu::VertexAttribute { offset: 32, shader_location: 6, format: wgpu::VertexFormat::Float32x3 }
+}
 
 /// Owns the GPU resources for the 3D viewport (pipelines, buffers). Lives
 /// in egui-wgpu's `CallbackResources` so it shares the device/queue eframe
@@ -18,6 +44,8 @@ pub struct ViewportResources {
 
     atom_pipeline: wgpu::RenderPipeline,
     cylinder_pipeline: wgpu::RenderPipeline,
+    atom_highlight_pipeline: wgpu::RenderPipeline,
+    cylinder_highlight_pipeline: wgpu::RenderPipeline,
 
     cylinder_vertex_buffer: wgpu::Buffer,
     cylinder_index_buffer: wgpu::Buffer,
@@ -25,6 +53,8 @@ pub struct ViewportResources {
 
     atom_instances: Option<(wgpu::Buffer, u32)>,
     bond_instances: Option<(wgpu::Buffer, u32)>,
+    atom_highlight_instances: Option<(wgpu::Buffer, u32)>,
+    bond_highlight_instances: Option<(wgpu::Buffer, u32)>,
 }
 
 impl ViewportResources {
@@ -62,96 +92,73 @@ impl ViewportResources {
             immediate_size: 0,
         });
 
-        let depth_stencil = Some(wgpu::DepthStencilState {
+        let opaque_depth = Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: Some(true),
             depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         });
+        // Highlight overlays reuse the exact geometry (or a very slightly
+        // enlarged one for atoms) of what's already drawn, so an exact
+        // `Less` comparison risks failing on floating-point ties — hence
+        // `LessEqual` and no depth write, so the overlay reliably shows up
+        // without disturbing depth for anything drawn after it.
+        let highlight_depth = Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        });
         let multisample = wgpu::MultisampleState { count: MSAA_SAMPLES, ..Default::default() };
 
-        let atom_pipeline = {
-            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("sphere_impostor_shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/sphere.wgsl").into()),
-            });
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("atom_pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[Some(wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<AtomInstance>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &[
-                            wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x3 },
-                            wgpu::VertexAttribute { offset: 12, shader_location: 1, format: wgpu::VertexFormat::Float32 },
-                            wgpu::VertexAttribute { offset: 16, shader_location: 2, format: wgpu::VertexFormat::Float32x3 },
-                        ],
-                    })],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: target_format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-                depth_stencil: depth_stencil.clone(),
-                multisample,
-                multiview_mask: None,
-                cache: None,
-            })
+        let sphere_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("sphere_impostor_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/sphere.wgsl").into()),
+        });
+        let cylinder_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("cylinder_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/cylinder.wgsl").into()),
+        });
+
+        let atom_instance_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<AtomInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &atom_instance_attributes(),
+        };
+        let bond_attrs = bond_instance_attributes();
+        let bond_color_attr = bond_color_attribute();
+        let bond_instance_attrs =
+            [bond_attrs[0], bond_attrs[1], bond_attrs[2], bond_attrs[3], bond_color_attr];
+        let bond_instance_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<BondInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &bond_instance_attrs,
+        };
+        let cylinder_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<CylinderVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x3 },
+                wgpu::VertexAttribute { offset: 12, shader_location: 1, format: wgpu::VertexFormat::Float32x3 },
+            ],
         };
 
-        let cylinder_pipeline = {
-            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("cylinder_shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/cylinder.wgsl").into()),
-            });
+        let make_atom_pipeline = |label: &str, entry_point: &'static str, blend, depth_stencil: Option<wgpu::DepthStencilState>| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("cylinder_pipeline"),
+                label: Some(label),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
-                    module: &shader,
+                    module: &sphere_shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[
-                        Some(wgpu::VertexBufferLayout {
-                            array_stride: std::mem::size_of::<CylinderVertex>() as u64,
-                            step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &[
-                                wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x3 },
-                                wgpu::VertexAttribute { offset: 12, shader_location: 1, format: wgpu::VertexFormat::Float32x3 },
-                            ],
-                        }),
-                        Some(wgpu::VertexBufferLayout {
-                            array_stride: std::mem::size_of::<BondInstance>() as u64,
-                            step_mode: wgpu::VertexStepMode::Instance,
-                            attributes: &[
-                                wgpu::VertexAttribute { offset: 0, shader_location: 2, format: wgpu::VertexFormat::Float32x3 },
-                                wgpu::VertexAttribute { offset: 12, shader_location: 3, format: wgpu::VertexFormat::Float32 },
-                                wgpu::VertexAttribute { offset: 16, shader_location: 4, format: wgpu::VertexFormat::Float32x3 },
-                                wgpu::VertexAttribute { offset: 32, shader_location: 5, format: wgpu::VertexFormat::Float32x3 },
-                            ],
-                        }),
-                    ],
+                    buffers: &[Some(atom_instance_layout.clone())],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: target_format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
+                    module: &sphere_shader,
+                    entry_point: Some(entry_point),
+                    targets: &[Some(wgpu::ColorTargetState { format: target_format, blend, write_mask: wgpu::ColorWrites::ALL })],
                     compilation_options: Default::default(),
                 }),
                 primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
@@ -161,6 +168,47 @@ impl ViewportResources {
                 cache: None,
             })
         };
+
+        let atom_pipeline = make_atom_pipeline("atom_pipeline", "fs_main", Some(wgpu::BlendState::REPLACE), opaque_depth.clone());
+        let atom_highlight_pipeline = make_atom_pipeline(
+            "atom_highlight_pipeline",
+            "fs_highlight",
+            Some(wgpu::BlendState::ALPHA_BLENDING),
+            highlight_depth.clone(),
+        );
+
+        let make_cylinder_pipeline = |label: &str, entry_point: &'static str, blend, depth_stencil: Option<wgpu::DepthStencilState>| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &cylinder_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Some(cylinder_vertex_layout.clone()), Some(bond_instance_layout.clone())],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &cylinder_shader,
+                    entry_point: Some(entry_point),
+                    targets: &[Some(wgpu::ColorTargetState { format: target_format, blend, write_mask: wgpu::ColorWrites::ALL })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+                depth_stencil,
+                multisample,
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+
+        let cylinder_pipeline =
+            make_cylinder_pipeline("cylinder_pipeline", "fs_main", Some(wgpu::BlendState::REPLACE), opaque_depth);
+        let cylinder_highlight_pipeline = make_cylinder_pipeline(
+            "cylinder_highlight_pipeline",
+            "fs_highlight",
+            Some(wgpu::BlendState::ALPHA_BLENDING),
+            highlight_depth,
+        );
 
         let (cylinder_vertices, cylinder_indices) = build_unit_cylinder(16);
         let cylinder_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -179,17 +227,40 @@ impl ViewportResources {
             bind_group,
             atom_pipeline,
             cylinder_pipeline,
+            atom_highlight_pipeline,
+            cylinder_highlight_pipeline,
             cylinder_vertex_buffer,
             cylinder_index_buffer,
             cylinder_index_count: cylinder_indices.len() as u32,
             atom_instances: None,
             bond_instances: None,
+            atom_highlight_instances: None,
+            bond_highlight_instances: None,
         }
     }
 
+    /// Initial upload when a molecule is opened — everything visible, no
+    /// selection, all bonds solid.
     pub fn load_molecule(&mut self, device: &wgpu::Device, molecule: &Molecule) {
-        let atom_data = build_atom_instances(molecule);
-        let bond_data = build_bond_instances(molecule);
+        self.update_geometry(device, molecule, &HashSet::new(), &HashSet::new(), &[]);
+        self.update_highlights(device, molecule, &[], &[]);
+    }
+
+    /// Rebuilds the atom/bond instance buffers from current hide/style
+    /// state. A rare, user-triggered event (a button click), not a
+    /// per-frame cost — cheap to just rebuild outright rather than track
+    /// incremental diffs, even for much larger molecules than this project
+    /// currently targets.
+    pub fn update_geometry(
+        &mut self,
+        device: &wgpu::Device,
+        molecule: &Molecule,
+        hidden_atoms: &HashSet<usize>,
+        hidden_bonds: &HashSet<usize>,
+        bond_styles: &[BondVisualStyle],
+    ) {
+        let atom_data = build_atom_instances(molecule, hidden_atoms);
+        let bond_data = build_bond_instances(molecule, hidden_atoms, hidden_bonds, bond_styles);
 
         let atom_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("atom_instance_buffer"),
@@ -204,6 +275,32 @@ impl ViewportResources {
 
         self.atom_instances = Some((atom_buffer, atom_data.len() as u32));
         self.bond_instances = Some((bond_buffer, bond_data.len() as u32));
+    }
+
+    /// Rebuilds the small overlay buffers for the current selection.
+    pub fn update_highlights(
+        &mut self,
+        device: &wgpu::Device,
+        molecule: &Molecule,
+        selected_atoms: &[usize],
+        selected_bonds: &[usize],
+    ) {
+        let atom_data = build_atom_highlight_instances(molecule, selected_atoms);
+        let bond_data = build_bond_highlight_instances(molecule, selected_bonds);
+
+        let atom_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("atom_highlight_instance_buffer"),
+            contents: bytemuck::cast_slice(&atom_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let bond_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("bond_highlight_instance_buffer"),
+            contents: bytemuck::cast_slice(&bond_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        self.atom_highlight_instances = Some((atom_buffer, atom_data.len() as u32));
+        self.bond_highlight_instances = Some((bond_buffer, bond_data.len() as u32));
     }
 
     fn write_uniforms(&self, queue: &wgpu::Queue, uniforms: &SceneUniforms) {
@@ -256,6 +353,25 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             render_pass.set_pipeline(&resources.atom_pipeline);
             render_pass.set_vertex_buffer(0, buffer.slice(..));
             render_pass.draw(0..6, 0..*count);
+        }
+
+        // Highlight overlays last, alpha-blended on top of the opaque pass.
+        if let Some((buffer, count)) = &resources.bond_highlight_instances {
+            if *count > 0 {
+                render_pass.set_pipeline(&resources.cylinder_highlight_pipeline);
+                render_pass.set_vertex_buffer(0, resources.cylinder_vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, buffer.slice(..));
+                render_pass.set_index_buffer(resources.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..resources.cylinder_index_count, 0, 0..*count);
+            }
+        }
+
+        if let Some((buffer, count)) = &resources.atom_highlight_instances {
+            if *count > 0 {
+                render_pass.set_pipeline(&resources.atom_highlight_pipeline);
+                render_pass.set_vertex_buffer(0, buffer.slice(..));
+                render_pass.draw(0..6, 0..*count);
+            }
         }
     }
 }

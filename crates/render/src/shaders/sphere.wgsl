@@ -101,3 +101,37 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     out.depth = ndc_depth;
     return out;
 }
+
+// Selection-highlight pass: same silhouette (drawn at a slightly larger
+// instance radius so it peeks out as a rim), no lighting — just a flat
+// translucent tint layered on top of the normal opaque render.
+@fragment
+fn fs_highlight(in: VertexOutput) -> FragmentOutput {
+    let ray_origin = scene.camera_eye.xyz;
+    let ray_dir = normalize(in.world_position - ray_origin);
+
+    let oc = ray_origin - in.center;
+    let b = dot(oc, ray_dir);
+    let c = dot(oc, oc) - in.radius * in.radius;
+    let discriminant = b * b - c;
+    if (discriminant < 0.0) {
+        discard;
+    }
+    let sqrt_disc = sqrt(discriminant);
+    var t = -b - sqrt_disc;
+    if (t < 0.0) {
+        t = -b + sqrt_disc;
+    }
+    if (t < 0.0) {
+        discard;
+    }
+
+    let hit_point = ray_origin + t * ray_dir;
+    let clip = scene.view_proj * vec4<f32>(hit_point, 1.0);
+    let ndc_depth = clip.z / clip.w;
+
+    var out: FragmentOutput;
+    out.color = vec4<f32>(in.color, 0.35);
+    out.depth = ndc_depth;
+    return out;
+}
