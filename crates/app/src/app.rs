@@ -1,12 +1,31 @@
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use apost3dview_core::Molecule;
 use apost3dview_render::{Material, OrbitCamera, ViewportCallback, ViewportResources};
 use egui::{Color32, Slider};
 
+/// Minimum time the splash screen stays up, regardless of how fast startup
+/// actually finishes — startup (parsing the sample .fchk, uploading the
+/// molecule) currently takes low-single-digit milliseconds, so in practice
+/// this is the entire splash duration today. Once slower loading paths
+/// exist (Phase 3's Python bridge), this becomes a floor rather than the
+/// whole story.
+const SPLASH_MIN_DURATION: Duration = Duration::from_secs(4);
+
+fn load_texture(ctx: &egui::Context, name: &str, png_bytes: &[u8]) -> egui::TextureHandle {
+    let image = image::load_from_memory(png_bytes).expect("bundled image should be valid").to_rgba8();
+    let size = [image.width() as usize, image.height() as usize];
+    let color_image = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
+    ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR)
+}
+
 pub struct App {
     camera: OrbitCamera,
     material: Material,
+    logo_texture: egui::TextureHandle,
+    show_about: bool,
+    start_time: Instant,
 }
 
 impl App {
@@ -36,16 +55,81 @@ impl App {
 
         render_state.renderer.write().callback_resources.insert(resources);
 
-        Self { camera, material: Material::default() }
+        let logo_texture = load_texture(&cc.egui_ctx, "apost3d_logo", include_bytes!("../assets/logo.png"));
+
+        Self {
+            camera,
+            material: Material::default(),
+            logo_texture,
+            show_about: false,
+            start_time: Instant::now(),
+        }
+    }
+
+    fn show_splash(&self, ui: &mut egui::Ui) {
+        let rect = ui.max_rect();
+        ui.painter().rect_filled(rect, 0.0, Color32::WHITE);
+
+        let logo_size = self.logo_texture.size_vec2();
+        let max_width = (rect.width() * 0.4).min(logo_size.x);
+        let scale = max_width / logo_size.x;
+        let display_size = logo_size * scale;
+
+        let logo_rect = egui::Rect::from_center_size(rect.center(), display_size);
+        ui.painter().image(
+            self.logo_texture.id(),
+            logo_rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+
+        ui.ctx().request_repaint_after(Duration::from_millis(50));
+    }
+
+    fn show_about_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_about;
+        egui::Window::new("About APOST3Dview")
+            .open(&mut open)
+            .resizable(false)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    let logo_size = self.logo_texture.size_vec2();
+                    let display_size = logo_size * (240.0 / logo_size.x);
+                    ui.image((self.logo_texture.id(), display_size));
+
+                    ui.add_space(8.0);
+                    ui.label(format!("APOST3Dview v{}", env!("CARGO_PKG_VERSION")));
+                    ui.label("A molecular visualizer for APOST-3D.");
+                    ui.add_space(8.0);
+                    ui.label("Martí Gimferrer");
+                    ui.hyperlink_to("mgimferrer18@gmail.com", "mailto:mgimferrer18@gmail.com");
+                    ui.add_space(8.0);
+                    ui.label("Sister project to APOST-3D, the fragment/EOS/IQA/QTAIM analysis program.");
+                });
+            });
+        self.show_about = open;
     }
 }
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if self.start_time.elapsed() < SPLASH_MIN_DURATION {
+            self.show_splash(ui);
+            return;
+        }
+
+        self.show_about_window(ui.ctx());
+
         egui::Panel::right("style_panel")
             .default_size(240.0)
             .show(ui, |ui| {
-                ui.heading("Style");
+                ui.horizontal(|ui| {
+                    ui.heading("Style");
+                    if ui.small_button("About").clicked() {
+                        self.show_about = true;
+                    }
+                });
                 ui.add_space(8.0);
 
                 ui.horizontal(|ui| {

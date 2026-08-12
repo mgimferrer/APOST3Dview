@@ -82,6 +82,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "glam",
+ "image",
  "wgpu",
 ]
 
