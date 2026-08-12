@@ -49,7 +49,10 @@ fn vs_main(in: VertexInput, instance: InstanceInput) -> VertexOutput {
     let tangent = normalize(cross(reference, axis));
     let bitangent = cross(axis, tangent);
 
-    let radius = scene.style.y;
+    // Transition-state bonds render much thinner than a real bond — reads
+    // as a dashed line rather than a stick, matching the CYLview/textbook
+    // convention for a forming/breaking bond.
+    let radius = select(scene.style.y, scene.style.y * 0.3, instance.dashed > 0.5);
     let world_position = instance.center
         + tangent * in.position.x * radius
         + axis * in.position.y * instance.length

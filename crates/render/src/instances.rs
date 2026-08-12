@@ -8,6 +8,10 @@ use apost3dview_core::{element_data, Molecule};
 /// normal opaque render, via a separate alpha-blended pass.
 pub const HIGHLIGHT_COLOR: [f32; 3] = [1.0, 0.84, 0.0];
 
+/// Transition-state bonds are always this flat black, regardless of the
+/// two atoms they connect.
+pub const TRANSITION_STATE_COLOR: [f32; 3] = [0.05, 0.05, 0.05];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BondVisualStyle {
     /// Solid cylinder — the default.
@@ -75,15 +79,20 @@ pub fn build_bond_instances(
             continue;
         }
 
-        let dashed = match bond_styles.get(bond_index) {
-            Some(BondVisualStyle::TransitionState) => 1.0,
-            _ => 0.0,
-        };
+        let is_transition_state = bond_styles.get(bond_index) == Some(&BondVisualStyle::TransitionState);
+        let dashed = if is_transition_state { 1.0 } else { 0.0 };
 
         let a = molecule.positions[bond.atom_a];
         let b = molecule.positions[bond.atom_b];
-        let color_a = element_data(molecule.atomic_numbers[bond.atom_a]).cpk_color;
-        let color_b = element_data(molecule.atomic_numbers[bond.atom_b]).cpk_color;
+        // Transition-state bonds are a plain black dashed line (matching
+        // the CYLview/textbook convention for a forming/breaking bond),
+        // not CPK-colored — a single flat color reads as "this isn't a
+        // real bond" much more clearly than a two-tone dash would.
+        let (color_a, color_b) = if is_transition_state {
+            (TRANSITION_STATE_COLOR, TRANSITION_STATE_COLOR)
+        } else {
+            (element_data(molecule.atomic_numbers[bond.atom_a]).cpk_color, element_data(molecule.atomic_numbers[bond.atom_b]).cpk_color)
+        };
         let midpoint = (a + b) * 0.5;
 
         for (start, end, color) in [(a, midpoint, color_a), (midpoint, b, color_b)] {

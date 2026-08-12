@@ -512,6 +512,31 @@ impl eframe::App for App {
                     self.camera.zoom(scroll_delta * 0.02);
                 }
 
+                // Arrow keys orbit continuously while held, at a speed
+                // independent of frame rate.
+                const ARROW_ROTATE_SPEED: f32 = 1.2;
+                let (key_yaw, key_pitch, dt) = ui.input(|i| {
+                    let mut yaw = 0.0;
+                    let mut pitch = 0.0;
+                    if i.key_down(egui::Key::ArrowLeft) {
+                        yaw -= 1.0;
+                    }
+                    if i.key_down(egui::Key::ArrowRight) {
+                        yaw += 1.0;
+                    }
+                    if i.key_down(egui::Key::ArrowUp) {
+                        pitch += 1.0;
+                    }
+                    if i.key_down(egui::Key::ArrowDown) {
+                        pitch -= 1.0;
+                    }
+                    (yaw, pitch, i.stable_dt)
+                });
+                let keyboard_rotating = key_yaw != 0.0 || key_pitch != 0.0;
+                if keyboard_rotating {
+                    self.camera.orbit(key_yaw * ARROW_ROTATE_SPEED * dt, key_pitch * ARROW_ROTATE_SPEED * dt);
+                }
+
                 let aspect_ratio = if rect.height() > 0.0 { rect.width() / rect.height() } else { 1.0 };
 
                 if self.selection_mode != SelectionMode::None && response.clicked() {
@@ -563,7 +588,7 @@ impl eframe::App for App {
 
                 self.show_warning_overlay(ui.ctx(), rect);
 
-                if response.dragged() || scroll_delta != 0.0 {
+                if response.dragged() || scroll_delta != 0.0 || keyboard_rotating {
                     ui.ctx().request_repaint();
                 }
             });
