@@ -1,28 +1,46 @@
-//! Isosurface extraction from a `ScalarGrid` via marching tetrahedra
-//! rather than the more commonly cited marching cubes. Deliberately
-//! chosen over marching cubes: cubes need a large (256-case) precomputed
-//! lookup table that's easy to get subtly wrong transcribing by hand and
-//! hard to verify by inspection, and some of its cube-face configurations
-//! are topologically ambiguous (multiple valid triangulations exist).
-//! Splitting each cube into 6 tetrahedra first avoids both problems — a
-//! tetrahedron only has 16 corner-sign combinations, they collapse to
-//! just three shapes (0, 1, or 2 triangles) by corner count, and the
-//! isosurface within a single tetrahedron of a piecewise-linear field is
-//! always exactly planar, so there's never an ambiguous case to resolve.
-//! The tradeoff is more triangles for the same grid than an optimal
-//! marching-cubes mesh would produce, which doesn't matter here — real
-//! isosurfaces only pass through a small fraction of cells, and orbital/
-//! density isosurfaces are smooth blobs, not huge meshes.
+//! Isosurface extraction from a `ScalarGrid` via Surface Nets — one
+//! vertex per active grid cell, positioned by averaging where the
+//! isosurface actually crosses that cell's edges, connected to
+//! neighboring cells' vertices via quads (split into triangles) — plus a
+//! Taubin smoothing pass on the resulting mesh before it's handed out.
+//!
+//! This replaced an earlier marching-tetrahedra implementation. Marching
+//! tetrahedra is topologically sound (no ambiguous cases, unlike marching
+//! cubes' large lookup table), but it still constrains every vertex to
+//! lie on one of a small, fixed set of lattice-edge directions — so even
+//! with per-vertex normals computed from a perfectly smooth field, the
+//! *triangle shapes themselves* stayed correlated with the grid's own
+//! axes, showing up as view-angle-dependent banding under specular
+//! lighting. Surface Nets' one-vertex-per-cell, averaged-position rule
+//! decouples vertex placement from any single lattice direction — but
+//! that averaging step is itself less numerically stable than direct
+//! edge interpolation (an atypical pattern of which edges cross can pull
+//! a cell's vertex slightly off from where a truly smooth surface would
+//! put it), which showed up as small-scale speckling under specular
+//! light instead. The Taubin pass below is the standard fix real
+//! visualization tools (VMD included) apply after grid-based isosurface
+//! extraction generally, not something specific to Surface Nets — it
+//! nudges each vertex toward its mesh neighbors' average while
+//! alternating with a compensating pass that cancels out the shrinkage
+//! plain (Laplacian) neighbor-averaging would otherwise cause.
+//!
+//! Real Dual Contouring (Surface Nets' more sophisticated sibling) solves
+//! a per-cell least-squares problem using each crossing's normal to
+//! preserve sharp features; plain averaging (used here) has no
+//! sharp-feature preservation, which is fine for the smooth, blobby
+//! shapes orbital/density isosurfaces actually are.
 
 use glam::Vec3;
 
 use crate::cube::ScalarGrid;
 
-/// A triangle-soup mesh (no shared-vertex indexing — see module docs on
-/// why that tradeoff is fine here): every 3 consecutive entries are one
-/// triangle. Normals come from the scalar field's own gradient (central
-/// differences), not triangle winding, so lighting is correct regardless
-/// of how a given triangle happens to be wound.
+/// A triangle-soup mesh (no shared-vertex indexing in the *public*
+/// result — see `extract_isosurface`'s doc comment on why the indexed
+/// mesh built internally for smoothing gets flattened back out before
+/// returning): every 3 consecutive entries are one triangle. Normals
+/// come from the scalar field's own gradient (central differences), not
+/// triangle winding, so lighting is correct regardless of how a given
+/// triangle happens to be wound.
 pub struct IsosurfaceMesh {
     pub positions: Vec<Vec3>,
     pub normals: Vec<Vec3>,
@@ -34,125 +52,34 @@ impl IsosurfaceMesh {
     }
 }
 
-/// The cube's 8 corners as (di, dj, dk) offsets from its "low" corner.
-const CORNERS: [(i32, i32, i32); 8] =
-    [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)];
+/// The unit cube's 8 corners, as offsets from its "low" corner.
+const CUBE_CORNERS: [(i32, i32, i32); 8] =
+    [(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0), (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)];
 
-/// Splits a cube into 6 tetrahedra, all sharing the space diagonal from
-/// corner (0,0,0) to corner (1,1,1). The other 6 corners form a hexagonal
-/// cycle connected by real cube edges — (1,0,0)-(1,1,0)-(0,1,0)-(0,1,1)-
-/// (0,0,1)-(1,0,1)-back to (1,0,0) — and each tetrahedron is the diagonal
-/// plus one consecutive pair from that cycle. This exactly partitions the
-/// cube's volume with no gaps or overlaps (each tet has volume 1/6 of the
-/// cube, verified by construction).
-const TETRAHEDRA_EVEN: [[(i32, i32, i32); 4]; 6] = [
-    [(0, 0, 0), (1, 1, 1), (1, 0, 0), (1, 1, 0)],
-    [(0, 0, 0), (1, 1, 1), (1, 1, 0), (0, 1, 0)],
-    [(0, 0, 0), (1, 1, 1), (0, 1, 0), (0, 1, 1)],
-    [(0, 0, 0), (1, 1, 1), (0, 1, 1), (0, 0, 1)],
-    [(0, 0, 0), (1, 1, 1), (0, 0, 1), (1, 0, 1)],
-    [(0, 0, 0), (1, 1, 1), (1, 0, 1), (1, 0, 0)],
+/// The unit cube's 12 edges, as (corner_a, corner_b) offset pairs.
+const CUBE_EDGES: [((i32, i32, i32), (i32, i32, i32)); 12] = [
+    // Along X
+    ((0, 0, 0), (1, 0, 0)),
+    ((0, 1, 0), (1, 1, 0)),
+    ((0, 0, 1), (1, 0, 1)),
+    ((0, 1, 1), (1, 1, 1)),
+    // Along Y
+    ((0, 0, 0), (0, 1, 0)),
+    ((1, 0, 0), (1, 1, 0)),
+    ((0, 0, 1), (0, 1, 1)),
+    ((1, 0, 1), (1, 1, 1)),
+    // Along Z
+    ((0, 0, 0), (0, 0, 1)),
+    ((1, 0, 0), (1, 0, 1)),
+    ((0, 1, 0), (0, 1, 1)),
+    ((1, 1, 0), (1, 1, 1)),
 ];
-
-/// The same construction as `TETRAHEDRA_EVEN`, but along the *other*
-/// space diagonal, from corner (1,0,0) to corner (0,1,1) — used on a
-/// pseudo-randomly chosen subset of cube cells (see `cell_uses_odd_diagonal`)
-/// so the triangulation's "grain" doesn't line up the same way across the
-/// whole grid. Splitting every cell along the *same* diagonal produces a
-/// visible directional ridging pattern on curved surfaces; alternating on
-/// a simple checkerboard (tried first) reduces but doesn't eliminate it,
-/// since a period-2 pattern is still perfectly regular — a hashed,
-/// non-periodic choice removes the regularity entirely.
-const TETRAHEDRA_ODD: [[(i32, i32, i32); 4]; 6] = [
-    [(1, 0, 0), (0, 1, 1), (0, 0, 0), (0, 1, 0)],
-    [(1, 0, 0), (0, 1, 1), (0, 1, 0), (1, 1, 0)],
-    [(1, 0, 0), (0, 1, 1), (1, 1, 0), (1, 1, 1)],
-    [(1, 0, 0), (0, 1, 1), (1, 1, 1), (1, 0, 1)],
-    [(1, 0, 0), (0, 1, 1), (1, 0, 1), (0, 0, 1)],
-    [(1, 0, 0), (0, 1, 1), (0, 0, 1), (0, 0, 0)],
-];
-
-/// Deterministic but non-periodic per-cell choice of which space diagonal
-/// to split along — a standard integer hash-mixing technique (splitmix64
-/// -style finalizer), reduced to one bit. Not cryptographic, just needs
-/// to avoid any correlation with the grid's own axes, which a simple
-/// `(i+j+k) % 2` checkerboard doesn't fully avoid (it's still a perfectly
-/// regular period-2 pattern).
-fn cell_uses_odd_diagonal(i: usize, j: usize, k: usize) -> bool {
-    let mut h = (i as u64).wrapping_mul(0x9E3779B97F4A7C15);
-    h ^= (j as u64).wrapping_mul(0xBF58476D1CE4E5B9);
-    h ^= (k as u64).wrapping_mul(0x94D049BB133111EB);
-    h ^= h >> 33;
-    h = h.wrapping_mul(0xFF51AFD7ED558CCD);
-    h ^= h >> 33;
-    (h & 1) == 1
-}
 
 /// Position where the field crosses `isovalue` along the edge from
 /// `(pa, va)` to `(pb, vb)` — `va`/`vb` must straddle `isovalue`.
 fn edge_crossing(pa: Vec3, va: f32, pb: Vec3, vb: f32, isovalue: f32) -> Vec3 {
     let t = ((isovalue - va) / (vb - va)).clamp(0.0, 1.0);
     pa.lerp(pb, t)
-}
-
-/// One tetrahedron corner: its world position and scalar value.
-#[derive(Clone, Copy)]
-struct TetCorner {
-    position: Vec3,
-    value: f32,
-}
-
-/// Emits this tetrahedron's contribution to the isosurface (0, 1, or 2
-/// triangles depending on how many of its 4 corners are "inside",
-/// i.e. have value >= isovalue) into `positions`.
-fn triangulate_tetrahedron(corners: [TetCorner; 4], isovalue: f32, positions: &mut Vec<Vec3>) {
-    let inside: [bool; 4] = std::array::from_fn(|i| corners[i].value >= isovalue);
-    let inside_count = inside.iter().filter(|&&b| b).count();
-
-    match inside_count {
-        0 | 4 => {}
-        1 | 3 => {
-            // Exactly one corner is on the minority side (alone inside,
-            // for count==1, or alone outside, for count==3) — the
-            // isosurface here is the single triangle where the 3 edges
-            // from that corner to the other 3 cross the isovalue.
-            let solo = inside.iter().position(|&b| b == (inside_count == 1)).unwrap();
-            let others: Vec<usize> = (0..4).filter(|&i| i != solo).collect();
-            let solo_corner = corners[solo];
-            let p0 = edge_crossing(solo_corner.position, solo_corner.value, corners[others[0]].position, corners[others[0]].value, isovalue);
-            let p1 = edge_crossing(solo_corner.position, solo_corner.value, corners[others[1]].position, corners[others[1]].value, isovalue);
-            let p2 = edge_crossing(solo_corner.position, solo_corner.value, corners[others[2]].position, corners[others[2]].value, isovalue);
-            positions.push(p0);
-            positions.push(p1);
-            positions.push(p2);
-        }
-        2 => {
-            // Two corners inside (p, q), two outside (r, s). The
-            // isosurface is the planar quadrilateral where the 4 edges
-            // p-r, p-s, q-r, q-s cross the isovalue (a tetrahedron's
-            // level set is always exactly planar for this case, so
-            // either diagonal split into 2 triangles is correct — no
-            // ambiguity to resolve, unlike marching cubes' cube faces).
-            let inside_idx: Vec<usize> = (0..4).filter(|&i| inside[i]).collect();
-            let outside_idx: Vec<usize> = (0..4).filter(|&i| !inside[i]).collect();
-            let (p, q) = (corners[inside_idx[0]], corners[inside_idx[1]]);
-            let (r, s) = (corners[outside_idx[0]], corners[outside_idx[1]]);
-
-            let pr = edge_crossing(p.position, p.value, r.position, r.value, isovalue);
-            let ps = edge_crossing(p.position, p.value, s.position, s.value, isovalue);
-            let qr = edge_crossing(q.position, q.value, r.position, r.value, isovalue);
-            let qs = edge_crossing(q.position, q.value, s.position, s.value, isovalue);
-
-            positions.push(pr);
-            positions.push(ps);
-            positions.push(qr);
-
-            positions.push(qr);
-            positions.push(ps);
-            positions.push(qs);
-        }
-        _ => unreachable!(),
-    }
 }
 
 /// Central-difference gradient of `grid` at fractional grid-index
@@ -166,10 +93,7 @@ fn triangulate_tetrahedron(corners: [TetCorner; 4], isovalue: f32, positions: &m
 /// Samples via `sample_tricubic`, not `sample_trilinear` — trilinear is
 /// only C0 (piecewise-linear), so its derivative jumps at every grid cell
 /// boundary; differentiating that produces small grid-periodic noise in
-/// the normals that a specular highlight (`pow(dot(n,h), shininess)`)
-/// amplifies into clearly visible banding on curved isosurfaces. Tricubic
-/// is C1 — a genuinely smooth derivative everywhere — which fixes that at
-/// the source instead of needing an ever-finer grid to shrink it away.
+/// the normals. Tricubic is C1 — a genuinely smooth derivative everywhere.
 fn gradient_normal(grid: &ScalarGrid, fi: f32, fj: f32, fk: f32) -> Vec3 {
     const H: f32 = 0.5;
     let dx = (grid.sample_tricubic(fi + H, fj, fk) - grid.sample_tricubic(fi - H, fj, fk)) / (2.0 * H * grid.steps[0].length().max(1e-6));
@@ -179,6 +103,48 @@ fn gradient_normal(grid: &ScalarGrid, fi: f32, fj: f32, fk: f32) -> Vec3 {
     (-gradient).normalize_or_zero()
 }
 
+/// Builds each vertex's set of unique mesh neighbors (vertices sharing a
+/// triangle edge with it) from a triangle index list — needed for
+/// smoothing, since "average of my neighbors" only means something once
+/// vertices are actually shared rather than duplicated per-triangle.
+fn build_adjacency(vertex_count: usize, indices: &[u32]) -> Vec<Vec<u32>> {
+    let mut neighbor_sets: Vec<std::collections::HashSet<u32>> = vec![std::collections::HashSet::new(); vertex_count];
+    for tri in indices.chunks_exact(3) {
+        for &(a, b) in &[(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {
+            neighbor_sets[a as usize].insert(b);
+            neighbor_sets[b as usize].insert(a);
+        }
+    }
+    neighbor_sets.into_iter().map(|s| s.into_iter().collect()).collect()
+}
+
+/// Taubin smoothing (Taubin 1995, "Curve and Surface Smoothing without
+/// Shrinkage"): alternates a normal Laplacian pass (move each vertex
+/// toward its neighbors' average, factor `LAMBDA`) with a compensating
+/// pass in the opposite direction with slightly larger magnitude (factor
+/// `MU`) — damps high-frequency positional noise (exactly the kind
+/// Surface Nets' per-cell averaging can introduce) while the two passes'
+/// opposite-signed shrink/inflate cancel out, unlike plain repeated
+/// Laplacian smoothing, which visibly shrinks the mesh.
+fn taubin_smooth(positions: &mut [Vec3], adjacency: &[Vec<u32>], iterations: u32) {
+    const LAMBDA: f32 = 0.5;
+    const MU: f32 = -0.53;
+    let mut scratch = positions.to_vec();
+    for _ in 0..iterations {
+        for &factor in &[LAMBDA, MU] {
+            for (v, neighbors) in adjacency.iter().enumerate() {
+                scratch[v] = if neighbors.is_empty() {
+                    positions[v]
+                } else {
+                    let avg = neighbors.iter().fold(Vec3::ZERO, |acc, &n| acc + positions[n as usize]) / neighbors.len() as f32;
+                    positions[v] + (avg - positions[v]) * factor
+                };
+            }
+            positions.copy_from_slice(&scratch);
+        }
+    }
+}
+
 /// Extracts the isosurface where `grid`'s field crosses `isovalue`
 /// ("inside" is `value >= isovalue`). To get the *negative*-sign lobe of
 /// a signed field (an orbital, not a density), call this on
@@ -186,51 +152,136 @@ fn gradient_normal(grid: &ScalarGrid, fi: f32, fj: f32, fk: f32) -> Vec3 {
 /// directly — see `ScalarGrid::negated`'s doc comment for why.
 pub fn extract_isosurface(grid: &ScalarGrid, isovalue: f32) -> IsosurfaceMesh {
     let [nx, ny, nz] = grid.dims;
-    let mut positions = Vec::new();
-
     if nx < 2 || ny < 2 || nz < 2 {
-        return IsosurfaceMesh { positions, normals: Vec::new() };
+        return IsosurfaceMesh { positions: Vec::new(), normals: Vec::new() };
     }
+    let (cells_x, cells_y, cells_z) = (nx - 1, ny - 1, nz - 1);
+    let inside = |i: usize, j: usize, k: usize| grid.value_at(i, j, k) >= isovalue;
+    let cell_index = |i: usize, j: usize, k: usize| (i * cells_y + j) * cells_z + k;
 
-    for i in 0..nx - 1 {
-        for j in 0..ny - 1 {
-            for k in 0..nz - 1 {
-                let cube_values: [f32; 8] =
-                    std::array::from_fn(|c| grid.value_at(i + CORNERS[c].0 as usize, j + CORNERS[c].1 as usize, k + CORNERS[c].2 as usize));
-                let min = cube_values.iter().cloned().fold(f32::INFINITY, f32::min);
-                let max = cube_values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    // Pass 1: one vertex per active cell, averaged from wherever the
+    // isosurface crosses that cell's 12 edges — compacted into a dense
+    // vertex list (not one slot per cell, most of which are inactive),
+    // with `cell_to_vertex` mapping a cell back to its index in it.
+    let mut vertex_positions: Vec<Vec3> = Vec::new();
+    let mut cell_to_vertex: Vec<i32> = vec![-1; cells_x * cells_y * cells_z];
+    for i in 0..cells_x {
+        for j in 0..cells_y {
+            for k in 0..cells_z {
+                let corner_value = |di: i32, dj: i32, dk: i32| grid.value_at(i + di as usize, j + dj as usize, k + dk as usize);
+                let corner_values = CUBE_CORNERS.map(|(di, dj, dk)| corner_value(di, dj, dk));
+                let min = corner_values.iter().cloned().fold(f32::INFINITY, f32::min);
+                let max = corner_values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                 if isovalue < min || isovalue > max {
-                    continue; // whole cube on one side — no triangles possible
+                    continue; // whole cell on one side — inactive
                 }
 
-                let cube_positions: [Vec3; 8] = std::array::from_fn(|c| {
-                    grid.world_position((i + CORNERS[c].0 as usize) as f32, (j + CORNERS[c].1 as usize) as f32, (k + CORNERS[c].2 as usize) as f32)
-                });
+                let mut sum = Vec3::ZERO;
+                let mut count = 0u32;
+                for &((adi, adj, adk), (bdi, bdj, bdk)) in &CUBE_EDGES {
+                    let va = corner_value(adi, adj, adk);
+                    let vb = corner_value(bdi, bdj, bdk);
+                    if (va >= isovalue) != (vb >= isovalue) {
+                        let pa = grid.world_position((i as i32 + adi) as f32, (j as i32 + adj) as f32, (k as i32 + adk) as f32);
+                        let pb = grid.world_position((i as i32 + bdi) as f32, (j as i32 + bdj) as f32, (k as i32 + bdk) as f32);
+                        sum += edge_crossing(pa, va, pb, vb, isovalue);
+                        count += 1;
+                    }
+                }
+                if count > 0 {
+                    cell_to_vertex[cell_index(i, j, k)] = vertex_positions.len() as i32;
+                    vertex_positions.push(sum / count as f32);
+                }
+            }
+        }
+    }
+    let get_cell_vertex = |ci: i32, cj: i32, ck: i32| -> Option<u32> {
+        if ci < 0 || cj < 0 || ck < 0 || ci as usize >= cells_x || cj as usize >= cells_y || ck as usize >= cells_z {
+            return None;
+        }
+        let idx = cell_to_vertex[cell_index(ci as usize, cj as usize, ck as usize)];
+        (idx >= 0).then_some(idx as u32)
+    };
 
-                let tetrahedra = if cell_uses_odd_diagonal(i, j, k) { &TETRAHEDRA_ODD } else { &TETRAHEDRA_EVEN };
-                for tet in tetrahedra {
-                    let corners: [TetCorner; 4] = std::array::from_fn(|t| {
-                        let (di, dj, dk) = tet[t];
-                        let corner_index = CORNERS.iter().position(|&c| c == (di, dj, dk)).unwrap();
-                        TetCorner { position: cube_positions[corner_index], value: cube_values[corner_index] }
-                    });
-                    triangulate_tetrahedron(corners, isovalue, &mut positions);
+    // Pass 2: a quad (as 2 triangle-index triples) for every sign-changing
+    // *grid* edge, connecting the 4 cells that share it (skipped if any of
+    // the 4 aren't active — happens only at the grid's own boundary,
+    // where an isosurface shouldn't be sitting anyway for a well-sized
+    // cube file).
+    let mut indices: Vec<u32> = Vec::new();
+    let mut push_quad = |a: Option<u32>, b: Option<u32>, c: Option<u32>, d: Option<u32>| {
+        if let (Some(a), Some(b), Some(c), Some(d)) = (a, b, c, d) {
+            indices.extend_from_slice(&[a, b, c, a, c, d]);
+        }
+    };
+
+    // X-direction grid edges: the 4 cells surrounding edge (i,j,k)-(i+1,j,k)
+    // sit in the (j,k) plane at cell columns j-1/j, k-1/k.
+    for i in 0..cells_x {
+        for j in 0..ny {
+            for k in 0..nz {
+                if inside(i, j, k) != inside(i + 1, j, k) {
+                    let (ci, cj, ck) = (i as i32, j as i32, k as i32);
+                    push_quad(
+                        get_cell_vertex(ci, cj - 1, ck - 1),
+                        get_cell_vertex(ci, cj, ck - 1),
+                        get_cell_vertex(ci, cj, ck),
+                        get_cell_vertex(ci, cj - 1, ck),
+                    );
+                }
+            }
+        }
+    }
+    // Y-direction grid edges: surrounding cells in the (i,k) plane.
+    for i in 0..nx {
+        for j in 0..cells_y {
+            for k in 0..nz {
+                if inside(i, j, k) != inside(i, j + 1, k) {
+                    let (ci, cj, ck) = (i as i32, j as i32, k as i32);
+                    push_quad(
+                        get_cell_vertex(ci - 1, cj, ck - 1),
+                        get_cell_vertex(ci, cj, ck - 1),
+                        get_cell_vertex(ci, cj, ck),
+                        get_cell_vertex(ci - 1, cj, ck),
+                    );
+                }
+            }
+        }
+    }
+    // Z-direction grid edges: surrounding cells in the (i,j) plane.
+    for i in 0..nx {
+        for j in 0..ny {
+            for k in 0..cells_z {
+                if inside(i, j, k) != inside(i, j, k + 1) {
+                    let (ci, cj, ck) = (i as i32, j as i32, k as i32);
+                    push_quad(
+                        get_cell_vertex(ci - 1, cj - 1, ck),
+                        get_cell_vertex(ci, cj - 1, ck),
+                        get_cell_vertex(ci, cj, ck),
+                        get_cell_vertex(ci - 1, cj, ck),
+                    );
                 }
             }
         }
     }
 
-    // Normals computed separately from a fresh gradient sample per vertex
-    // position (converted back to fractional grid-index coordinates)
-    // rather than during triangulation — keeps triangulate_tetrahedron
-    // free of any grid/gradient concerns, just geometry.
-    let normals: Vec<Vec3> = positions
+    if vertex_positions.is_empty() {
+        return IsosurfaceMesh { positions: Vec::new(), normals: Vec::new() };
+    }
+
+    // Smooth the indexed mesh — this is *why* it's built as a proper
+    // indexed mesh (shared vertices) rather than a triangle soup in the
+    // first place: "average of my neighbors" needs real adjacency.
+    const SMOOTHING_ITERATIONS: u32 = 8;
+    let adjacency = build_adjacency(vertex_positions.len(), &indices);
+    taubin_smooth(&mut vertex_positions, &adjacency, SMOOTHING_ITERATIONS);
+
+    // Normals from a fresh gradient sample at each (now smoothed) vertex
+    // position, converted back to fractional grid-index coordinates.
+    let vertex_normals: Vec<Vec3> = vertex_positions
         .iter()
         .map(|&p| {
             let local = p - grid.origin;
-            // Only exact for an axis-aligned grid (steps[axis] parallel
-            // to that axis) — true for every real file this was tested
-            // against; a sheared grid would need the full inverse basis.
             let fi = local.x / grid.steps[0].x;
             let fj = local.y / grid.steps[1].y;
             let fk = local.z / grid.steps[2].z;
@@ -238,38 +289,23 @@ pub fn extract_isosurface(grid: &ScalarGrid, isovalue: f32) -> IsosurfaceMesh {
         })
         .collect();
 
+    // Flatten back to a triangle soup for the public result — the
+    // renderer draws isosurfaces as unshared triangles (see
+    // `apost3dview_render::isosurface_mesh`), same as before switching to
+    // an internally-indexed representation for smoothing.
+    let mut positions = Vec::with_capacity(indices.len());
+    let mut normals = Vec::with_capacity(indices.len());
+    for &idx in &indices {
+        positions.push(vertex_positions[idx as usize]);
+        normals.push(vertex_normals[idx as usize]);
+    }
+
     IsosurfaceMesh { positions, normals }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn tetrahedron_volume(corners: [(i32, i32, i32); 4]) -> f32 {
-        let p: [Vec3; 4] = std::array::from_fn(|i| Vec3::new(corners[i].0 as f32, corners[i].1 as f32, corners[i].2 as f32));
-        let v1 = p[1] - p[0];
-        let v2 = p[2] - p[0];
-        let v3 = p[3] - p[0];
-        (v1.cross(v2).dot(v3) / 6.0).abs()
-    }
-
-    /// Both diagonal decompositions must exactly partition the unit cube
-    /// (6 tetrahedra summing to volume 1, no gaps or overlaps) — checked
-    /// programmatically rather than trusting the by-hand derivation in
-    /// the doc comments alone. `TETRAHEDRA_ODD` in particular was newly
-    /// derived (added to fix a directional-ridging artifact from always
-    /// splitting along the same diagonal), so this is real verification,
-    /// not just a formality.
-    #[test]
-    fn both_diagonal_decompositions_partition_the_unit_cube() {
-        for tetrahedra in [&TETRAHEDRA_EVEN, &TETRAHEDRA_ODD] {
-            let total: f32 = tetrahedra.iter().map(|&t| tetrahedron_volume(t)).sum();
-            assert!((total - 1.0).abs() < 1e-6, "expected 6 tetrahedra to sum to the unit cube's volume (1.0), got {total}");
-            for &t in tetrahedra {
-                assert!(tetrahedron_volume(t) > 1e-6, "found a degenerate (zero-volume) tetrahedron: {t:?}");
-            }
-        }
-    }
 
     /// A grid where value(p) = -|p| (distance from center, negated) —
     /// extracting at isovalue = -R gives exactly the sphere of radius R,
@@ -335,13 +371,104 @@ mod tests {
 
     #[test]
     fn tiny_grid_does_not_panic() {
-        let grid = ScalarGrid {
-            origin: Vec3::ZERO,
-            dims: [1, 1, 1],
-            steps: [Vec3::X, Vec3::Y, Vec3::Z],
-            values: vec![0.0],
-        };
+        let grid = ScalarGrid { origin: Vec3::ZERO, dims: [1, 1, 1], steps: [Vec3::X, Vec3::Y, Vec3::Z], values: vec![0.0] };
         let mesh = extract_isosurface(&grid, 0.0);
         assert!(mesh.is_empty());
+    }
+
+    /// The whole point of Surface Nets over marching tetrahedra: vertex
+    /// positions should be freely distributed within their cells (an
+    /// averaged position), not snapped to a small fixed set of lattice
+    /// edge directions.
+    #[test]
+    fn vertices_are_not_snapped_to_a_small_set_of_lattice_fractions() {
+        let grid = negative_distance_grid(41, 5.0);
+        let mesh = extract_isosurface(&grid, -3.0);
+        assert!(!mesh.is_empty());
+
+        let step = grid.steps[0].x;
+        let mut distinct_fine_fractions = std::collections::HashSet::new();
+        for &p in &mesh.positions {
+            let local = (p - grid.origin) / step;
+            let bucket = ((local.x.fract() * 16.0).round() as i32, (local.y.fract() * 16.0).round() as i32, (local.z.fract() * 16.0).round() as i32);
+            distinct_fine_fractions.insert(bucket);
+        }
+        assert!(
+            distinct_fine_fractions.len() > 20,
+            "expected vertex positions to vary continuously within cells, only saw {} distinct fine-grained positions",
+            distinct_fine_fractions.len()
+        );
+    }
+
+    #[test]
+    fn adjacency_is_symmetric_and_covers_every_triangle_edge() {
+        // (a,b,c) and (c,d,a) — a quad's two triangles, sharing edge (a,c).
+        let indices = [0u32, 1, 2, 0, 2, 3];
+        let adjacency = build_adjacency(4, &indices);
+        for (v, neighbors) in adjacency.iter().enumerate() {
+            for &n in neighbors {
+                assert!(adjacency[n as usize].contains(&(v as u32)), "adjacency should be symmetric: {v} lists {n} but not vice versa");
+            }
+        }
+        // Vertex 0 touches both triangles: neighbors 1, 2, 3.
+        assert_eq!(adjacency[0].len(), 3);
+        // Vertex 2 also touches both triangles: neighbors 0, 1, 3.
+        assert_eq!(adjacency[2].len(), 3);
+        // Vertices 1 and 3 each only appear in one triangle: 2 neighbors.
+        assert_eq!(adjacency[1].len(), 2);
+        assert_eq!(adjacency[3].len(), 2);
+    }
+
+    #[test]
+    fn taubin_smoothing_damps_a_local_perturbation_without_global_drift() {
+        // A 9x9 flat grid (real isosurfaces are closed meshes with no
+        // free boundary at all, so a small open sheet's corners — which
+        // *do* inherently get pulled toward their 2-neighbor average by
+        // any smoothing, boundary shrinkage being a normal, expected
+        // property of free mesh edges, nothing to do with Taubin
+        // specifically — aren't representative; using a grid large
+        // enough that the boundary is far from the perturbation sidesteps
+        // that entirely) with a spike on the center vertex.
+        const N: i32 = 9;
+        let idx = |x: i32, y: i32| -> Option<u32> {
+            if (0..N).contains(&x) && (0..N).contains(&y) { Some((x * N + y) as u32) } else { None }
+        };
+        let mut positions: Vec<Vec3> =
+            (0..N).flat_map(|x| (0..N).map(move |y| Vec3::new(x as f32, y as f32, 0.0))).collect();
+        let center = idx(N / 2, N / 2).unwrap();
+        positions[center as usize].z = 1.0;
+
+        let mut adjacency = vec![Vec::new(); (N * N) as usize];
+        for x in 0..N {
+            for y in 0..N {
+                let v = idx(x, y).unwrap();
+                for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    if let Some(n) = idx(x + dx, y + dy) {
+                        adjacency[v as usize].push(n);
+                    }
+                }
+            }
+        }
+
+        let original_center_z = positions[center as usize].z;
+        taubin_smooth(&mut positions, &adjacency, 8);
+        assert!(
+            positions[center as usize].z.abs() < original_center_z * 0.9,
+            "smoothing should meaningfully reduce the perturbation, got {}",
+            positions[center as usize].z
+        );
+        // A corner is 8 grid-steps away from the center in Manhattan
+        // distance — 8 iterations (16 total alternating passes) of a
+        // *local* averaging operation shouldn't have propagated the
+        // center's Z spike out there. (Its X/Y position does shift a
+        // little regardless of any perturbation — a corner only having 2
+        // neighbors means even a perfectly flat, unperturbed grid pulls
+        // it slightly toward them under any Laplacian-family smoothing.
+        // That's expected free-boundary behavior, irrelevant to real
+        // isosurfaces, which are always closed meshes with no boundary
+        // at all — so this only checks the Z component, which is what
+        // the injected perturbation actually affects.)
+        let corner = idx(0, 0).unwrap();
+        assert!(positions[corner as usize].z.abs() < 0.01, "the perturbation propagated further than it should have: {:?}", positions[corner as usize]);
     }
 }

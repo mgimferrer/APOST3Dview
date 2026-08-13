@@ -278,7 +278,7 @@ impl IsosurfaceState {
             positive_color: Color32::from_rgb(60, 90, 230),
             negative_color: Color32::from_rgb(220, 70, 60),
             opacity: DEFAULT_ISOSURFACE_OPACITY,
-            transparent: true,
+            transparent: false,
             cached_positive: None,
             cached_negative: None,
             extracted: false,
@@ -298,7 +298,7 @@ impl IsosurfaceState {
         self.positive_color = Color32::from_rgb(60, 90, 230);
         self.negative_color = Color32::from_rgb(220, 70, 60);
         self.opacity = DEFAULT_ISOSURFACE_OPACITY;
-        self.transparent = true;
+        self.transparent = false;
     }
 }
 

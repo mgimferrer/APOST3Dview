@@ -335,13 +335,22 @@ impl ViewportResources {
 
         // Isosurfaces: an ordinary rasterized/lit triangle mesh, not a
         // raymarched impostor, so no custom fragment depth override is
-        // needed — but it is translucent and shouldn't write depth (so
-        // several overlapping lobes/kept surfaces blend rather than
-        // fighting each other for the depth test), same shape as the
-        // highlight overlay's depth state above.
+        // needed. Depth *write* is deliberately on, even though the
+        // surface is translucent — with no back-face culling, a closed
+        // lobe's front and back both rasterize at the same pixels, and
+        // without depth write there's no guaranteed order between them:
+        // alpha blending isn't order-independent, so wherever the GPU
+        // happens to process back-before-front (varying essentially per
+        // pixel) the blend comes out visibly different, showing up as
+        // fine mottled/speckled noise with no relation to mesh quality.
+        // Writing depth lets the depth test consistently pick whichever
+        // layer (front of this lobe, a different kept surface, ...) is
+        // actually nearest, the same simplification most real-time
+        // viewers (VMD included) use for translucent isosurfaces rather
+        // than full order-independent transparency.
         let isosurface_depth = Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: Some(false),
+            depth_write_enabled: Some(true),
             depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
