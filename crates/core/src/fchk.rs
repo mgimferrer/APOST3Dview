@@ -16,17 +16,17 @@ pub struct FchkGeometry {
     pub positions: Vec<[f32; 3]>,
 }
 
-enum HeaderKind {
+pub(crate) enum HeaderKind {
     Scalar,
     Array(usize),
 }
 
-struct Header {
-    label: String,
-    kind: HeaderKind,
+pub(crate) struct Header {
+    pub(crate) label: String,
+    pub(crate) kind: HeaderKind,
 }
 
-fn parse_header(line: &str) -> Option<Header> {
+pub(crate) fn parse_header(line: &str) -> Option<Header> {
     let tokens: Vec<&str> = line.split_whitespace().collect();
     let type_idx = tokens.iter().position(|t| t.len() == 1 && matches!(*t, "I" | "R" | "C"))?;
     if type_idx == 0 {
@@ -44,7 +44,7 @@ fn parse_header(line: &str) -> Option<Header> {
 /// Reads forward, collecting whitespace-separated tokens across as many
 /// lines as needed, until `count` tokens have been gathered. Relies on fchk
 /// arrays always ending exactly on a line boundary (true of the format).
-fn read_array_tokens(lines: &mut Lines<BufReader<File>>, count: usize) -> io::Result<Vec<String>> {
+pub(crate) fn read_array_tokens(lines: &mut Lines<BufReader<File>>, count: usize) -> io::Result<Vec<String>> {
     let mut tokens = Vec::with_capacity(count);
     while tokens.len() < count {
         let line = lines
