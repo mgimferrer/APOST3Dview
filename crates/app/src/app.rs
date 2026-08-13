@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use apost3dview_core::{
-    element_data, extract_isosurface, format_coordinates, measure, parse_cube, parse_xyz, refine_grid, Bond, CoordinateFormat, LengthUnit,
-    MeasurementKind, Molecule,
+    element_data, extract_isosurface, format_coordinates, generate_mo_grid, measure, parse_cube, parse_fchk_wavefunction, parse_xyz, refine_grid,
+    Bond, CoordinateFormat, LengthUnit, MeasurementKind, Molecule, MolecularOrbitals, Wavefunction,
 };
 use apost3dview_render::{
     glyph_scale_for_font_size, glyph_scale_for_world_size, layout_label, pick_atom, pick_bond, push_isosurface_vertices, ray_from_ndc,
@@ -26,6 +26,39 @@ fn load_texture(ctx: &egui::Context, name: &str, png_bytes: &[u8]) -> egui::Text
     let size = [image.width() as usize, image.height() as usize];
     let color_image = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
     ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR)
+}
+
+/// One spin channel's tick-box list in the "Generate orbitals" section —
+/// factored out since alpha and beta need identical rendering, just
+/// against a different `MolecularOrbitals`/selection set. `spin_label`
+/// ("alpha"/"beta") is folded into each row's occupancy tag rather than
+/// shown as a separate heading, and into the `ScrollArea`'s id so two
+/// instances (restricted files only ever show one) don't collide.
+fn show_mo_checklist(ui: &mut egui::Ui, orbitals: &MolecularOrbitals, selected: &mut HashSet<usize>, spin_label: &str, height: f32) {
+    let homo = orbitals.homo_index();
+    let lumo = orbitals.lumo_index();
+    egui::ScrollArea::vertical().id_salt(("mo_checklist", spin_label)).max_height(height).show(ui, |ui| {
+        for mo_index in 0..orbitals.num_orbitals() {
+            let mo_number = mo_index + 1;
+            let energy = orbitals.orbital_energies[mo_index];
+            let occ_tag = if mo_number <= orbitals.num_occupied { "occ" } else { "virt" };
+            let special_tag = if mo_number == homo {
+                "  HOMO"
+            } else if mo_number == lumo {
+                "  LUMO"
+            } else {
+                ""
+            };
+            let mut checked = selected.contains(&mo_index);
+            if ui.checkbox(&mut checked, format!("MO {mo_number}  {energy:+.4} Hartree  ({spin_label}, {occ_tag}){special_tag}")).changed() {
+                if checked {
+                    selected.insert(mo_index);
+                } else {
+                    selected.remove(&mo_index);
+                }
+            }
+        }
+    });
 }
 
 fn toggle_selected(list: &mut Vec<usize>, index: usize) {
@@ -235,6 +268,65 @@ impl Default for RenderExportState {
     }
 }
 
+/// Grid-density tier for generating an orbital's `.cube`-equivalent grid
+/// straight from a `.fchk` wavefunction — the same one-click-preset-or-
+/// exact-control shape as `RenderPreset`. Values are grid spacing in
+/// Bohr (native to the GTO evaluator); Medium roughly matches Chemcraft's
+/// own default spacing (~0.29 Bohr) for a familiar-looking result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OrbitalAccuracyPreset {
+    Low,
+    Medium,
+    High,
+    Custom,
+}
+
+const ORBITAL_SPACING_LOW_BOHR: f64 = 0.40;
+const ORBITAL_SPACING_MEDIUM_BOHR: f64 = 0.28;
+const ORBITAL_SPACING_HIGH_BOHR: f64 = 0.15;
+/// Padding around the wavefunction's own shell centers on every side —
+/// enough for an orbital's decaying tail to read as fully closed rather
+/// than clipped at the grid boundary, matching the kind of margin
+/// `cubegen`/Chemcraft/APOST-3D use by default.
+const ORBITAL_GRID_PADDING_BOHR: f64 = 4.0;
+
+struct OrbitalGenerationState {
+    preset: OrbitalAccuracyPreset,
+    custom_spacing_bohr: f64,
+    /// 1-based, inclusive — state for the "Select range" convenience
+    /// button in the MO picker.
+    range_start: usize,
+    range_end: usize,
+    /// Applied to every orbital's `IsosurfaceState` at generation time —
+    /// set once up front rather than per-orbital after the fact, since
+    /// changing it one-by-one across e.g. 20 freshly generated structures
+    /// would be tedious.
+    isovalue: f32,
+}
+
+impl Default for OrbitalGenerationState {
+    fn default() -> Self {
+        Self {
+            preset: OrbitalAccuracyPreset::Medium,
+            custom_spacing_bohr: ORBITAL_SPACING_MEDIUM_BOHR,
+            range_start: 1,
+            range_end: 1,
+            isovalue: DEFAULT_ISOSURFACE_ISOVALUE,
+        }
+    }
+}
+
+impl OrbitalGenerationState {
+    fn resolve_spacing_bohr(&self) -> f64 {
+        match self.preset {
+            OrbitalAccuracyPreset::Low => ORBITAL_SPACING_LOW_BOHR,
+            OrbitalAccuracyPreset::Medium => ORBITAL_SPACING_MEDIUM_BOHR,
+            OrbitalAccuracyPreset::High => ORBITAL_SPACING_HIGH_BOHR,
+            OrbitalAccuracyPreset::Custom => self.custom_spacing_bohr.max(0.01),
+        }
+    }
+}
+
 /// Per-structure isosurface state — only present for structures opened
 /// from a `.cube` file. Isovalue/refinement/both-signs changes don't
 /// re-extract automatically (marching tetrahedra over a refined grid is a
@@ -264,7 +356,7 @@ struct IsosurfaceState {
 /// data (an earlier approach: 25% of the grid's max |value|) — Martí's
 /// explicit preference after tuning it live against the real EFFAO test
 /// cubes, simpler and more predictable than a per-file heuristic.
-const DEFAULT_ISOSURFACE_ISOVALUE: f32 = 0.1;
+const DEFAULT_ISOSURFACE_ISOVALUE: f32 = 0.075;
 const DEFAULT_ISOSURFACE_OPACITY: f32 = 0.75;
 
 impl IsosurfaceState {
@@ -330,6 +422,18 @@ struct LoadedStructure {
     pending_measurement: Vec<usize>,
     /// `Some` only for structures opened from a `.cube` file.
     isosurface: Option<IsosurfaceState>,
+    /// `Some` only for structures opened from a `.fchk` — the basis set +
+    /// MO coefficients, parsed once up front so the "Generate orbitals"
+    /// section can evaluate any MO on demand without re-parsing the file.
+    /// `wavefunction.beta` is itself `Some` only for an unrestricted
+    /// (open-shell) file — see `parse_fchk_wavefunction`.
+    wavefunction: Option<Wavefunction>,
+    /// Which MOs are ticked in the "Generate orbitals" picker — 0-based,
+    /// only meaningful when `wavefunction` is `Some`. Beta is only ever
+    /// populated for an unrestricted file (see above); it stays empty,
+    /// unused, and hidden in the UI otherwise.
+    selected_alpha_mos: HashSet<usize>,
+    selected_beta_mos: HashSet<usize>,
 }
 
 impl LoadedStructure {
@@ -347,6 +451,9 @@ impl LoadedStructure {
             measurements: Vec::new(),
             pending_measurement: Vec::new(),
             isosurface: None,
+            wavefunction: None,
+            selected_alpha_mos: HashSet::new(),
+            selected_beta_mos: HashSet::new(),
         }
     }
 }
@@ -383,6 +490,7 @@ pub struct App {
     atom_label_mode: AtomLabelMode,
     atom_label_style: AtomLabelStyle,
     render_export: RenderExportState,
+    orbital_generation: OrbitalGenerationState,
     /// Updated every viewport repaint from the actual on-screen rect —
     /// the Render window reads this (rather than recomputing it itself,
     /// since it doesn't have direct access to the viewport rect) so
@@ -441,6 +549,7 @@ impl App {
             atom_label_mode: AtomLabelMode::None,
             atom_label_style: AtomLabelStyle::default(),
             render_export: RenderExportState::default(),
+            orbital_generation: OrbitalGenerationState::default(),
             last_aspect_ratio: 16.0 / 9.0,
             isosurface_material: IsosurfaceMaterial::default(),
             kept_isosurfaces: Vec::new(),
@@ -664,8 +773,41 @@ impl App {
         match Molecule::from_fchk(&path) {
             Ok(molecule) => {
                 let label = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled.fchk".into());
+                let mut structure = LoadedStructure::new(label, molecule, Some(path.clone()));
+                // Parsing the wavefunction (basis set + MO coefficients) is
+                // a separate, slower full-file pass from the geometry-only
+                // one above — failure here just means no "Generate
+                // orbitals" section for this structure, not a failure to
+                // open it at all.
+                match parse_fchk_wavefunction(&path) {
+                    Ok(wfn) => {
+                        // `evaluate_basis_functions` evaluates every shell
+                        // in the basis regardless of which MO is being
+                        // asked for (it computes the whole basis-function
+                        // vector, then a separate dot product picks out
+                        // one MO) — so a single h-or-higher shell anywhere
+                        // in the file blocks *every* orbital, not just
+                        // ones with real weight on it. Worth flagging
+                        // right away rather than only on the first failed
+                        // "Generate" click.
+                        let max_angular_momentum = wfn.basis.shells.iter().map(|s| s.angular_momentum).max().unwrap_or(0);
+                        if wfn.alpha.num_orbitals() > 0 {
+                            structure.selected_alpha_mos.insert(wfn.alpha.homo_index() - 1);
+                        }
+                        if let Some(beta) = &wfn.beta {
+                            if beta.num_orbitals() > 0 {
+                                structure.selected_beta_mos.insert(beta.homo_index() - 1);
+                            }
+                        }
+                        structure.wavefunction = Some(wfn);
+                        if max_angular_momentum > 4 {
+                            self.show_warning("This basis set includes h (or higher) shells — orbital generation isn't supported yet for this file.");
+                        }
+                    }
+                    Err(err) => self.show_warning(format!("Geometry loaded, but orbitals unavailable: {err}")),
+                }
                 let index = self.structures.len();
-                self.structures.push(LoadedStructure::new(label, molecule, Some(path)));
+                self.structures.push(structure);
                 self.set_active(index);
             }
             Err(err) => self.show_warning(format!("Could not load {}: {err}", path.display())),
@@ -714,6 +856,81 @@ impl App {
         }
         if let Some(index) = first_new_index {
             self.set_active(index);
+        }
+    }
+
+    /// Generates a new structure (sharing the active structure's geometry)
+    /// for each ticked MO in the active structure's "Generate orbitals"
+    /// picker — the same shape of result as opening one `.cube` file per
+    /// orbital (see `open_cube`), computed directly from the `.fchk`
+    /// wavefunction instead of needing an external `cubegen`/Multiwfn/
+    /// APOST-3D step first. `set_active`'s shared-geometry camera freeze
+    /// applies here too, since every generated structure shares the
+    /// source structure's own molecule.
+    fn generate_selected_orbitals(&mut self) {
+        let Some(active) = self.active_structure else { return };
+        let Some(structure) = self.structures.get(active) else { return };
+        let Some(wfn) = &structure.wavefunction else { return };
+        if structure.selected_alpha_mos.is_empty() && structure.selected_beta_mos.is_empty() {
+            self.show_warning("No orbitals selected");
+            return;
+        }
+
+        let spacing = self.orbital_generation.resolve_spacing_bohr();
+        let base_label = structure.label.clone();
+        let molecule = structure.molecule.clone();
+        let is_unrestricted = wfn.beta.is_some();
+
+        // One entry per spin channel that has anything selected — for a
+        // restricted file there's only ever the alpha one (and its
+        // generated labels stay unsuffixed, since there's no beta
+        // channel to disambiguate from).
+        let mut channels: Vec<(&MolecularOrbitals, Vec<usize>, &str)> = Vec::new();
+        let mut alpha_indices: Vec<usize> = structure.selected_alpha_mos.iter().copied().collect();
+        alpha_indices.sort_unstable();
+        channels.push((&wfn.alpha, alpha_indices, if is_unrestricted { " (alpha)" } else { "" }));
+        if let Some(beta) = &wfn.beta {
+            let mut beta_indices: Vec<usize> = structure.selected_beta_mos.iter().copied().collect();
+            beta_indices.sort_unstable();
+            channels.push((beta, beta_indices, " (beta)"));
+        }
+
+        let mut generated = Vec::new();
+        let mut failures = Vec::new();
+        for (orbitals, mo_indices, spin_suffix) in channels {
+            let homo = orbitals.homo_index();
+            let lumo = orbitals.lumo_index();
+            for mo_index in mo_indices {
+                match generate_mo_grid(&wfn.basis, orbitals, mo_index, spacing, ORBITAL_GRID_PADDING_BOHR) {
+                    Ok(grid) => {
+                        let mo_number = mo_index + 1;
+                        let tag = if mo_number == homo {
+                            "HOMO".to_string()
+                        } else if mo_number == lumo {
+                            "LUMO".to_string()
+                        } else {
+                            format!("MO{mo_number}")
+                        };
+                        let mut new_structure = LoadedStructure::new(format!("{base_label} — {tag}{spin_suffix}"), molecule.clone(), None);
+                        let mut iso = IsosurfaceState::new(grid);
+                        iso.isovalue = self.orbital_generation.isovalue;
+                        new_structure.isosurface = Some(iso);
+                        generated.push(new_structure);
+                    }
+                    Err(err) => failures.push(format!("MO{}{spin_suffix}: {err}", mo_index + 1)),
+                }
+            }
+        }
+
+        let first_new_index = if generated.is_empty() { None } else { Some(self.structures.len()) };
+        self.structures.extend(generated);
+        if let Some(index) = first_new_index {
+            self.set_active(index);
+        }
+        if !failures.is_empty() {
+            self.show_warning(format!("Some orbitals failed to generate: {}", failures.join("; ")));
+        } else if first_new_index.is_some() {
+            self.show_status("Orbitals generated");
         }
     }
 
@@ -1076,6 +1293,18 @@ impl App {
                 ui.add(Slider::new(&mut self.material.shininess, 1.0..=128.0).text("shininess"));
 
                 ui.add_space(12.0);
+                ui.label("Isosurface material");
+                ui.label(egui::RichText::new("Independent from the atom/bond material above.").small().weak());
+                let mut isosurface_material_changed = false;
+                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[0], 0.0..=1.0).text("ambient")).changed();
+                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[1], 0.0..=1.0).text("diffuse")).changed();
+                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[2], 0.0..=1.0).text("specular")).changed();
+                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[3], 1.0..=128.0).text("shininess")).changed();
+                if isosurface_material_changed {
+                    self.rebuild_isosurface();
+                }
+
+                ui.add_space(12.0);
                 ui.label("Lighting");
                 ui.add(
                     Slider::new(&mut self.material.light_yaw, -std::f32::consts::PI..=std::f32::consts::PI)
@@ -1313,6 +1542,108 @@ impl App {
 
                 ui.add_space(10.0);
                 ui.separator();
+                ui.label(egui::RichText::new("Generate orbitals").strong());
+
+                if self.structures[active].wavefunction.is_some() {
+                    let num_orbitals = self.structures[active].wavefunction.as_ref().unwrap().alpha.num_orbitals();
+                    let is_unrestricted = self.structures[active].wavefunction.as_ref().unwrap().beta.is_some();
+                    self.orbital_generation.range_start = self.orbital_generation.range_start.clamp(1, num_orbitals.max(1));
+                    self.orbital_generation.range_end = self.orbital_generation.range_end.clamp(1, num_orbitals.max(1));
+
+                    ui.horizontal(|ui| {
+                        if ui.button("HOMO/LUMO").clicked() {
+                            let wfn = self.structures[active].wavefunction.as_ref().unwrap();
+                            let (alpha_homo, alpha_lumo, alpha_num) = (wfn.alpha.homo_index(), wfn.alpha.lumo_index(), wfn.alpha.num_orbitals());
+                            let beta_homo_lumo_num = wfn.beta.as_ref().map(|b| (b.homo_index(), b.lumo_index(), b.num_orbitals()));
+                            let structure = &mut self.structures[active];
+                            structure.selected_alpha_mos.clear();
+                            structure.selected_alpha_mos.insert(alpha_homo - 1);
+                            if alpha_lumo <= alpha_num {
+                                structure.selected_alpha_mos.insert(alpha_lumo - 1);
+                            }
+                            structure.selected_beta_mos.clear();
+                            if let Some((beta_homo, beta_lumo, beta_num)) = beta_homo_lumo_num {
+                                structure.selected_beta_mos.insert(beta_homo - 1);
+                                if beta_lumo <= beta_num {
+                                    structure.selected_beta_mos.insert(beta_lumo - 1);
+                                }
+                            }
+                        }
+                        if ui.button("Clear").clicked() {
+                            let structure = &mut self.structures[active];
+                            structure.selected_alpha_mos.clear();
+                            structure.selected_beta_mos.clear();
+                        }
+                        ui.label("Isovalue:");
+                        ui.add(egui::DragValue::new(&mut self.orbital_generation.isovalue).speed(0.001).range(0.0..=f32::MAX));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Range:");
+                        ui.add(egui::DragValue::new(&mut self.orbital_generation.range_start).range(1..=num_orbitals.max(1)));
+                        ui.label("to");
+                        ui.add(egui::DragValue::new(&mut self.orbital_generation.range_end).range(1..=num_orbitals.max(1)));
+                        if ui.button("Select range").clicked() {
+                            let (lo, hi) = (self.orbital_generation.range_start.min(self.orbital_generation.range_end), self.orbital_generation.range_start.max(self.orbital_generation.range_end));
+                            let structure = &mut self.structures[active];
+                            for mo_number in lo..=hi {
+                                structure.selected_alpha_mos.insert(mo_number - 1);
+                                if is_unrestricted {
+                                    structure.selected_beta_mos.insert(mo_number - 1);
+                                }
+                            }
+                        }
+                    });
+
+                    let list_height = if is_unrestricted { 120.0 } else { 160.0 };
+                    // Destructuring through the `&mut LoadedStructure`
+                    // borrows `wavefunction`/`selected_alpha_mos`/
+                    // `selected_beta_mos` as separate, disjoint fields —
+                    // lets `wfn` (immutable) and the selection sets
+                    // (mutable) coexist without needing two separate
+                    // indexing expressions into `self.structures`, which
+                    // the borrow checker can't prove disjoint on its own.
+                    let LoadedStructure { wavefunction, selected_alpha_mos, selected_beta_mos, .. } = &mut self.structures[active];
+                    let wfn = wavefunction.as_ref().unwrap();
+                    show_mo_checklist(ui, &wfn.alpha, selected_alpha_mos, "alpha", list_height);
+                    if let Some(beta) = &wfn.beta {
+                        show_mo_checklist(ui, beta, selected_beta_mos, "beta", list_height);
+                    }
+
+                    ui.add_space(4.0);
+                    ui.label("Accuracy:");
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.orbital_generation.preset, OrbitalAccuracyPreset::Low, "Low");
+                        ui.selectable_value(&mut self.orbital_generation.preset, OrbitalAccuracyPreset::Medium, "Medium");
+                        ui.selectable_value(&mut self.orbital_generation.preset, OrbitalAccuracyPreset::High, "High");
+                        ui.selectable_value(&mut self.orbital_generation.preset, OrbitalAccuracyPreset::Custom, "Custom");
+                    });
+                    if self.orbital_generation.preset == OrbitalAccuracyPreset::Custom {
+                        ui.horizontal(|ui| {
+                            ui.label("Spacing (Bohr):");
+                            ui.add(egui::DragValue::new(&mut self.orbital_generation.custom_spacing_bohr).speed(0.01).range(0.02..=2.0));
+                        });
+                    } else {
+                        ui.label(
+                            egui::RichText::new(format!("Grid spacing: {:.2} Bohr", self.orbital_generation.resolve_spacing_bohr()))
+                                .small()
+                                .weak(),
+                        );
+                    }
+
+                    ui.add_space(4.0);
+                    let selected_count = self.structures[active].selected_alpha_mos.len() + self.structures[active].selected_beta_mos.len();
+                    if ui
+                        .add_sized([ui.available_width(), 26.0], egui::Button::new(format!("Generate {selected_count} orbital(s)")))
+                        .clicked()
+                    {
+                        self.generate_selected_orbitals();
+                    }
+                } else {
+                    ui.label(egui::RichText::new("This structure has no orbital data (open an .fchk with orbital output).").small().weak());
+                }
+
+                ui.add_space(10.0);
+                ui.separator();
                 ui.label(egui::RichText::new("Isosurfaces").strong());
 
                 let has_isosurface = self.structures[active].isosurface.is_some();
@@ -1391,18 +1722,6 @@ impl App {
                     ui.label(egui::RichText::new(format!("{} isosurface(s) kept", self.kept_isosurfaces.len())).small().weak());
                 }
 
-                ui.add_space(10.0);
-                ui.separator();
-                ui.label(egui::RichText::new("Isosurface material").strong());
-                ui.label(egui::RichText::new("Independent from the atom/bond material in Style.").small().weak());
-                let mut material_changed = false;
-                material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[0], 0.0..=1.0).text("ambient")).changed();
-                material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[1], 0.0..=1.0).text("diffuse")).changed();
-                material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[2], 0.0..=1.0).text("specular")).changed();
-                material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[3], 1.0..=128.0).text("shininess")).changed();
-                if material_changed {
-                    self.rebuild_isosurface();
-                }
             });
         self.show_visualization = open;
     }

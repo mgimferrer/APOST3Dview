@@ -6,11 +6,13 @@ use glam::Vec3;
 use crate::element::element_data;
 use crate::fchk::parse_fchk_geometry;
 
+#[derive(Clone)]
 pub struct Bond {
     pub atom_a: usize,
     pub atom_b: usize,
 }
 
+#[derive(Clone)]
 pub struct Molecule {
     pub atomic_numbers: Vec<u32>,
     /// Angstrom.
