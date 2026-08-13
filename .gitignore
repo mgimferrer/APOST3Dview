@@ -20,9 +20,27 @@ PROJECT-ROADMAP.md
 # working setup, not project source, nothing here is sensitive either
 .claude/
 
-# APOST-3D test data (.fchk/.inp/.xyz/.cube) used for local testing — not
-# committed, these are your own calculation files, not project source
+# APOST-3D test data (.fchk/.inp/.xyz/.cube) dropped anywhere else in the
+# repo for ad hoc local testing — not committed, your own calculation
+# files, not project source. (The curated Phase 3 validation set in
+# TESTS-VISUALIZER/ is the deliberate exception below.)
 *.fchk
 *.inp
 *.xyz
 *.cube
+
+# Phase 3 validation set (TESTS-VISUALIZER/): the .fchk/.cube pairs (real
+# Chemcraft/Gaussian output — H2O at 4 basis sets, BiCl3 at 2, the
+# open-shell H2O-T triplet) ARE committed on purpose — the reference data
+# `compare_cube`/`parse_wavefunction` validate the GTO evaluator against,
+# so a future change can be reverified without needing this data handed
+# over again. The raw Gaussian job artifacts alongside them (.chk binary
+# checkpoints, .log full output, .com/.com.sh job scripts) stay
+# untracked — nothing in this codebase reads them, and they'd roughly
+# double the committed size for no functional benefit.
+!/TESTS-VISUALIZER/*.fchk
+!/TESTS-VISUALIZER/*.cube
+/TESTS-VISUALIZER/*.chk
+/TESTS-VISUALIZER/*.log
+/TESTS-VISUALIZER/*.com
+/TESTS-VISUALIZER/*.com.sh
