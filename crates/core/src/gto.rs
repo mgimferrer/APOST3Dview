@@ -230,15 +230,27 @@ pub fn evaluate_mo(basis: &BasisSet, orbitals: &MolecularOrbitals, mo_index: usi
     Ok(scratch.iter().zip(coefficients).map(|(&b, &c)| b * c).sum())
 }
 
-/// Builds a `ScalarGrid` for one MO from a given spin channel (see
-/// `evaluate_mo`) by evaluating it at every point of an axis-aligned box
-/// enclosing the basis set's own shell centers, padded on every side —
-/// the same shape of grid `cubegen`/Chemcraft/APOST-3D produce, generated
-/// directly instead of needing one of those as an external step.
-/// `spacing_bohr`/`padding_bohr` are in Bohr (native to the evaluator);
-/// the returned grid is in Angstrom, like every other `ScalarGrid` in the
-/// app (see `crate::cube`).
-pub fn generate_mo_grid(basis: &BasisSet, orbitals: &MolecularOrbitals, mo_index: usize, spacing_bohr: f64, padding_bohr: f64) -> Result<crate::cube::ScalarGrid, String> {
+/// Builds one `ScalarGrid` per requested `(orbitals, mo_index)` pair, all
+/// sharing the same axis-aligned box enclosing the basis set's own shell
+/// centers, padded on every side — the same shape of grid `cubegen`/
+/// Chemcraft/APOST-3D produce, generated directly instead of needing one of
+/// those as an external step. `spacing_bohr`/`padding_bohr` are in Bohr
+/// (native to the evaluator); the returned grids are in Angstrom, like
+/// every other `ScalarGrid` in the app (see `crate::cube`).
+///
+/// Requests are batched deliberately rather than evaluated one at a time:
+/// the expensive part of this (looping over every shell/primitive of a
+/// real basis set, which for a large molecule can be hundreds of contracted
+/// shells) depends only on the *point*, not on which MO is being read out
+/// of it — `evaluate_basis_functions` runs once per grid point and every
+/// requested orbital reuses that same result, rather than each orbital
+/// paying the full basis evaluation cost independently (an O(orbitals)
+/// multiplier this replaces). Also parallelized over grid points with
+/// rayon, since points are fully independent and the per-point cost easily
+/// dwarfs the fork/join overhead on any basis set big enough to matter.
+pub fn generate_mo_grids(basis: &BasisSet, requests: &[(&MolecularOrbitals, usize)], spacing_bohr: f64, padding_bohr: f64) -> Result<Vec<crate::cube::ScalarGrid>, String> {
+    use rayon::prelude::*;
+
     let Some(first) = basis.shells.first() else { return Err("wavefunction has no shells".to_string()) };
     let mut min = first.center;
     let mut max = first.center;
@@ -256,28 +268,51 @@ pub fn generate_mo_grid(basis: &BasisSet, orbitals: &MolecularOrbitals, mo_index
         ((extent.y / spacing_bohr).ceil() as usize).max(2),
         ((extent.z / spacing_bohr).ceil() as usize).max(2),
     ];
+    let total_points = dims[0] * dims[1] * dims[2];
 
-    let mut values = Vec::with_capacity(dims[0] * dims[1] * dims[2]);
-    let mut scratch = Vec::new();
-    for i in 0..dims[0] {
-        for j in 0..dims[1] {
-            for k in 0..dims[2] {
-                let point = min + DVec3::new(i as f64, j as f64, k as f64) * spacing_bohr;
-                values.push(evaluate_mo(basis, orbitals, mo_index, point, &mut scratch)? as f32);
-            }
-        }
-    }
+    let coefficients: Vec<&[f64]> = requests.iter().map(|(orbitals, mo_index)| orbitals.coefficients_for(*mo_index)).collect();
+
+    // One row per grid point, one column per requested orbital — point-major
+    // so the parallel iteration can hand each point to a worker independently.
+    let rows: Vec<Vec<f32>> = (0..total_points)
+        .into_par_iter()
+        .map(|idx| -> Result<Vec<f32>, String> {
+            let k = idx % dims[2];
+            let j = (idx / dims[2]) % dims[1];
+            let i = idx / (dims[1] * dims[2]);
+            let point = min + DVec3::new(i as f64, j as f64, k as f64) * spacing_bohr;
+
+            let mut scratch = Vec::new();
+            evaluate_basis_functions(basis, point, &mut scratch)?;
+            coefficients
+                .iter()
+                .map(|coeffs| {
+                    if scratch.len() != coeffs.len() {
+                        return Err(format!("basis function count ({}) doesn't match MO coefficient count ({})", scratch.len(), coeffs.len()));
+                    }
+                    Ok(scratch.iter().zip(*coeffs).map(|(&b, &c)| b * c).sum::<f64>() as f32)
+                })
+                .collect()
+        })
+        .collect::<Result<Vec<Vec<f32>>, String>>()?;
 
     let to_angstrom = |v: DVec3| -> Vec3 {
         Vec3::new((v.x * crate::units::ANGSTROM_PER_BOHR) as f32, (v.y * crate::units::ANGSTROM_PER_BOHR) as f32, (v.z * crate::units::ANGSTROM_PER_BOHR) as f32)
     };
     let step = (spacing_bohr * crate::units::ANGSTROM_PER_BOHR) as f32;
-    Ok(crate::cube::ScalarGrid {
-        origin: to_angstrom(min),
-        dims,
-        steps: [Vec3::new(step, 0.0, 0.0), Vec3::new(0.0, step, 0.0), Vec3::new(0.0, 0.0, step)],
-        values,
-    })
+    let origin = to_angstrom(min);
+    let steps = [Vec3::new(step, 0.0, 0.0), Vec3::new(0.0, step, 0.0), Vec3::new(0.0, 0.0, step)];
+
+    // Transpose point-major rows back into one flat orbital-major `values`
+    // buffer per request, the shape `ScalarGrid` expects.
+    let mut grids: Vec<crate::cube::ScalarGrid> =
+        requests.iter().map(|_| crate::cube::ScalarGrid { origin, dims, steps, values: vec![0.0; total_points] }).collect();
+    for (point_idx, row) in rows.into_iter().enumerate() {
+        for (r, value) in row.into_iter().enumerate() {
+            grids[r].values[point_idx] = value;
+        }
+    }
+    Ok(grids)
 }
 
 #[cfg(test)]
@@ -507,5 +542,71 @@ mod tests {
         // yy and zz should be exactly 0 at this point (y=z=0).
         assert!(scratch[1].abs() < 1e-12);
         assert!(scratch[2].abs() < 1e-12);
+    }
+
+    #[test]
+    fn generate_mo_grids_batched_matches_evaluate_mo_per_point() {
+        // The whole point of batching (see the function doc): evaluating
+        // several orbitals in one `generate_mo_grids` call must give
+        // exactly the same numbers as evaluating each one separately via
+        // `evaluate_mo`, point for point — this is what actually proves
+        // the shared per-point basis evaluation and the row->column
+        // transpose at the end didn't mix values up between orbitals.
+        use crate::wavefunction::{BasisSet, MolecularOrbitals, Shell};
+        let basis = BasisSet {
+            shells: vec![
+                Shell { angular_momentum: 0, is_pure: false, center: DVec3::new(0.0, 0.0, 0.0), primitive_exponents: vec![0.9, 0.3], contraction_coefficients: vec![0.6, 0.4] },
+                Shell { angular_momentum: 1, is_pure: false, center: DVec3::new(0.5, -0.2, 0.1), primitive_exponents: vec![0.5], contraction_coefficients: vec![1.0] },
+            ],
+        };
+        // 4 basis functions total (1 S + 3 P), 3 made-up MOs.
+        let orbitals = MolecularOrbitals {
+            num_basis_functions: 4,
+            orbital_energies: vec![-1.0, -0.5, 0.2],
+            coefficients: vec![
+                0.5, 0.1, -0.2, 0.3, // MO 0
+                -0.3, 0.7, 0.05, -0.1, // MO 1
+                0.2, -0.4, 0.6, 0.15, // MO 2
+            ],
+            num_occupied: 2,
+        };
+
+        let requests = [(&orbitals, 0usize), (&orbitals, 2usize)];
+        let spacing_bohr = 0.6;
+        let padding_bohr = 1.5;
+        let grids = generate_mo_grids(&basis, &requests, spacing_bohr, padding_bohr).unwrap();
+        assert_eq!(grids.len(), 2);
+        assert_eq!(grids[0].dims, grids[1].dims);
+
+        // Reconstruct each grid point's Bohr-space position the same way
+        // `generate_mo_grids` does internally, and check every point of
+        // both returned grids against a direct `evaluate_mo` call.
+        let mut min = basis.shells[0].center;
+        let mut max = basis.shells[0].center;
+        for shell in &basis.shells {
+            min = min.min(shell.center);
+            max = max.max(shell.center);
+        }
+        min -= DVec3::splat(padding_bohr);
+        max += DVec3::splat(padding_bohr);
+        let dims = grids[0].dims;
+
+        let mut scratch = Vec::new();
+        let mut checked = 0;
+        for i in 0..dims[0] {
+            for j in 0..dims[1] {
+                for k in 0..dims[2] {
+                    let point = min + DVec3::new(i as f64, j as f64, k as f64) * spacing_bohr;
+                    let idx = i * dims[1] * dims[2] + j * dims[2] + k;
+                    for (request_idx, &(orbitals, mo_index)) in requests.iter().enumerate() {
+                        let expected = evaluate_mo(&basis, orbitals, mo_index, point, &mut scratch).unwrap() as f32;
+                        let got = grids[request_idx].values[idx];
+                        assert!((got - expected).abs() < 1e-5, "request {request_idx}, point ({i},{j},{k}): {got} vs {expected}");
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 0);
     }
 }

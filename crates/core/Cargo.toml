@@ -6,3 +6,4 @@ authors.workspace = true
 
 [dependencies]
 glam = "0.33.3"
+rayon = "1.10"
