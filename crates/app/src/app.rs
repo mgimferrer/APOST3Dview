@@ -4,13 +4,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use apost3dview_core::{
-    element_data, extract_isosurface, format_coordinates, generate_mo_grid, measure, parse_cube, parse_fchk_wavefunction, parse_xyz, refine_grid,
+    element_data, extract_isosurface, format_coordinates, generate_mo_grids, measure, parse_cube, parse_fchk_wavefunction, parse_xyz, refine_grid,
     Bond, CoordinateFormat, LengthUnit, MeasurementKind, Molecule, MolecularOrbitals, Wavefunction,
 };
 use apost3dview_render::{
     glyph_scale_for_font_size, glyph_scale_for_world_size, layout_label, pick_atom, pick_bond, push_isosurface_vertices, ray_from_ndc,
-    BondVisualStyle, ExportSettings, GlyphAtlas, GlyphInstance, IsosurfaceMaterial, IsosurfaceVertex, Material, OrbitCamera, SceneUniforms,
-    ViewportCallback, ViewportResources,
+    AoSettings, BondVisualStyle, DofSettings, ExportSettings, GlyphAtlas, GlyphInstance, IsosurfaceMaterial, IsosurfaceVertex, Material,
+    OrbitCamera, SceneUniforms, ViewportCallback, ViewportResources,
 };
 use egui::{Color32, Slider};
 use glam::{Vec3, Vec4};
@@ -231,28 +231,33 @@ impl Default for AtomLabelStyle {
     }
 }
 
-/// PNG export quality tier. Medium/High are one-click presets so a
-/// chemist without rendering background gets a good result without
-/// needing to understand resolution/supersampling; Custom exposes both
-/// directly for anyone who wants exact control (e.g. a journal's required
-/// pixel dimensions).
+/// Two ways to size a render: `Dpi` (the default) asks for a figure width
+/// in inches and a DPI instead of a bare pixel count, matching how
+/// journals actually specify figure requirements, then derives pixel
+/// dimensions and embeds the physical size in the PNG itself (see
+/// `App::write_png`) so image editors and submission systems read the
+/// correct size automatically. `Custom` is the escape hatch for exact
+/// pixel dimensions where DPI doesn't apply (slides, web, an exact spec
+/// from somewhere that isn't inches-based).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RenderPreset {
-    Medium,
-    High,
+    Dpi,
     Custom,
 }
 
-/// Long edge (px) and supersample factor for each one-click preset. The
-/// short edge is derived from the current viewport's aspect ratio, so the
-/// export always frames exactly what's on screen (WYSIWYG), just denser —
-/// see `App::resolve_export_settings`. Chosen so Medium is fast (no
-/// supersampling, relies on the live view's existing MSAA) for slides/
-/// sharing, and High is meaningfully smoother for print/publication
-/// without the render time and memory of a much larger supersample factor
-/// (2x already quadruples the pixel count actually rendered).
-const RENDER_PRESET_MEDIUM: (u32, u32) = (1920, 1);
-const RENDER_PRESET_HIGH: (u32, u32) = (3840, 2);
+/// 300 DPI is the common journal minimum, but Martí found renders at 1000
+/// DPI (2026-08-28, once AO/depth-of-field gave the image real depth to
+/// resolve) look noticeably better, so that's the actual default now — the
+/// figure-width quick-set buttons below are typical single/double-column
+/// widths, still freely editable, and the DPI field itself stays
+/// user-adjustable down to 300 or below for anyone who wants a smaller file.
+const DEFAULT_PUBLICATION_DPI: u32 = 1000;
+const FIGURE_WIDTH_SINGLE_COLUMN_IN: f64 = 3.25;
+const FIGURE_WIDTH_DOUBLE_COLUMN_IN: f64 = 6.75;
+/// Renders internally at this multiple of the final pixel size and box-
+/// downsamples back — smooths edges beyond the live view's real-time MSAA,
+/// independent of whatever DPI/size is chosen.
+const PUBLICATION_SUPERSAMPLE: u32 = 2;
 
 struct RenderExportState {
     preset: RenderPreset,
@@ -260,11 +265,21 @@ struct RenderExportState {
     custom_height: u32,
     custom_supersample: u32,
     transparent_background: bool,
+    dpi: u32,
+    figure_width_in: f64,
 }
 
 impl Default for RenderExportState {
     fn default() -> Self {
-        Self { preset: RenderPreset::Medium, custom_width: 1920, custom_height: 1080, custom_supersample: 2, transparent_background: false }
+        Self {
+            preset: RenderPreset::Dpi,
+            custom_width: 1920,
+            custom_height: 1080,
+            custom_supersample: 2,
+            transparent_background: false,
+            dpi: DEFAULT_PUBLICATION_DPI,
+            figure_width_in: FIGURE_WIDTH_SINGLE_COLUMN_IN,
+        }
     }
 }
 
@@ -493,15 +508,43 @@ pub struct App {
     orbital_generation: OrbitalGenerationState,
     /// Updated every viewport repaint from the actual on-screen rect —
     /// the Render window reads this (rather than recomputing it itself,
-    /// since it doesn't have direct access to the viewport rect) so
-    /// Medium/High presets can frame the export exactly like the current
-    /// on-screen view.
+    /// since it doesn't have direct access to the viewport rect) so the
+    /// DPI preset can derive its height from the current on-screen view.
     last_aspect_ratio: f32,
 
     /// Isosurface lighting response — deliberately separate from
     /// `material` (the atom/bond one), shared across every structure the
     /// same way `material` is.
     isosurface_material: IsosurfaceMaterial,
+    /// Ambient occlusion — a single shared toggle/settings pair driving
+    /// both the live view and export (see `ao_render_material` and
+    /// `ViewportResources::run_ao_passes`), so tuning the Style-window
+    /// sliders shows the result live instead of only after a render.
+    ao_enabled: bool,
+    ao_settings: AoSettings,
+    /// "Phase C" progressive settle quality — the camera/settings snapshot
+    /// AO was last computed against, and whether that snapshot has
+    /// already had its one-time full-quality recompute. Every frame
+    /// either differs from this (the camera moved *or* a slider changed —
+    /// both have to count, or dragging a slider without also touching the
+    /// camera would just silently do nothing), AO reruns cheap
+    /// (interactive framerate) and this gets updated to the new snapshot
+    /// with `ao_settled = false`; the first frame afterward where neither
+    /// has changed reruns AO once at full quality and sets
+    /// `ao_settled = true`, after which further unchanged frames skip the
+    /// AO recompute entirely (the texture's still valid — nothing moved).
+    /// See the viewport panel's `ao_recompute_samples` computation.
+    ao_last_camera: Option<OrbitCamera>,
+    ao_last_settings: Option<AoSettings>,
+    ao_settled: bool,
+    /// Depth of field — same shared live+export toggle/settings shape as
+    /// AO, but with no settle-tiering of its own: unlike AO's SSAO sample
+    /// count, DoF's blur is cheap enough to just rerun at full quality
+    /// every frame the viewport actually redraws (it reuses AO's own
+    /// settle cadence only for the AO sub-pass it runs internally when
+    /// both are on — see `ViewportResources::run_live_dof_pass`).
+    dof_enabled: bool,
+    dof_settings: DofSettings,
     /// Snapshots taken by the Isosurfaces "Keep surface" button — frozen
     /// geometry *and* color/opacity as they were at that moment, rendered
     /// every frame regardless of which structure is currently active, so
@@ -552,6 +595,13 @@ impl App {
             orbital_generation: OrbitalGenerationState::default(),
             last_aspect_ratio: 16.0 / 9.0,
             isosurface_material: IsosurfaceMaterial::default(),
+            ao_enabled: true,
+            ao_settings: AoSettings::default(),
+            ao_last_camera: None,
+            ao_last_settings: None,
+            ao_settled: false,
+            dof_enabled: true,
+            dof_settings: DofSettings::default(),
             kept_isosurfaces: Vec::new(),
             selection_mode: SelectionMode::Select,
             warning: None,
@@ -895,31 +945,43 @@ impl App {
             channels.push((beta, beta_indices, " (beta)"));
         }
 
-        let mut generated = Vec::new();
-        let mut failures = Vec::new();
-        for (orbitals, mo_indices, spin_suffix) in channels {
+        // Every ticked orbital, across both spin channels, is evaluated in
+        // one batched `generate_mo_grids` call — the basis functions
+        // themselves (the expensive part, hundreds of shells on a real
+        // molecule) get computed once per grid point and shared across all
+        // of them, rather than once per orbital as a separate full grid pass.
+        let mut requests: Vec<(&MolecularOrbitals, usize)> = Vec::new();
+        let mut labels: Vec<String> = Vec::new();
+        for (orbitals, mo_indices, spin_suffix) in &channels {
             let homo = orbitals.homo_index();
             let lumo = orbitals.lumo_index();
-            for mo_index in mo_indices {
-                match generate_mo_grid(&wfn.basis, orbitals, mo_index, spacing, ORBITAL_GRID_PADDING_BOHR) {
-                    Ok(grid) => {
-                        let mo_number = mo_index + 1;
-                        let tag = if mo_number == homo {
-                            "HOMO".to_string()
-                        } else if mo_number == lumo {
-                            "LUMO".to_string()
-                        } else {
-                            format!("MO{mo_number}")
-                        };
-                        let mut new_structure = LoadedStructure::new(format!("{base_label} — {tag}{spin_suffix}"), molecule.clone(), None);
-                        let mut iso = IsosurfaceState::new(grid);
-                        iso.isovalue = self.orbital_generation.isovalue;
-                        new_structure.isosurface = Some(iso);
-                        generated.push(new_structure);
-                    }
-                    Err(err) => failures.push(format!("MO{}{spin_suffix}: {err}", mo_index + 1)),
+            for &mo_index in mo_indices {
+                let mo_number = mo_index + 1;
+                let tag = if mo_number == homo {
+                    "HOMO".to_string()
+                } else if mo_number == lumo {
+                    "LUMO".to_string()
+                } else {
+                    format!("MO{mo_number}")
+                };
+                requests.push((*orbitals, mo_index));
+                labels.push(format!("{base_label} — {tag}{spin_suffix}"));
+            }
+        }
+
+        let mut generated = Vec::new();
+        let mut failures = Vec::new();
+        match generate_mo_grids(&wfn.basis, &requests, spacing, ORBITAL_GRID_PADDING_BOHR) {
+            Ok(grids) => {
+                for (grid, label) in grids.into_iter().zip(labels) {
+                    let mut new_structure = LoadedStructure::new(label, molecule.clone(), None);
+                    let mut iso = IsosurfaceState::new(grid);
+                    iso.isovalue = self.orbital_generation.isovalue;
+                    new_structure.isosurface = Some(iso);
+                    generated.push(new_structure);
                 }
             }
+            Err(err) => failures.push(err),
         }
 
         let first_new_index = if generated.is_empty() { None } else { Some(self.structures.len()) };
@@ -949,7 +1011,7 @@ impl App {
     }
 
     /// Turns the current preset (plus the live view's aspect ratio, for
-    /// Medium/High) into concrete pixel dimensions and background.
+    /// `Dpi`) into concrete pixel dimensions and background.
     fn resolve_export_settings(&self) -> ExportSettings {
         let background = if self.render_export.transparent_background {
             None
@@ -958,35 +1020,90 @@ impl App {
             Some([r, g, b, 1.0])
         };
         match self.render_export.preset {
-            RenderPreset::Medium => {
-                let (long_edge, supersample) = RENDER_PRESET_MEDIUM;
-                Self::long_edge_export_settings(long_edge, self.last_aspect_ratio, supersample, background)
-            }
-            RenderPreset::High => {
-                let (long_edge, supersample) = RENDER_PRESET_HIGH;
-                Self::long_edge_export_settings(long_edge, self.last_aspect_ratio, supersample, background)
-            }
+            RenderPreset::Dpi => self.publication_export_settings(background),
             RenderPreset::Custom => ExportSettings {
                 width: self.render_export.custom_width.max(1),
                 height: self.render_export.custom_height.max(1),
                 supersample: self.render_export.custom_supersample.max(1),
                 background,
+                ambient_occlusion: self.ao_enabled.then_some(self.ao_settings),
+                depth_of_field: self.dof_enabled.then_some(self.dof_settings),
+                dof_focus_distance: self.camera.distance,
             },
         }
     }
 
-    /// Scales `long_edge` to fit the given aspect ratio (long edge on
-    /// whichever dimension is actually longer) — the export then frames
-    /// exactly what's on screen, just at a higher pixel density, rather
-    /// than reframing to some fixed shape.
-    fn long_edge_export_settings(long_edge: u32, aspect_ratio: f32, supersample: u32, background: Option<[f32; 4]>) -> ExportSettings {
-        let aspect_ratio = if aspect_ratio > 0.0 { aspect_ratio } else { 1.0 };
-        let (width, height) = if aspect_ratio >= 1.0 {
-            (long_edge, ((long_edge as f32 / aspect_ratio).round() as u32).max(1))
-        } else {
-            (((long_edge as f32 * aspect_ratio).round() as u32).max(1), long_edge)
+    /// Turns the requested figure width (inches) and DPI into pixel
+    /// dimensions. The physical width always maps to the horizontal
+    /// dimension specifically — that's what a journal's column-width
+    /// requirement actually constrains, regardless of the molecule's own
+    /// aspect ratio. Height is then derived from the live view's aspect
+    /// ratio, so the export still frames exactly what's on screen.
+    fn publication_export_settings(&self, background: Option<[f32; 4]>) -> ExportSettings {
+        let width = ((self.render_export.figure_width_in * self.render_export.dpi as f64).round() as u32).max(1);
+        let aspect_ratio = if self.last_aspect_ratio > 0.0 { self.last_aspect_ratio } else { 1.0 };
+        let height = ((width as f32 / aspect_ratio).round() as u32).max(1);
+        ExportSettings {
+            width,
+            height,
+            supersample: PUBLICATION_SUPERSAMPLE,
+            background,
+            ambient_occlusion: self.ao_enabled.then_some(self.ao_settings),
+            depth_of_field: self.dof_enabled.then_some(self.dof_settings),
+            dof_focus_distance: self.camera.distance,
+        }
+    }
+
+    /// The material to actually render with — identical to the Style
+    /// panel's own `material` unless ambient occlusion is on, in which
+    /// case it's dampened (near-zero specular, reduced diffuse, raised
+    /// ambient floor). AO reads as a much stronger, more "sculpted" effect
+    /// against flat-ish shading than against full Phong — a strong
+    /// specular highlight competes with and dilutes the occlusion
+    /// darkening, the same reason Speck's own atoms run zero lighting at
+    /// all and let AO + outline do the whole job. Shared by the live view
+    /// and export so what you see while tuning the AO sliders is what you
+    /// actually get — `self.material` itself (the Style panel's own live
+    /// value) is never touched.
+    fn ao_render_material(&self) -> Material {
+        if !self.ao_enabled {
+            return self.material;
+        }
+        Material {
+            ambient: (self.material.ambient + 0.45).min(0.85),
+            diffuse: self.material.diffuse * 0.4,
+            specular: self.material.specular * 0.05,
+            ..self.material
+        }
+    }
+
+    /// The DPI to embed in the exported PNG's physical-size metadata
+    /// (`pHYs` chunk) — only meaningful for `Dpi`, since `Custom` has no
+    /// attached physical size to be consistent with.
+    fn resolve_export_dpi(&self) -> Option<u32> {
+        match self.render_export.preset {
+            RenderPreset::Dpi => Some(self.render_export.dpi),
+            RenderPreset::Custom => None,
+        }
+    }
+
+    /// Writes RGBA8 pixels to a PNG, optionally embedding a physical-size
+    /// (`pHYs`) chunk so image editors and journal submission systems read
+    /// the correct print size automatically. `image::save_buffer` (used
+    /// when `dpi` is `None`) has no metadata hook, so the DPI case goes
+    /// through the lower-level `png` crate directly instead.
+    fn write_png(path: &std::path::Path, pixels: &[u8], width: u32, height: u32, dpi: Option<u32>) -> Result<(), String> {
+        let Some(dpi) = dpi else {
+            return image::save_buffer(path, pixels, width, height, image::ColorType::Rgba8).map_err(|err| err.to_string());
         };
-        ExportSettings { width, height, supersample, background }
+        let file = std::fs::File::create(path).map_err(|err| err.to_string())?;
+        let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let pixels_per_meter = (dpi as f64 / 0.0254).round() as u32;
+        encoder.set_pixel_dims(Some(png::PixelDimensions { xppu: pixels_per_meter, yppu: pixels_per_meter, unit: png::Unit::Meter }));
+        let mut writer = encoder.write_header().map_err(|err| err.to_string())?;
+        writer.write_image_data(pixels).map_err(|err| err.to_string())
     }
 
     /// Builds the same atom/measurement label geometry the live view
@@ -1065,7 +1182,7 @@ impl App {
         };
 
         let export_aspect = settings.width as f32 / settings.height.max(1) as f32;
-        let uniforms = SceneUniforms::new(&self.camera, export_aspect, &self.material);
+        let uniforms = SceneUniforms::new(&self.camera, export_aspect, &self.ao_render_material());
         let label_instances = self.build_export_label_instances(active, settings.height as f32);
         let target_format = self.render_state.target_format;
 
@@ -1091,7 +1208,8 @@ impl App {
                         px.swap(0, 2);
                     }
                 }
-                match image::save_buffer(&path, &pixels, settings.width, settings.height, image::ColorType::Rgba8) {
+                let dpi = self.resolve_export_dpi();
+                match Self::write_png(&path, &pixels, settings.width, settings.height, dpi) {
                     Ok(()) => self.show_status(format!("Saved {}", path.display())),
                     Err(err) => self.show_warning(format!("Could not write {}: {err}", path.display())),
                 }
@@ -1113,18 +1231,34 @@ impl App {
                 }
 
                 ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.render_export.preset, RenderPreset::Medium, "Medium");
-                    ui.selectable_value(&mut self.render_export.preset, RenderPreset::High, "High");
-                    ui.selectable_value(&mut self.render_export.preset, RenderPreset::Custom, "Custom");
+                    ui.selectable_value(&mut self.render_export.preset, RenderPreset::Dpi, "DPI");
+                    ui.selectable_value(&mut self.render_export.preset, RenderPreset::Custom, "Custom (pixels)");
                 });
                 ui.add_space(4.0);
 
                 match self.render_export.preset {
-                    RenderPreset::Medium => {
-                        ui.label(egui::RichText::new("1920 px long edge, no supersampling — fast, good for slides/sharing.").small().weak());
-                    }
-                    RenderPreset::High => {
-                        ui.label(egui::RichText::new("3840 px long edge, 2x supersampling — publication quality, slower.").small().weak());
+                    RenderPreset::Dpi => {
+                        ui.horizontal(|ui| {
+                            ui.label("DPI:");
+                            ui.add(egui::DragValue::new(&mut self.render_export.dpi).range(72..=1200));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Figure width:");
+                            ui.add(egui::DragValue::new(&mut self.render_export.figure_width_in).range(1.0..=20.0).speed(0.05).suffix(" in"));
+                        });
+                        ui.horizontal(|ui| {
+                            if ui.button("Single column (3.25 in)").clicked() {
+                                self.render_export.figure_width_in = FIGURE_WIDTH_SINGLE_COLUMN_IN;
+                            }
+                            if ui.button("Double column (6.75 in)").clicked() {
+                                self.render_export.figure_width_in = FIGURE_WIDTH_DOUBLE_COLUMN_IN;
+                            }
+                        });
+                        ui.label(
+                            egui::RichText::new("300 DPI is the common journal minimum — raise it for larger print sizes. Embeds the physical size in the PNG.")
+                                .small()
+                                .weak(),
+                        );
                     }
                     RenderPreset::Custom => {
                         ui.horizontal(|ui| {
@@ -1144,6 +1278,13 @@ impl App {
 
                 ui.add_space(6.0);
                 ui.checkbox(&mut self.render_export.transparent_background, "Transparent background");
+                if self.ao_enabled {
+                    ui.label(
+                        egui::RichText::new("Ambient occlusion is on (Style window) — this export uses far more samples than the live preview.")
+                            .small()
+                            .weak(),
+                    );
+                }
 
                 ui.add_space(8.0);
                 ui.separator();
@@ -1258,9 +1399,15 @@ impl App {
                 ui.horizontal(|ui| {
                     if ui.button("Default").clicked() {
                         self.material = Material::default();
+                        self.ao_settings = AoSettings::default();
+                        self.dof_settings = DofSettings::default();
+                        self.reset_active_isosurface_to_default();
                     }
                     if ui.button("Publication").clicked() {
                         self.material = Material::publication();
+                        self.ao_settings = AoSettings::default();
+                        self.dof_settings = DofSettings::default();
+                        self.reset_active_isosurface_to_default();
                     }
                 });
 
@@ -1302,6 +1449,38 @@ impl App {
                 isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[3], 1.0..=128.0).text("shininess")).changed();
                 if isosurface_material_changed {
                     self.rebuild_isosurface();
+                }
+
+                ui.add_space(12.0);
+                ui.checkbox(&mut self.ao_enabled, "Ambient occlusion");
+                ui.label(
+                    egui::RichText::new("Real per-pixel contact shading on atoms and bonds — live preview uses far fewer samples than export.")
+                        .small()
+                        .weak(),
+                );
+                if self.ao_enabled {
+                    ui.add(Slider::new(&mut self.ao_settings.radius, 0.1..=3.0).text("radius (\u{c5}ngstrom)"));
+                    ui.add(Slider::new(&mut self.ao_settings.strength, 0.0..=1.0).text("strength"));
+                    ui.add(Slider::new(&mut self.ao_settings.contrast_power, 0.5..=6.0).text("contrast"));
+                    ui.add(Slider::new(&mut self.ao_settings.outline_strength, 0.0..=6.0).text("outline"));
+                    if ui.button("Default").clicked() {
+                        self.ao_settings = AoSettings::default();
+                    }
+                }
+
+                ui.add_space(12.0);
+                ui.checkbox(&mut self.dof_enabled, "Depth of field");
+                ui.label(
+                    egui::RichText::new("Blurs whatever's far from the focal plane (always the current orbit target) — the finishing touch on a render, without changing any colors.")
+                        .small()
+                        .weak(),
+                );
+                if self.dof_enabled {
+                    ui.add(Slider::new(&mut self.dof_settings.strength, 0.0..=1.0).text("strength"));
+                    ui.add(Slider::new(&mut self.dof_settings.focus_range, 0.05..=2.0).text("focus range"));
+                    if ui.button("Default").clicked() {
+                        self.dof_settings = DofSettings::default();
+                    }
                 }
 
                 ui.add_space(12.0);
@@ -2157,11 +2336,50 @@ impl eframe::App for App {
                     }
                 }
 
+                // "Phase C" progressive AO quality: cheap every frame the
+                // camera is actually moving (orbit/pan/zoom) *or* a slider
+                // just changed, a one-time full-quality recompute the
+                // instant both stop changing, then no recompute at all on
+                // further idle frames — see the `ao_last_camera`/
+                // `ao_last_settings`/`ao_settled` field docs. The extra
+                // `request_repaint` on a just-changed frame is what
+                // guarantees a follow-up frame actually happens to catch
+                // "it settled" — egui doesn't keep repainting once input
+                // stops, so without this the settle transition would only
+                // ever fire by coincidence.
+                let ao_recompute_samples = if !self.ao_enabled {
+                    None
+                } else if self.ao_last_camera != Some(self.camera) || self.ao_last_settings != Some(self.ao_settings) {
+                    self.ao_last_camera = Some(self.camera);
+                    self.ao_last_settings = Some(self.ao_settings);
+                    self.ao_settled = false;
+                    ui.ctx().request_repaint();
+                    Some(apost3dview_render::AO_LIVE_SAMPLE_COUNT)
+                } else if !self.ao_settled {
+                    self.ao_settled = true;
+                    Some(apost3dview_render::AO_KERNEL_SIZE as u32)
+                } else {
+                    None
+                };
+
+                let pixels_per_point = ui.ctx().pixels_per_point();
                 let callback = ViewportCallback {
                     camera: self.camera,
-                    material: self.material,
+                    material: self.ao_render_material(),
                     aspect_ratio,
                     label_instances,
+                    ambient_occlusion: self.ao_enabled.then_some(self.ao_settings),
+                    viewport_size_px: [(rect.width() * pixels_per_point).round() as u32, (rect.height() * pixels_per_point).round() as u32],
+                    // `rect` is the 3D viewport's own position within the
+                    // full window (in egui's logical points) — the AO
+                    // shaders need it in physical pixels, matching what
+                    // `@builtin(position)` actually reports (see
+                    // `ViewportCallback::viewport_offset_px`).
+                    viewport_offset_px: [rect.min.x * pixels_per_point, rect.min.y * pixels_per_point],
+                    ao_recompute_samples,
+                    depth_of_field: self.dof_enabled.then_some(self.dof_settings),
+                    dof_focus_distance: self.camera.distance,
+                    background: self.material.background,
                 };
                 ui.painter()
                     .add(egui_wgpu::Callback::new_paint_callback(rect, callback));

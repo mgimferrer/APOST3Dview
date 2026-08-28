@@ -12,5 +12,6 @@ egui = "0.36.1"
 egui-wgpu = "0.36.1"
 glam = "0.33.3"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
+png = "0.18.1"
 rfd = "0.17.2"
 wgpu = "30.0.0"
