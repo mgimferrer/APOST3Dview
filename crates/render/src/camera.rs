@@ -3,7 +3,12 @@ use glam::{Mat4, Vec3};
 /// Orbit camera: rotates around a fixed target at a fixed distance, driven
 /// by yaw/pitch. Matches the drag-to-orbit / scroll-to-zoom interaction
 /// model used by CYLview, IBOview and VMD.
-#[derive(Debug, Clone, Copy)]
+/// `PartialEq` (exact float equality) is used by the live view's
+/// "has the camera actually moved since last frame" check — see
+/// `App`'s AO settle logic — not for any tolerance-based comparison,
+/// so exactness is exactly what's wanted: only real orbit/pan/zoom
+/// input changes these fields at all, never incidental drift.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OrbitCamera {
     pub target: Vec3,
     pub distance: f32,

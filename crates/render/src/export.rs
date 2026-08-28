@@ -23,6 +23,20 @@ pub struct ExportSettings {
     /// coverage), so "nothing drawn here" already means "transparent" with
     /// no further shader changes needed.
     pub background: Option<[f32; 4]>,
+    /// `Some` runs the ambient-occlusion pre-passes (see `ao.rs`) and the
+    /// AO-sampling shader variants before readback, at the given settings
+    /// — `None` skips all of it, a real extra GPU cost otherwise. The same
+    /// `AoSettings` also drive the live view, so what you tune there is
+    /// what an export with AO on actually uses.
+    pub ambient_occlusion: Option<crate::ao::AoSettings>,
+    /// `Some` runs the depth-of-field post-process (see `dof.rs`) before
+    /// readback — `None` skips it, a real extra GPU cost otherwise. The
+    /// same `DofSettings` also drive the live view. `dof_focus_distance`
+    /// (the camera's own orbit distance — see `dof.rs`'s module doc for
+    /// why there's no separate focus-point control) is only meaningful
+    /// alongside this.
+    pub depth_of_field: Option<crate::dof::DofSettings>,
+    pub dof_focus_distance: f32,
 }
 
 /// Box-downsamples an RGBA8 image (top-to-bottom row order) by an integer

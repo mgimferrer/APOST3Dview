@@ -44,7 +44,7 @@ async fn run() {
     // Opaque white background: the exported image should contain both the
     // background color AND non-background pixels (proof the molecule
     // actually got drawn, not just a blank clear).
-    let settings = ExportSettings { width: 64, height: 64, supersample: 2, background: Some([1.0, 1.0, 1.0, 1.0]) };
+    let settings = ExportSettings { width: 64, height: 64, supersample: 2, background: Some([1.0, 1.0, 1.0, 1.0]), ambient_occlusion: None, depth_of_field: None, dof_focus_distance: 0.0 };
     let pixels = resources
         .render_offscreen(&device, &queue, target_format, &uniforms, &[], &settings)
         .expect("offscreen render should succeed");
@@ -63,7 +63,7 @@ async fn run() {
     // the "opaque-or-nothing" transparency claim actually holds through
     // the whole offscreen + MSAA-resolve + downsample pipeline, not just
     // in the shader in isolation.
-    let transparent_settings = ExportSettings { width: 64, height: 64, supersample: 2, background: None };
+    let transparent_settings = ExportSettings { width: 64, height: 64, supersample: 2, background: None, ambient_occlusion: None, depth_of_field: None, dof_focus_distance: 0.0 };
     let transparent_pixels = resources
         .render_offscreen(&device, &queue, target_format, &uniforms, &[], &transparent_settings)
         .expect("transparent offscreen render should succeed");
@@ -76,7 +76,7 @@ async fn run() {
 
     // Supersample=1 (no supersampling) should still work and produce the
     // exact requested resolution.
-    let no_supersample = ExportSettings { width: 32, height: 48, supersample: 1, background: Some([0.0, 0.0, 0.0, 1.0]) };
+    let no_supersample = ExportSettings { width: 32, height: 48, supersample: 1, background: Some([0.0, 0.0, 0.0, 1.0]), ambient_occlusion: None, depth_of_field: None, dof_focus_distance: 0.0 };
     let pixels_1x = resources
         .render_offscreen(&device, &queue, target_format, &uniforms, &[], &no_supersample)
         .expect("1x supersample export should succeed");

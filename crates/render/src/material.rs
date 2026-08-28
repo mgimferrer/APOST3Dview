@@ -20,8 +20,10 @@ pub struct Material {
 
 impl Default for Material {
     /// The reference look — matches what Martí tuned to and confirmed
-    /// against the VMD/CYLview reference images (2026-08-12). This is what
-    /// the style panel's "Default" button resets to.
+    /// against the VMD/CYLview reference images (2026-08-12, atom/bond
+    /// scale revised 2026-08-28 once ambient occlusion made a slightly
+    /// fuller geometry read better). This is what the style panel's
+    /// "Default" button resets to.
     fn default() -> Self {
         Self {
             ambient: 0.30,
@@ -35,8 +37,8 @@ impl Default for Material {
             light_yaw: -0.5,
             light_pitch: 0.20,
             background: [1.0, 1.0, 1.0],
-            atom_scale: 0.20,
-            bond_radius: 0.15,
+            atom_scale: 0.24,
+            bond_radius: 0.16,
         }
     }
 }

@@ -41,7 +41,7 @@ async fn run() {
     let material = Material::default();
     let uniforms = SceneUniforms::new(&camera, 1.0, &material);
 
-    let settings = ExportSettings { width: 256, height: 256, supersample: 1, background: Some([1.0, 1.0, 1.0, 1.0]) };
+    let settings = ExportSettings { width: 256, height: 256, supersample: 1, background: Some([1.0, 1.0, 1.0, 1.0]), ambient_occlusion: None, depth_of_field: None, dof_focus_distance: 0.0 };
     let pixels = resources
         .render_offscreen(&device, &queue, target_format, &uniforms, &[], &settings)
         .expect("real-data offscreen render should succeed");
