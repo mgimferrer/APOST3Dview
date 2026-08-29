@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use apost3dview_core::{
-    element_data, extract_isosurface, format_coordinates, generate_mo_grids, measure, parse_cube, parse_fchk_wavefunction, parse_xyz, refine_grid,
-    Bond, CoordinateFormat, LengthUnit, MeasurementKind, Molecule, MolecularOrbitals, Wavefunction,
+    element_data, extract_isosurface, format_coordinates, generate_mo_grids, measure, parse_cube, parse_fchk_wavefunction, parse_molden_wavefunction,
+    parse_xyz, refine_grid, Bond, CoordinateFormat, LengthUnit, MeasurementKind, Molecule, MolecularOrbitals, Wavefunction,
 };
 use apost3dview_render::{
     glyph_scale_for_font_size, glyph_scale_for_world_size, layout_label, pick_atom, pick_bond, push_isosurface_vertices, ray_from_ndc,
@@ -872,6 +872,44 @@ impl App {
         }
     }
 
+    /// Same shape as `open_fchk` — geometry + wavefunction, feeding the
+    /// same "Generate orbitals" section — sourced from a `.molden` file
+    /// instead. `generate_mo_grid`/`evaluate_mo` already take
+    /// `(&BasisSet, &MolecularOrbitals)` rather than a `.fchk`-specific
+    /// `Wavefunction`, so nothing downstream of `parse_molden_wavefunction`
+    /// needed to change for a second source to plug in here.
+    fn open_molden(&mut self) {
+        let Some(path) = rfd::FileDialog::new().add_filter("Molden format", &["molden", "inp"]).pick_file() else { return };
+        match Molecule::from_molden(&path) {
+            Ok(molecule) => {
+                let label = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled.molden".into());
+                let mut structure = LoadedStructure::new(label, molecule, Some(path.clone()));
+                match parse_molden_wavefunction(&path) {
+                    Ok(wfn) => {
+                        let max_angular_momentum = wfn.basis.shells.iter().map(|s| s.angular_momentum).max().unwrap_or(0);
+                        if wfn.alpha.num_orbitals() > 0 {
+                            structure.selected_alpha_mos.insert(wfn.alpha.homo_index() - 1);
+                        }
+                        if let Some(beta) = &wfn.beta {
+                            if beta.num_orbitals() > 0 {
+                                structure.selected_beta_mos.insert(beta.homo_index() - 1);
+                            }
+                        }
+                        structure.wavefunction = Some(wfn);
+                        if max_angular_momentum > 4 {
+                            self.show_warning("This basis set includes h (or higher) shells — orbital generation isn't supported yet for this file.");
+                        }
+                    }
+                    Err(err) => self.show_warning(format!("Geometry loaded, but orbitals unavailable: {err}")),
+                }
+                let index = self.structures.len();
+                self.structures.push(structure);
+                self.set_active(index);
+            }
+            Err(err) => self.show_warning(format!("Could not load {}: {err}", path.display())),
+        }
+    }
+
     fn open_xyz(&mut self) {
         let Some(paths) = rfd::FileDialog::new().add_filter("XYZ", &["xyz"]).pick_files() else { return };
         let mut first_new_index = None;
@@ -1391,6 +1429,9 @@ impl App {
                 ui.horizontal(|ui| {
                     if ui.button("Open .fchk...").clicked() {
                         self.open_fchk();
+                    }
+                    if ui.button("Open .molden...").clicked() {
+                        self.open_molden();
                     }
                     if ui.button("Open .xyz...").clicked() {
                         self.open_xyz();

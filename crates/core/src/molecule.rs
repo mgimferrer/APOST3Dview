@@ -53,6 +53,12 @@ impl Molecule {
         Ok(Self::from_atoms(geometry.atomic_numbers, positions))
     }
 
+    pub fn from_molden(path: &Path) -> io::Result<Self> {
+        let geometry = crate::molden::parse_molden_geometry(path)?;
+        let positions: Vec<Vec3> = geometry.positions.iter().map(|&p| Vec3::from(p)).collect();
+        Ok(Self::from_atoms(geometry.atomic_numbers, positions))
+    }
+
     pub fn bounding_sphere(&self) -> (Vec3, f32) {
         if self.positions.is_empty() {
             return (Vec3::ZERO, 1.0);

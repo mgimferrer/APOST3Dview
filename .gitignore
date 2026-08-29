@@ -44,3 +44,11 @@ PROJECT-ROADMAP.md
 /TESTS-VISUALIZER/*.log
 /TESTS-VISUALIZER/*.com
 /TESTS-VISUALIZER/*.com.sh
+
+# .molden validation set (TESTS-VISUALIZER/molden-pyscf/): same reasoning
+# as the Phase 3 set above, for the .molden parser — PySCF-generated
+# .molden files plus their own independently-generated reference .cube
+# files (compare_cube_molden validates against these), and the exact
+# gen_molden.py script + pinned pyscf version that produced them, so the
+# whole set is reproducible from one place.
+!/TESTS-VISUALIZER/molden-pyscf/*.cube
