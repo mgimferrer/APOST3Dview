@@ -1508,7 +1508,7 @@ impl App {
                     ui.selectable_value(&mut self.atom_label_mode, AtomLabelMode::NumberType, "Number+Type");
                 });
                 if self.atom_label_mode != AtomLabelMode::None {
-                    ui.add(Slider::new(&mut self.atom_label_style.relative_size, 0.2..=2.5).text("label size (× atom radius)"));
+                    ui.add(Slider::new(&mut self.atom_label_style.relative_size, 0.2..=6.0).text("label size (× atom radius)"));
                     ui.horizontal(|ui| {
                         ui.label("Label color:");
                         ui.color_edit_button_srgba(&mut self.atom_label_style.text_color);
@@ -2067,7 +2067,7 @@ impl App {
                 ui.add_space(10.0);
                 ui.separator();
                 ui.label("Label style");
-                ui.add(Slider::new(&mut self.measurement_style.font_size, 8.0..=32.0).text("font size"));
+                ui.add(Slider::new(&mut self.measurement_style.font_size, 8.0..=128.0).text("font size"));
                 ui.checkbox(&mut self.measurement_style.bold, "Bold");
                 let mut decimals = self.measurement_style.decimal_places as u32;
                 if ui.add(Slider::new(&mut decimals, 0..=4).text("decimal places")).changed() {
