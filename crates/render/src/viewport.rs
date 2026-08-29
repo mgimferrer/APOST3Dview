@@ -176,6 +176,14 @@ impl ViewportResources {
     /// needed CPU-side, for laying out label text, independent of this
     /// GPU-resources struct) — this just builds a bind group referencing
     /// its texture.
+    /// The color format every pipeline here was built against — needed by
+    /// callers (`ViewportCallback::prepare`, `App`'s export path) to tell
+    /// `SceneUniforms::set_srgb_target` whether the hardware will encode
+    /// linear output to sRGB automatically on write.
+    pub fn target_format(&self) -> wgpu::TextureFormat {
+        self.target_format
+    }
+
     pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat, glyph_atlas: &GlyphAtlas) -> Self {
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scene_uniforms"),
@@ -2070,7 +2078,8 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
         callback_resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
         let resources: &mut ViewportResources = callback_resources.get_mut().expect("ViewportResources not registered");
-        let uniforms = SceneUniforms::new(&self.camera, self.aspect_ratio, &self.material);
+        let mut uniforms = SceneUniforms::new(&self.camera, self.aspect_ratio, &self.material);
+        uniforms.set_srgb_target(resources.target_format().is_srgb());
         resources.write_uniforms(queue, &uniforms);
         resources.update_labels(device, &self.label_instances);
 

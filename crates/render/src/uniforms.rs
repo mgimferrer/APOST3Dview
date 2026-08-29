@@ -15,7 +15,10 @@ pub struct SceneUniforms {
     pub light_dir: [f32; 4],
     /// ambient, diffuse, specular, shininess
     pub material: [f32; 4],
-    /// atom_scale, bond_radius, unused, unused
+    /// atom_scale, bond_radius, exposure, srgb_target (1.0 if the render
+    /// target this frame writes to is an sRGB-encoding format — see
+    /// `set_srgb_target` — 0.0 by default, correct for every headless
+    /// example, which all render to a plain `Bgra8Unorm` target)
     pub style: [f32; 4],
 }
 
@@ -32,7 +35,20 @@ impl SceneUniforms {
             camera_up: [up.x, up.y, up.z, 0.0],
             light_dir: [light_dir.x, light_dir.y, light_dir.z, 0.0],
             material: [material.ambient, material.diffuse, material.specular, material.shininess],
-            style: [material.atom_scale, material.bond_radius, 0.0, 0.0],
+            style: [material.atom_scale, material.bond_radius, material.exposure, 0.0],
         }
+    }
+
+    /// Sets whether this frame's render target is an sRGB-encoding texture
+    /// format (`is_srgb()` on the format passed to `ViewportResources::new`/
+    /// `render_offscreen`) — the shaders need to know this to do the
+    /// linear->sRGB encode themselves only when the hardware won't already
+    /// do it automatically on write, and skip it (staying linear) when the
+    /// hardware will. Getting this wrong either way visibly washes out or
+    /// darkens the whole image, so every real call site (the live view,
+    /// PNG export) must call this; only headless examples that hardcode a
+    /// plain `Bgra8Unorm` target can skip it and rely on the `0.0` default.
+    pub fn set_srgb_target(&mut self, is_srgb: bool) {
+        self.style[3] = if is_srgb { 1.0 } else { 0.0 };
     }
 }

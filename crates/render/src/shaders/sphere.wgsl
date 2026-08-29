@@ -200,18 +200,80 @@ fn intersect_sphere(ray_origin: vec3<f32>, ray_dir: vec3<f32>, center: vec3<f32>
     return vec4<f32>(ray_origin + t * ray_dir, 1.0);
 }
 
-// Blinn-Phong shading shared by `fs_main` and `fs_main_ao` — kept as one
-// function so the two entry points can never drift apart on the base
-// lighting, only on whether `apply_ao` runs afterward.
+// ---- Color pipeline: sRGB<->linear, hemisphere fill light, Fresnel,
+// filmic tone mapping. Duplicated identically in `cylinder.wgsl` and
+// `isosurface.wgsl` — each `include_str!`'d shader module compiles
+// standalone, so there's no way to share a real module between them.
+
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    let lo = c / 12.92;
+    let hi = pow((c + vec3<f32>(0.055)) / 1.055, vec3<f32>(2.4));
+    return select(hi, lo, c <= vec3<f32>(0.04045));
+}
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let lo = c * 12.92;
+    let hi = 1.055 * pow(c, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055);
+    return select(hi, lo, c <= vec3<f32>(0.0031308));
+}
+
+// Narkowicz's ACES filmic fit — cheap, no LUT, and gives bright highlights
+// a soft shoulder instead of clipping straight to flat white the way
+// unclamped linear output does.
+fn aces_tonemap(c: vec3<f32>) -> vec3<f32> {
+    let a = 2.51;
+    let b = 0.03;
+    let cc = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    return clamp((c * (a * c + vec3<f32>(b))) / (c * (cc * c + vec3<f32>(d)) + vec3<f32>(e)), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// A cheap image-based-lighting stand-in: tints the ambient term by world-
+// space surface orientation (brighter/cooler facing up, dimmer/warmer
+// facing down) instead of a single flat scalar, so the side of a sphere
+// facing away from the key light still shows a gradient rather than
+// crushing to a flat near-black — a fixed, not user-tunable, "fill light"
+// in effect (see the module doc on why: one exposure slider is worth
+// exposing, three more light-rig sliders aren't).
+fn hemisphere_ambient(normal: vec3<f32>) -> vec3<f32> {
+    let sky = vec3<f32>(1.05, 1.05, 1.1);
+    let ground = vec3<f32>(0.65, 0.62, 0.6);
+    return mix(ground, sky, normal.y * 0.5 + 0.5);
+}
+
+const FRESNEL_POWER: f32 = 5.0;
+const FRESNEL_STRENGTH: f32 = 0.08;
+
+fn fresnel_schlick(n_dot_v: f32, power: f32) -> f32 {
+    return pow(clamp(1.0 - n_dot_v, 0.0, 1.0), power);
+}
+
+// Exposure -> filmic tone map -> sRGB encode (only when the render target
+// itself won't do that encode automatically — see `SceneUniforms::
+// set_srgb_target`). The one place every fragment shader's lit color
+// should pass through right before being written out.
+fn finalize_color(linear_color: vec3<f32>) -> vec3<f32> {
+    let mapped = aces_tonemap(linear_color * scene.style.z);
+    return select(linear_to_srgb(mapped), mapped, scene.style.w > 0.5);
+}
+
+// Blinn-Phong shading (plus a hemisphere fill term and a subtle Fresnel
+// rim) shared by `fs_main` and `fs_main_ao` — kept as one function so the
+// two entry points can never drift apart on the base lighting, only on
+// whether `apply_ao` runs afterward. Returns *linear-light* color, not a
+// final pixel value — callers must pass it through `finalize_color`.
 fn shade(hit_point: vec3<f32>, normal: vec3<f32>, color: vec3<f32>) -> vec3<f32> {
     let light_dir = normalize(scene.light_dir.xyz);
     let view_dir = normalize(scene.camera_eye.xyz - hit_point);
     let half_dir = normalize(light_dir + view_dir);
 
-    let ambient = scene.material.x;
+    let albedo = srgb_to_linear(color);
+    let ambient = scene.material.x * hemisphere_ambient(normal);
     let diffuse_strength = scene.material.y * max(dot(normal, light_dir), 0.0);
     let specular_strength = scene.material.z * pow(max(dot(normal, half_dir), 0.0), scene.material.w);
-    return color * (ambient + diffuse_strength) + vec3<f32>(specular_strength);
+    let fresnel = fresnel_schlick(max(dot(normal, view_dir), 0.0), FRESNEL_POWER) * FRESNEL_STRENGTH;
+    return albedo * (ambient + diffuse_strength) + vec3<f32>(specular_strength + fresnel);
 }
 
 @fragment
@@ -231,7 +293,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let ndc_depth = clip.z / clip.w;
 
     var out: FragmentOutput;
-    out.color = vec4<f32>(lit_color, 1.0);
+    out.color = vec4<f32>(finalize_color(lit_color), 1.0);
     out.depth = ndc_depth;
     return out;
 }
@@ -256,7 +318,7 @@ fn fs_main_ao(in: VertexOutput) -> FragmentOutput {
     lit_color = apply_ao(lit_color, in.clip_position, hit_point);
 
     var out: FragmentOutput;
-    out.color = vec4<f32>(lit_color, 1.0);
+    out.color = vec4<f32>(finalize_color(lit_color), 1.0);
     out.depth = ndc_depth;
     return out;
 }

@@ -145,18 +145,65 @@ fn apply_dash(distance_along: f32, dashed: f32) {
     }
 }
 
-// Blinn-Phong shading shared by `fs_main` and `fs_main_ao` — kept as one
-// function so the two entry points can never drift apart on the base
-// lighting, only on whether `apply_ao` runs afterward.
+// ---- Color pipeline: sRGB<->linear, hemisphere fill light, Fresnel,
+// filmic tone mapping. Identical to `sphere.wgsl`'s copy — see that
+// file's comment for why this is duplicated rather than shared.
+
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    let lo = c / 12.92;
+    let hi = pow((c + vec3<f32>(0.055)) / 1.055, vec3<f32>(2.4));
+    return select(hi, lo, c <= vec3<f32>(0.04045));
+}
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let lo = c * 12.92;
+    let hi = 1.055 * pow(c, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055);
+    return select(hi, lo, c <= vec3<f32>(0.0031308));
+}
+
+fn aces_tonemap(c: vec3<f32>) -> vec3<f32> {
+    let a = 2.51;
+    let b = 0.03;
+    let cc = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    return clamp((c * (a * c + vec3<f32>(b))) / (c * (cc * c + vec3<f32>(d)) + vec3<f32>(e)), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn hemisphere_ambient(normal: vec3<f32>) -> vec3<f32> {
+    let sky = vec3<f32>(1.05, 1.05, 1.1);
+    let ground = vec3<f32>(0.65, 0.62, 0.6);
+    return mix(ground, sky, normal.y * 0.5 + 0.5);
+}
+
+const FRESNEL_POWER: f32 = 5.0;
+const FRESNEL_STRENGTH: f32 = 0.08;
+
+fn fresnel_schlick(n_dot_v: f32, power: f32) -> f32 {
+    return pow(clamp(1.0 - n_dot_v, 0.0, 1.0), power);
+}
+
+fn finalize_color(linear_color: vec3<f32>) -> vec3<f32> {
+    let mapped = aces_tonemap(linear_color * scene.style.z);
+    return select(linear_to_srgb(mapped), mapped, scene.style.w > 0.5);
+}
+
+// Blinn-Phong shading (plus a hemisphere fill term and a subtle Fresnel
+// rim) shared by `fs_main` and `fs_main_ao` — kept as one function so the
+// two entry points can never drift apart on the base lighting, only on
+// whether `apply_ao` runs afterward. Returns *linear-light* color, not a
+// final pixel value — callers must pass it through `finalize_color`.
 fn shade(world_position: vec3<f32>, normal: vec3<f32>, color: vec3<f32>) -> vec3<f32> {
     let light_dir = normalize(scene.light_dir.xyz);
     let view_dir = normalize(scene.camera_eye.xyz - world_position);
     let half_dir = normalize(light_dir + view_dir);
 
-    let ambient = scene.material.x;
+    let albedo = srgb_to_linear(color);
+    let ambient = scene.material.x * hemisphere_ambient(normal);
     let diffuse_strength = scene.material.y * max(dot(normal, light_dir), 0.0);
     let specular_strength = scene.material.z * pow(max(dot(normal, half_dir), 0.0), scene.material.w);
-    return color * (ambient + diffuse_strength) + vec3<f32>(specular_strength);
+    let fresnel = fresnel_schlick(max(dot(normal, view_dir), 0.0), FRESNEL_POWER) * FRESNEL_STRENGTH;
+    return albedo * (ambient + diffuse_strength) + vec3<f32>(specular_strength + fresnel);
 }
 
 @fragment
@@ -164,7 +211,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     apply_dash(in.distance_along, in.dashed);
     let normal = normalize(in.world_normal);
     let lit_color = shade(in.world_position, normal, in.color);
-    return vec4<f32>(lit_color, 1.0);
+    return vec4<f32>(finalize_color(lit_color), 1.0);
 }
 
 // Same as `fs_main`, plus ambient occlusion + outline sampled from the
@@ -175,7 +222,7 @@ fn fs_main_ao(in: VertexOutput) -> @location(0) vec4<f32> {
     let normal = normalize(in.world_normal);
     var lit_color = shade(in.world_position, normal, in.color);
     lit_color = apply_ao(lit_color, in.clip_position, in.world_position);
-    return vec4<f32>(lit_color, 1.0);
+    return vec4<f32>(finalize_color(lit_color), 1.0);
 }
 
 // Selection-highlight pass: same geometry, no lighting — a flat

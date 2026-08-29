@@ -1182,9 +1182,10 @@ impl App {
         };
 
         let export_aspect = settings.width as f32 / settings.height.max(1) as f32;
-        let uniforms = SceneUniforms::new(&self.camera, export_aspect, &self.ao_render_material());
-        let label_instances = self.build_export_label_instances(active, settings.height as f32);
+        let mut uniforms = SceneUniforms::new(&self.camera, export_aspect, &self.ao_render_material());
         let target_format = self.render_state.target_format;
+        uniforms.set_srgb_target(target_format.is_srgb());
+        let label_instances = self.build_export_label_instances(active, settings.height as f32);
 
         let mut renderer = self.render_state.renderer.write();
         let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() else {
@@ -1438,6 +1439,7 @@ impl App {
                 ui.add(Slider::new(&mut self.material.diffuse, 0.0..=1.0).text("diffuse"));
                 ui.add(Slider::new(&mut self.material.specular, 0.0..=1.0).text("specular"));
                 ui.add(Slider::new(&mut self.material.shininess, 1.0..=128.0).text("shininess"));
+                ui.add(Slider::new(&mut self.material.exposure, 0.3..=2.5).text("exposure"));
 
                 ui.add_space(12.0);
                 ui.label("Isosurface material");

@@ -16,6 +16,13 @@ pub struct Material {
     /// Bond cylinder radius, angstrom (VMD "Bond Radius" — an absolute
     /// value there, not a multiplier).
     pub bond_radius: f32,
+    /// Linear-light multiplier applied before the filmic tone-mapping curve
+    /// (see `sphere.wgsl`'s `finalize_color`) — 1.0 is neutral. This is the
+    /// one user-facing knob for the whole tone-mapping pipeline; everything
+    /// else (the ACES-style rolloff curve itself, the sRGB/linear
+    /// conversion) is fixed, not exposed, to keep the Style panel from
+    /// growing controls nobody needs to touch day to day.
+    pub exposure: f32,
 }
 
 impl Default for Material {
@@ -39,6 +46,7 @@ impl Default for Material {
             background: [1.0, 1.0, 1.0],
             atom_scale: 0.24,
             bond_radius: 0.16,
+            exposure: 1.0,
         }
     }
 }
