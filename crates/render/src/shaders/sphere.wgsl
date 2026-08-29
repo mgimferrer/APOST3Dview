@@ -4,9 +4,9 @@ struct SceneUniforms {
     camera_right: vec4<f32>,
     camera_up: vec4<f32>,
     light_dir: vec4<f32>,
-    // ambient, diffuse, specular, shininess
+    // ambient, roughness, reflectance (F0), light_intensity
     material: vec4<f32>,
-    // atom_scale, bond_radius, unused, unused
+    // atom_scale, bond_radius, exposure, srgb_target
     style: vec4<f32>,
 };
 
@@ -242,13 +242,6 @@ fn hemisphere_ambient(normal: vec3<f32>) -> vec3<f32> {
     return mix(ground, sky, normal.y * 0.5 + 0.5);
 }
 
-const FRESNEL_POWER: f32 = 5.0;
-const FRESNEL_STRENGTH: f32 = 0.08;
-
-fn fresnel_schlick(n_dot_v: f32, power: f32) -> f32 {
-    return pow(clamp(1.0 - n_dot_v, 0.0, 1.0), power);
-}
-
 // Exposure -> filmic tone map -> sRGB encode (only when the render target
 // itself won't do that encode automatically — see `SceneUniforms::
 // set_srgb_target`). The one place every fragment shader's lit color
@@ -258,22 +251,81 @@ fn finalize_color(linear_color: vec3<f32>) -> vec3<f32> {
     return select(linear_to_srgb(mapped), mapped, scene.style.w > 0.5);
 }
 
-// Blinn-Phong shading (plus a hemisphere fill term and a subtle Fresnel
-// rim) shared by `fs_main` and `fs_main_ao` — kept as one function so the
-// two entry points can never drift apart on the base lighting, only on
+// ---- Cook-Torrance/GGX BRDF ------------------------------------------
+// Standard formulation (Trowbridge-Reitz normal distribution, Smith
+// geometry term with Karis/Epic's direct-lighting `k` remap, Schlick
+// Fresnel) — the same shape every modern real-time renderer (Blender's
+// Principled BSDF included) uses. Replaced Blinn-Phong 2026-08-29: a real
+// side-by-side preview showed the isosurface in particular reading as
+// noticeably more dimensional under GGX (a defined, roughness-shaped
+// highlight instead of a flatter response on a large curved surface) —
+// see `Material`'s doc. No separate ad hoc Fresnel rim needed on top of
+// this the way Blinn-Phong had one: GGX's own Fresnel term already
+// brightens grazing angles correctly as part of the specular response.
+const PI: f32 = 3.14159265359;
+
+fn distribution_ggx(n_dot_h: f32, roughness: f32) -> f32 {
+    let a = roughness * roughness;
+    let a2 = a * a;
+    let denom = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+    return a2 / max(PI * denom * denom, 1e-6);
+}
+
+// Height-correlated Smith visibility (Filament/Frostbite's formulation),
+// not the separable Schlick-GGX approximation this started with — it
+// already folds in the `1 / (4 * n_dot_v * n_dot_l)` term from the
+// specular denominator, and does so in a way that stays numerically
+// bounded as either angle approaches grazing, instead of the naive
+// separable version's denominator collapsing toward zero there. Found by
+// a real hands-on report (2026-08-29): the isosurface showed an
+// occasional too-bright, partly desaturated hotspot depending on the
+// exact camera/light geometry — consistent with exactly this class of
+// grazing-angle spike, not (just) the missing AO dampening fixed
+// alongside this.
+fn visibility_smith_ggx_correlated(n_dot_v: f32, n_dot_l: f32, roughness: f32) -> f32 {
+    let a2 = roughness * roughness * roughness * roughness;
+    let ggx_v = n_dot_l * sqrt(n_dot_v * n_dot_v * (1.0 - a2) + a2);
+    let ggx_l = n_dot_v * sqrt(n_dot_l * n_dot_l * (1.0 - a2) + a2);
+    return 0.5 / max(ggx_v + ggx_l, 1e-5);
+}
+
+fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
+    return f0 + (vec3<f32>(1.0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
+// Shared by `fs_main` and `fs_main_ao` — kept as one function so the two
+// entry points can never drift apart on the base lighting, only on
 // whether `apply_ao` runs afterward. Returns *linear-light* color, not a
 // final pixel value — callers must pass it through `finalize_color`.
 fn shade(hit_point: vec3<f32>, normal: vec3<f32>, color: vec3<f32>) -> vec3<f32> {
-    let light_dir = normalize(scene.light_dir.xyz);
-    let view_dir = normalize(scene.camera_eye.xyz - hit_point);
-    let half_dir = normalize(light_dir + view_dir);
+    let n = normal;
+    let v = normalize(scene.camera_eye.xyz - hit_point);
+    let l = normalize(scene.light_dir.xyz);
+    let h = normalize(v + l);
 
+    let n_dot_v = max(dot(n, v), 1e-4);
+    let n_dot_l = max(dot(n, l), 0.0);
+    let n_dot_h = max(dot(n, h), 0.0);
+    let v_dot_h = max(dot(v, h), 0.0);
+
+    let roughness = scene.material.y;
+    let f0 = vec3<f32>(scene.material.z);
     let albedo = srgb_to_linear(color);
-    let ambient = scene.material.x * hemisphere_ambient(normal);
-    let diffuse_strength = scene.material.y * max(dot(normal, light_dir), 0.0);
-    let specular_strength = scene.material.z * pow(max(dot(normal, half_dir), 0.0), scene.material.w);
-    let fresnel = fresnel_schlick(max(dot(normal, view_dir), 0.0), FRESNEL_POWER) * FRESNEL_STRENGTH;
-    return albedo * (ambient + diffuse_strength) + vec3<f32>(specular_strength + fresnel);
+
+    let d = distribution_ggx(n_dot_h, roughness);
+    let vis = visibility_smith_ggx_correlated(n_dot_v, n_dot_l, roughness);
+    let f = fresnel_schlick(v_dot_h, f0);
+
+    let specular = d * vis * f;
+    // Energy conservation: light not reflected specularly (1 - F) is
+    // what's left over for diffuse — the real reason a rough dielectric's
+    // diffuse dims slightly at grazing angles, where F is largest.
+    let kd = vec3<f32>(1.0) - f;
+    let diffuse = kd * albedo / PI;
+
+    let direct = (diffuse + specular) * n_dot_l * scene.material.w;
+    let ambient = hemisphere_ambient(n) * albedo * scene.material.x;
+    return direct + ambient;
 }
 
 @fragment

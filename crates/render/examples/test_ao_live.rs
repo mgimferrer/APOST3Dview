@@ -45,7 +45,7 @@ async fn run() {
     let (center, radius) = molecule.bounding_sphere();
     let mut camera = OrbitCamera::default();
     camera.frame_bounds(center, radius);
-    let material = Material { ambient: 0.7, diffuse: 0.35, specular: 0.05, ..Material::default() };
+    let material = Material { ambient: 0.55, reflectance: 0.03, light_intensity: 2.0, ..Material::default() };
     let ao_settings = AoSettings::default();
 
     let (viewport_w, viewport_h) = (320u32, 260u32);

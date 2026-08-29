@@ -678,7 +678,7 @@ impl App {
         let mut renderer = self.render_state.renderer.write();
         if let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() {
             resources.update_isosurface(&self.render_state.device, &vertices);
-            resources.update_isosurface_material(&self.render_state.queue, &self.isosurface_material);
+            resources.update_isosurface_material(&self.render_state.queue, &self.ao_render_isosurface_material());
         }
     }
 
@@ -1064,25 +1064,47 @@ impl App {
 
     /// The material to actually render with — identical to the Style
     /// panel's own `material` unless ambient occlusion is on, in which
-    /// case it's dampened (near-zero specular, reduced diffuse, raised
+    /// case it's dampened (reduced reflectance and light intensity, raised
     /// ambient floor). AO reads as a much stronger, more "sculpted" effect
-    /// against flat-ish shading than against full Phong — a strong
-    /// specular highlight competes with and dilutes the occlusion
-    /// darkening, the same reason Speck's own atoms run zero lighting at
-    /// all and let AO + outline do the whole job. Shared by the live view
-    /// and export so what you see while tuning the AO sliders is what you
-    /// actually get — `self.material` itself (the Style panel's own live
-    /// value) is never touched.
+    /// against flatter shading — a strong specular highlight competes with
+    /// and dilutes the occlusion darkening, the same reason Speck's own
+    /// atoms run zero lighting at all and let AO + outline do the whole
+    /// job. Eased twice now from the old Blinn-Phong version of this (was
+    /// diffuse ×0.4, specular ×0.05): GGX's own low-reflectance dielectric
+    /// default is already far more grounded than Blinn-Phong's hot
+    /// specular=0.45 default was, so it doesn't need nearly as much
+    /// suppression — and the first (×0.6/×0.65) pass turned out to still
+    /// be a bit heavy-handed, leaving atoms/bonds reading flatter than the
+    /// isosurface sitting right next to them once *that* got a properly
+    /// defined GGX highlight (2026-08-29 hands-on pass). Shared by the
+    /// live view and export so what you see while tuning the AO sliders
+    /// is what you actually get — `self.material` itself (the Style
+    /// panel's own live value) is never touched.
     fn ao_render_material(&self) -> Material {
         if !self.ao_enabled {
             return self.material;
         }
         Material {
-            ambient: (self.material.ambient + 0.45).min(0.85),
-            diffuse: self.material.diffuse * 0.4,
-            specular: self.material.specular * 0.05,
+            ambient: (self.material.ambient + 0.15).min(0.75),
+            reflectance: self.material.reflectance * 0.8,
+            light_intensity: self.material.light_intensity * 0.8,
             ..self.material
         }
+    }
+
+    /// Same idea as `ao_render_material`, for the isosurface's own
+    /// (entirely separate) material — a real gap found by hands-on
+    /// testing (2026-08-29): unlike the atom/bond material, the
+    /// isosurface's was never dampened when AO turns on at all, so it
+    /// could read as noticeably shinier than the (deliberately dampened)
+    /// atoms/bonds sitting right next to it. Same dampening factors as
+    /// `ao_render_material` for consistency between the two materials.
+    fn ao_render_isosurface_material(&self) -> IsosurfaceMaterial {
+        if !self.ao_enabled {
+            return self.isosurface_material;
+        }
+        let m = self.isosurface_material.material;
+        IsosurfaceMaterial { material: [(m[0] + 0.15).min(0.75), m[1], m[2] * 0.8, m[3] * 0.8], fresnel: self.isosurface_material.fresnel }
     }
 
     /// The DPI to embed in the exported PNG's physical-size metadata
@@ -1417,6 +1439,13 @@ impl App {
                         self.ao_settings = AoSettings::default();
                         self.dof_settings = DofSettings::default();
                         self.reset_active_isosurface_to_default();
+                        // Same reasoning as `Material::publication`'s own
+                        // reflectance cut — the isosurface sits under the
+                        // same dead-on light and would otherwise be the
+                        // one part of the scene still showing the harsher
+                        // "flash" hotspot.
+                        self.isosurface_material.material[2] *= 0.6;
+                        self.rebuild_isosurface();
                     }
                 });
 
@@ -1444,9 +1473,9 @@ impl App {
                 ui.add_space(12.0);
                 ui.label("Material");
                 ui.add(Slider::new(&mut self.material.ambient, 0.0..=1.0).text("ambient"));
-                ui.add(Slider::new(&mut self.material.diffuse, 0.0..=1.0).text("diffuse"));
-                ui.add(Slider::new(&mut self.material.specular, 0.0..=1.0).text("specular"));
-                ui.add(Slider::new(&mut self.material.shininess, 1.0..=128.0).text("shininess"));
+                ui.add(Slider::new(&mut self.material.roughness, 0.05..=1.0).text("roughness"));
+                ui.add(Slider::new(&mut self.material.reflectance, 0.0..=0.3).text("reflectance"));
+                ui.add(Slider::new(&mut self.material.light_intensity, 0.5..=8.0).text("light intensity"));
                 ui.add(Slider::new(&mut self.material.exposure, 0.3..=2.5).text("exposure"));
 
                 ui.add_space(12.0);
@@ -1454,15 +1483,25 @@ impl App {
                 ui.label(egui::RichText::new("Independent from the atom/bond material above.").small().weak());
                 let mut isosurface_material_changed = false;
                 isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[0], 0.0..=1.0).text("ambient")).changed();
-                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[1], 0.0..=1.0).text("diffuse")).changed();
-                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[2], 0.0..=1.0).text("specular")).changed();
-                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[3], 1.0..=128.0).text("shininess")).changed();
+                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[1], 0.05..=1.0).text("roughness")).changed();
+                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[2], 0.0..=0.3).text("reflectance")).changed();
+                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.material[3], 0.5..=8.0).text("light intensity")).changed();
+                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.fresnel[0], 0.5..=8.0).text("rim power")).changed();
+                isosurface_material_changed |= ui.add(Slider::new(&mut self.isosurface_material.fresnel[1], 0.0..=2.0).text("rim glow")).changed();
                 if isosurface_material_changed {
                     self.rebuild_isosurface();
                 }
 
                 ui.add_space(12.0);
-                ui.checkbox(&mut self.ao_enabled, "Ambient occlusion");
+                if ui.checkbox(&mut self.ao_enabled, "Ambient occlusion").changed() {
+                    // The isosurface material buffer isn't re-uploaded every
+                    // frame the way atom/bond material is (see
+                    // `ao_render_isosurface_material`'s doc) — without this,
+                    // toggling AO alone (no other isosurface setting touched)
+                    // would leave it stale until something else happened to
+                    // trigger a rebuild.
+                    self.rebuild_isosurface();
+                }
                 ui.label(
                     egui::RichText::new("Real per-pixel contact shading on atoms and bonds — live preview uses far fewer samples than export.")
                         .small()

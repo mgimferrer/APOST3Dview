@@ -2,12 +2,35 @@ use glam::Vec3;
 
 /// Live-bound material/lighting parameters, driven by the side panel.
 /// Mirrors CYLview's Styles panel.
+///
+/// Cook-Torrance/GGX (see `sphere.wgsl`'s `shade`), not Blinn-Phong —
+/// `roughness`/`reflectance` replace the old `specular`/`shininess` pair,
+/// and `light_intensity` replaces `diffuse` (in a physically-based model
+/// there's one light intensity driving both the diffuse and specular
+/// terms together, not two independently-tunable strengths). Switched
+/// 2026-08-29 after a real side-by-side preview (`test_ggx_ao_preview.rs`,
+/// since removed) showed the isosurface in particular reading as
+/// noticeably more dimensional under GGX — a real, defined highlight
+/// instead of a flatter, more matte response on that large a surface.
 #[derive(Debug, Clone, Copy)]
 pub struct Material {
+    /// Hemisphere-ambient strength (see `hemisphere_ambient` in the
+    /// shaders) — unrelated to the BRDF swap, kept as-is.
     pub ambient: f32,
-    pub diffuse: f32,
-    pub specular: f32,
-    pub shininess: f32,
+    /// 0.0 = mirror-smooth, 1.0 = fully matte. Drives the GGX normal
+    /// distribution directly, so highlight *shape* scales correctly with
+    /// this instead of an arbitrary shininess exponent.
+    pub roughness: f32,
+    /// F0 — reflectance at normal incidence (0 degrees, straight-on).
+    /// ~0.02-0.06 is the real-world range for dielectrics (CPK balls,
+    /// glass, plastic — anything non-metal); pushed higher it starts
+    /// reading as a burnished/metallic surface, which is a legitimate
+    /// look to dial in on purpose but isn't the CPK-accurate default.
+    pub reflectance: f32,
+    /// Overall key-light brightness — multiplies the combined diffuse +
+    /// specular contribution (see `shade`), since both come from the same
+    /// light in a physically-based model.
+    pub light_intensity: f32,
     pub light_yaw: f32,
     pub light_pitch: f32,
     pub background: [f32; 3],
@@ -34,9 +57,17 @@ impl Default for Material {
     fn default() -> Self {
         Self {
             ambient: 0.30,
-            diffuse: 0.75,
-            specular: 0.45,
-            shininess: 32.0,
+            // Tightened from 0.42 (2026-08-29): with AO on, the dampened
+            // reflectance/light_intensity below already pulls the
+            // highlight way down — a broader roughness on top of that
+            // left atoms/bonds reading noticeably flatter than the
+            // isosurface right next to them, once the isosurface actually
+            // got a defined GGX highlight of its own. A touch tighter
+            // gives them back some visible material presence without
+            // sliding back toward a hot plastic look.
+            roughness: 0.32,
+            reflectance: 0.045,
+            light_intensity: 3.0,
             // Small offset from the camera (see light_dir below) — Martí
             // tuned this by eye (2026-08-12): a slight angle here reads
             // better than a dead-on flash, while staying subtle enough
@@ -59,8 +90,20 @@ impl Material {
     /// visibly different highlight placement, which is undesirable when
     /// the images are meant to sit side by side in a publication. Zero
     /// offset removes that last bit of orientation-dependence entirely.
+    ///
+    /// Reflectance is also knocked down a bit further here — a dead-on
+    /// light isn't a neutral choice for a GGX material: it puts the
+    /// specular peak exactly where the surface normal points back at the
+    /// camera (half-vector ≈ normal there), concentrating it into a
+    /// harsher "flash" hotspot than the default's off-axis light ever
+    /// produces, for any roughness. Found by hands-on testing
+    /// (2026-08-29) — the same molecule looked noticeably shinier under
+    /// Publication than Default for exactly this reason, not a bug in
+    /// the BRDF itself, just the geometry this preset deliberately
+    /// chooses. Compensating here keeps publication renders from
+    /// reading shinier than what's tuned live on screen.
     pub fn publication() -> Self {
-        Self { light_yaw: 0.0, light_pitch: 0.0, ..Self::default() }
+        Self { light_yaw: 0.0, light_pitch: 0.0, reflectance: Self::default().reflectance * 0.6, ..Self::default() }
     }
 
     /// Light direction as an offset from camera-forward, in the camera's

@@ -13,7 +13,9 @@ pub struct SceneUniforms {
     pub camera_right: [f32; 4],
     pub camera_up: [f32; 4],
     pub light_dir: [f32; 4],
-    /// ambient, diffuse, specular, shininess
+    /// ambient, roughness, reflectance (F0), light_intensity — see
+    /// `Material`'s doc for why this is a GGX parameterization, not
+    /// Blinn-Phong's.
     pub material: [f32; 4],
     /// atom_scale, bond_radius, exposure, srgb_target (1.0 if the render
     /// target this frame writes to is an sRGB-encoding format — see
@@ -34,7 +36,7 @@ impl SceneUniforms {
             camera_right: [right.x, right.y, right.z, 0.0],
             camera_up: [up.x, up.y, up.z, 0.0],
             light_dir: [light_dir.x, light_dir.y, light_dir.z, 0.0],
-            material: [material.ambient, material.diffuse, material.specular, material.shininess],
+            material: [material.ambient, material.roughness, material.reflectance, material.light_intensity],
             style: [material.atom_scale, material.bond_radius, material.exposure, 0.0],
         }
     }

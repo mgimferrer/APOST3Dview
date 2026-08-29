@@ -50,13 +50,39 @@ async fn run() {
     push_isosurface_vertices(&mut vertices, &mesh_pos, [60.0 / 255.0, 90.0 / 255.0, 230.0 / 255.0], 1.0);
     push_isosurface_vertices(&mut vertices, &mesh_neg, [220.0 / 255.0, 70.0 / 255.0, 60.0 / 255.0], 1.0);
     resources.update_isosurface(&device, &vertices);
-    resources.update_isosurface_material(&queue, &IsosurfaceMaterial::default());
+
+    // Same AO-aware dampening as `App::ao_render_isosurface_material` —
+    // duplicated here since that's a private method, to actually exercise
+    // the fix (2026-08-29: the isosurface material was never dampened
+    // when AO turned on at all, unlike the atom/bond material, so it
+    // could read as noticeably shinier).
+    let mut iso_material = IsosurfaceMaterial::default();
+    iso_material.material[0] = (iso_material.material[0] + 0.15).min(0.75);
+    iso_material.material[2] *= 0.8;
+    iso_material.material[3] *= 0.8;
+
+    let publication = std::env::args().nth(3).as_deref() == Some("publication");
+    if publication {
+        // Same compensation as `Material::publication`'s own reflectance
+        // cut, applied here too — see that function's doc for why a
+        // dead-on light needs it.
+        iso_material.material[2] *= 0.6;
+    }
+    resources.update_isosurface_material(&queue, &iso_material);
 
     let (center, radius) = molecule.bounding_sphere();
     let mut camera = OrbitCamera::default();
     camera.frame_bounds(center, radius);
-    let material = Material::default();
+    let base_material = if publication { Material::publication() } else { Material::default() };
+    // Same AO-aware dampening as `App::ao_render_material`.
+    let material = Material {
+        ambient: (base_material.ambient + 0.15).min(0.75),
+        reflectance: base_material.reflectance * 0.8,
+        light_intensity: base_material.light_intensity * 0.8,
+        ..base_material
+    };
     let uniforms = SceneUniforms::new(&camera, 1.0, &material);
+    println!("lighting: {}", if publication { "publication (dead-on)" } else { "default (off-axis)" });
 
     let out_dir = std::env::var("ISO_TEST_OUT_DIR").unwrap_or_else(|_| ".".to_string());
     let save = |pixels: &[u8], width: u32, height: u32, name: &str| {

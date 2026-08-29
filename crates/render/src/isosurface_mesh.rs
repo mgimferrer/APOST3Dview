@@ -23,10 +23,18 @@ pub struct IsosurfaceVertex {
 
 /// Isosurface-only lighting response — kept completely separate from the
 /// atom/bond `Material` so tuning one never touches the other.
+///
+/// GGX, not Blinn-Phong — see `Material`'s doc for the full reasoning; a
+/// real side-by-side preview (`test_ggx_ao_preview.rs`, since removed)
+/// showed the isosurface specifically as where GGX's advantage over the
+/// old model showed up *most*: it's the largest continuous smooth surface
+/// in a typical scene, so a roughness-shaped highlight has the most room
+/// to read as genuinely more dimensional than Blinn-Phong's flatter
+/// response on the same geometry.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct IsosurfaceMaterial {
-    /// ambient, diffuse, specular, shininess
+    /// ambient, roughness, reflectance (F0), light_intensity
     pub material: [f32; 4],
     /// fresnel power, fresnel/rim strength, unused, unused
     pub fresnel: [f32; 4],
@@ -34,18 +42,19 @@ pub struct IsosurfaceMaterial {
 
 impl Default for IsosurfaceMaterial {
     fn default() -> Self {
-        // Specular/shininess deliberately much lower than the earlier
-        // (0.55, 48.0) default: that read as a hard glossy-plastic hotspot
-        // — exactly the "hides the atom behind a shiny balloon" look this
-        // was meant to move away from. A broad, dim specular plus the
-        // Fresnel rim below reads as soft translucent glass/jelly instead.
-        // Fresnel power lower and strength higher than a first pass (was
-        // 3.0/0.5) — a real large-orbital screenshot (2026-08-29) showed
-        // almost no visible rim at those values; a wider glow band (lower
-        // power, visible well before the true grazing edge) and a
-        // stronger one both help sell "translucent field" on a lobe big
-        // enough to fill most of the frame, not just at its silhouette.
-        Self { material: [0.35, 0.6, 0.12, 16.0], fresnel: [2.2, 0.85, 0.0, 0.0] }
+        // Rougher than the atom/bond default (0.42) on purpose — a
+        // broader, dimmer highlight reads as soft translucent glass/jelly
+        // rather than the polished-ball look that suits CPK spheres.
+        // Reflectance and light_intensity otherwise match the atom/bond
+        // default, so the isosurface and the geometry it enloses feel lit
+        // by the same light, not two different scenes. The Fresnel rim
+        // (power 2.2, strength 0.85 — tuned live against a real large
+        // orbital, 2026-08-29) is a deliberate *addition* on top of GGX's
+        // own physically-correct Fresnel term, not a substitute for it:
+        // it's meant to read as light escaping/glowing at the edges of a
+        // translucent field, which isn't really surface reflectance and
+        // so doesn't belong in the BRDF itself.
+        Self { material: [0.35, 0.7, 0.045, 3.0], fresnel: [2.2, 0.85, 0.0, 0.0] }
     }
 }
 

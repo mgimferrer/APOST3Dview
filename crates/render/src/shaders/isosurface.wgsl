@@ -14,7 +14,7 @@ var<uniform> scene: SceneUniforms;
 // Isosurface-only lighting response, deliberately separate from the
 // atom/bond material above so tuning one never touches the other.
 struct IsosurfaceMaterial {
-    // ambient, diffuse, specular, shininess
+    // ambient, roughness, reflectance (F0), light_intensity
     material: vec4<f32>,
     // fresnel power, fresnel/rim strength, unused, unused
     fresnel: vec4<f32>,
@@ -111,13 +111,42 @@ fn hemisphere_ambient(normal: vec3<f32>) -> vec3<f32> {
     return mix(ground, sky, normal.y * 0.5 + 0.5);
 }
 
-fn fresnel_schlick(n_dot_v: f32, power: f32) -> f32 {
+// The artistic rim-glow term (see `shade` below) — scalar power-based,
+// distinct from `fresnel_schlick_vec`'s real F0-based Fresnel used inside
+// the GGX BRDF itself.
+fn fresnel_rim(n_dot_v: f32, power: f32) -> f32 {
     return pow(clamp(1.0 - n_dot_v, 0.0, 1.0), power);
 }
 
 fn finalize_color(linear_color: vec3<f32>) -> vec3<f32> {
     let mapped = aces_tonemap(linear_color * scene.style.z);
     return select(linear_to_srgb(mapped), mapped, scene.style.w > 0.5);
+}
+
+// ---- Cook-Torrance/GGX BRDF — identical to `sphere.wgsl`'s copy, see
+// that file's comment for the full explanation and why this replaced
+// Blinn-Phong.
+const PI: f32 = 3.14159265359;
+
+fn distribution_ggx(n_dot_h: f32, roughness: f32) -> f32 {
+    let a = roughness * roughness;
+    let a2 = a * a;
+    let denom = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+    return a2 / max(PI * denom * denom, 1e-6);
+}
+
+// Height-correlated Smith visibility — identical to `sphere.wgsl`'s copy,
+// see that file's comment for why this replaced the separable Schlick-GGX
+// approximation.
+fn visibility_smith_ggx_correlated(n_dot_v: f32, n_dot_l: f32, roughness: f32) -> f32 {
+    let a2 = roughness * roughness * roughness * roughness;
+    let ggx_v = n_dot_l * sqrt(n_dot_v * n_dot_v * (1.0 - a2) + a2);
+    let ggx_l = n_dot_v * sqrt(n_dot_l * n_dot_l * (1.0 - a2) + a2);
+    return 0.5 / max(ggx_v + ggx_l, 1e-5);
+}
+
+fn fresnel_schlick_vec(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
+    return f0 + (vec3<f32>(1.0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
 struct VertexInput {
@@ -162,22 +191,40 @@ fn facing_normal(raw_normal: vec3<f32>, world_position: vec3<f32>) -> vec3<f32> 
     return normal;
 }
 
-// Blinn-Phong (hemisphere fill + Fresnel rim glow, tinted toward the
-// surface's own color rather than white — the "glowing energy field"
-// look, cheap and a big part of what sells a translucent probability
-// cloud rather than a solid). Returns linear-light color; callers must
-// pass it through `finalize_color`.
+// GGX (plus hemisphere fill + an artistic rim glow tinted toward the
+// surface's own color, on top of the BRDF's own physically-correct
+// Fresnel — the "glowing energy field" look, meant to read as light
+// escaping a translucent field rather than surface reflectance, which is
+// why it's additive here rather than folded into `fresnel_schlick_vec`
+// above). Returns linear-light color; callers must pass it through
+// `finalize_color`.
 fn shade(world_position: vec3<f32>, normal: vec3<f32>, color: vec3<f32>) -> vec3<f32> {
-    let light_dir = normalize(scene.light_dir.xyz);
-    let view_dir = normalize(scene.camera_eye.xyz - world_position);
-    let half_dir = normalize(light_dir + view_dir);
+    let n = normal;
+    let v = normalize(scene.camera_eye.xyz - world_position);
+    let l = normalize(scene.light_dir.xyz);
+    let h = normalize(v + l);
 
+    let n_dot_v = max(dot(n, v), 1e-4);
+    let n_dot_l = max(dot(n, l), 0.0);
+    let n_dot_h = max(dot(n, h), 0.0);
+    let v_dot_h = max(dot(v, h), 0.0);
+
+    let roughness = iso_material.material.y;
+    let f0 = vec3<f32>(iso_material.material.z);
     let albedo = srgb_to_linear(color);
-    let ambient = iso_material.material.x * hemisphere_ambient(normal);
-    let diffuse_strength = iso_material.material.y * max(dot(normal, light_dir), 0.0);
-    let specular_strength = iso_material.material.z * pow(max(dot(normal, half_dir), 0.0), iso_material.material.w);
-    let fresnel = fresnel_schlick(max(dot(normal, view_dir), 0.0), iso_material.fresnel.x) * iso_material.fresnel.y;
-    return albedo * (ambient + diffuse_strength + fresnel) + vec3<f32>(specular_strength);
+
+    let d = distribution_ggx(n_dot_h, roughness);
+    let vis = visibility_smith_ggx_correlated(n_dot_v, n_dot_l, roughness);
+    let f = fresnel_schlick_vec(v_dot_h, f0);
+
+    let specular = d * vis * f;
+    let kd = vec3<f32>(1.0) - f;
+    let diffuse = kd * albedo / PI;
+
+    let direct = (diffuse + specular) * n_dot_l * iso_material.material.w;
+    let rim = fresnel_rim(n_dot_v, iso_material.fresnel.x) * iso_material.fresnel.y;
+    let ambient = hemisphere_ambient(n) * albedo * (iso_material.material.x + rim);
+    return direct + ambient;
 }
 
 // Ordinary rasterized/lit triangle mesh — unlike the raymarched sphere and

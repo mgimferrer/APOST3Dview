@@ -35,12 +35,16 @@ async fn run() {
     let material = Material::default();
     let off_uniforms = SceneUniforms::new(&camera, 1.0, &material);
 
-    // Mirrors `App::export_render_png`'s own flattening: a strong Phong
+    // Mirrors `App::ao_render_material`'s own flattening: a strong
     // specular highlight competes with and dilutes AO's darkening, so the
     // AO export path dampens it — same reason Speck's atoms run zero
     // lighting at all and let AO + outline do the whole job.
-    let ao_material =
-        Material { ambient: (material.ambient + 0.45).min(0.85), diffuse: material.diffuse * 0.4, specular: material.specular * 0.05, ..material };
+    let ao_material = Material {
+        ambient: (material.ambient + 0.15).min(0.75),
+        reflectance: material.reflectance * 0.8,
+        light_intensity: material.light_intensity * 0.8,
+        ..material
+    };
     let on_uniforms = SceneUniforms::new(&camera, 1.0, &ao_material);
 
     let base_settings = ExportSettings {
