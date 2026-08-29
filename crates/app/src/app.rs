@@ -1447,6 +1447,28 @@ impl App {
                         self.isosurface_material.material[2] *= 0.6;
                         self.rebuild_isosurface();
                     }
+                    if ui.button("Space-filling").clicked() {
+                        // Not a new rendering mode — atom_scale near 1.0
+                        // (real van der Waals radius) already makes
+                        // neighboring spheres overlap, and the impostor
+                        // renderer's own silhouette already carves a real
+                        // seam at that overlap (see `sphere.wgsl` — no
+                        // texture/bump map involved). Bonds need no special
+                        // handling either: at this scale a normal covalent
+                        // bond's cylinder sits entirely inside the two
+                        // overlapping spheres already, so it's naturally
+                        // hidden. AO tightened to match — a much smaller
+                        // radius so it darkens right at sphere-sphere
+                        // contact instead of broad ambient shading, and
+                        // higher contrast so that darkening reads as a
+                        // crisp line (confirmed 2026-08-29 via a real
+                        // side-by-side render, see git history).
+                        self.material = Material { atom_scale: 0.95, ..Material::default() };
+                        self.ao_settings = AoSettings { radius: 0.45, strength: 1.0, bias: 0.01, contrast_power: 4.5, outline_strength: AoSettings::default().outline_strength };
+                        self.ao_enabled = true;
+                        self.dof_settings = DofSettings::default();
+                        self.reset_active_isosurface_to_default();
+                    }
                 });
 
                 ui.add_space(8.0);
