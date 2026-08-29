@@ -141,7 +141,15 @@ fn fs_blur(@builtin(position) frag_coord: vec4<f32>) -> @location(0) f32 {
 
     var sum = 0.0;
     var weight_sum = 0.0;
-    let radius = 4;
+    // Wider at the cheap live-preview sample count (32, vs. 160 once
+    // settled/exporting) — fewer SSAO samples means more per-pixel
+    // variance, which reads as visible grain especially on a large,
+    // smoothly-colored surface like a big isosurface lobe (small atom
+    // spheres hide the same noise magnitude far better just by being
+    // small and already colorful). A wider blur trades a little spatial
+    // sharpness in the occlusion pattern for real denoising, cheap either
+    // way since this is already a small fullscreen pass.
+    let radius = select(4, 9, blur_ao_uniforms.screen.w < 64.0);
     for (var i = -radius; i <= radius; i = i + 1) {
         let p = pixel + dir * i;
         if (p.x < 0 || p.y < 0 || p.x >= width || p.y >= height) {

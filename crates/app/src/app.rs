@@ -357,11 +357,17 @@ struct IsosurfaceState {
     both_signs: bool,
     positive_color: Color32,
     negative_color: Color32,
+    /// Always applied directly — no separate "Transparent" toggle (there
+    /// used to be one, gating a fully-opaque override that was also the
+    /// default, which made the toggle+slider pair pure redundant
+    /// complexity: 1.0 here already means the same "fully opaque" thing).
+    /// Defaults fully opaque — Martí's explicit preference after trying
+    /// the translucent look live (2026-08-29): with two competing lobes
+    /// this size, one at less than 1.0 doesn't read as an appealing
+    /// translucent field so much as a washed-out, lower-contrast version
+    /// of the opaque look. Free to lower for anyone who does want to see
+    /// through it.
     opacity: f32,
-    /// When false, the isosurface renders fully opaque regardless of
-    /// `opacity` — the tick-box toggle between the translucent look and a
-    /// solid one.
-    transparent: bool,
     cached_positive: Option<apost3dview_core::IsosurfaceMesh>,
     cached_negative: Option<apost3dview_core::IsosurfaceMesh>,
     extracted: bool,
@@ -372,7 +378,11 @@ struct IsosurfaceState {
 /// explicit preference after tuning it live against the real EFFAO test
 /// cubes, simpler and more predictable than a per-file heuristic.
 const DEFAULT_ISOSURFACE_ISOVALUE: f32 = 0.075;
-const DEFAULT_ISOSURFACE_OPACITY: f32 = 0.75;
+/// Fully opaque by default — tried translucent (0.5, then 0.75) first,
+/// but a real hands-on check (2026-08-29) came back preferring solid
+/// lobes; the opacity slider (Visualization panel) is still there for
+/// anyone who wants to see through them.
+const DEFAULT_ISOSURFACE_OPACITY: f32 = 1.0;
 
 impl IsosurfaceState {
     fn new(grid: apost3dview_core::ScalarGrid) -> Self {
@@ -385,7 +395,6 @@ impl IsosurfaceState {
             positive_color: Color32::from_rgb(60, 90, 230),
             negative_color: Color32::from_rgb(220, 70, 60),
             opacity: DEFAULT_ISOSURFACE_OPACITY,
-            transparent: false,
             cached_positive: None,
             cached_negative: None,
             extracted: false,
@@ -405,7 +414,6 @@ impl IsosurfaceState {
         self.positive_color = Color32::from_rgb(60, 90, 230);
         self.negative_color = Color32::from_rgb(220, 70, 60);
         self.opacity = DEFAULT_ISOSURFACE_OPACITY;
-        self.transparent = false;
     }
 }
 
@@ -655,7 +663,7 @@ impl App {
         if let Some(active) = self.active_structure {
             if let Some(iso) = self.structures.get(active).and_then(|s| s.isosurface.as_ref()) {
                 if iso.show {
-                    let opacity = if iso.transparent { iso.opacity } else { 1.0 };
+                    let opacity = iso.opacity;
                     if let Some(mesh) = &iso.cached_positive {
                         push_isosurface_vertices(&mut vertices, mesh, color32_to_rgb(iso.positive_color), opacity);
                     }
@@ -736,7 +744,7 @@ impl App {
             return;
         }
         let mut vertices = Vec::new();
-        let opacity = if iso.transparent { iso.opacity } else { 1.0 };
+        let opacity = iso.opacity;
         if let Some(mesh) = &iso.cached_positive {
             push_isosurface_vertices(&mut vertices, mesh, color32_to_rgb(iso.positive_color), opacity);
         }
@@ -1852,10 +1860,7 @@ impl App {
                         if ui.checkbox(&mut iso.both_signs, "Both signs (+/-)").changed() {
                             needs_recomposite = true;
                         }
-                        if ui.checkbox(&mut iso.transparent, "Transparent").changed() {
-                            needs_recomposite = true;
-                        }
-                        if iso.transparent && ui.add(Slider::new(&mut iso.opacity, 0.05..=1.0).text("opacity")).changed() {
+                        if ui.add(Slider::new(&mut iso.opacity, 0.05..=1.0).text("opacity")).changed() {
                             needs_recomposite = true;
                         }
                         ui.horizontal(|ui| {

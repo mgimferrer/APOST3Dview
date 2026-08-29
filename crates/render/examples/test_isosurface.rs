@@ -5,8 +5,8 @@
 
 use apost3dview_core::{extract_isosurface, ScalarGrid};
 use apost3dview_render::{
-    push_isosurface_vertices, ExportSettings, GlyphAtlas, IsosurfaceMaterial, IsosurfaceVertex, Material, OrbitCamera, SceneUniforms,
-    ViewportResources,
+    push_isosurface_vertices, AoSettings, ExportSettings, GlyphAtlas, IsosurfaceMaterial, IsosurfaceVertex, Material, OrbitCamera,
+    SceneUniforms, ViewportResources,
 };
 use glam::Vec3;
 
@@ -73,6 +73,19 @@ async fn run() {
     let non_white_count = pixels.chunks(4).filter(|px| !is_white(px)).count();
     println!("{non_white_count} non-background pixels out of {}", pixels.len() / 4);
     assert!(non_white_count > 100, "expected the translucent isosurface to visibly cover a meaningful area, got {non_white_count} pixels");
+
+    // Isosurface + AO together: exercises `isosurface_pipeline_ao` and
+    // `isosurface_gbuffer_pipeline` (see `viewport.rs`'s `draw_gbuffer_pass`/
+    // `draw_into_pass`) — the whole point being to catch exactly the kind
+    // of bind-group/pipeline-layout mismatch that only shows up at draw
+    // time, not at `cargo build`.
+    let ao_settings = ExportSettings { ambient_occlusion: Some(AoSettings::default()), ..settings };
+    let ao_pixels = resources
+        .render_offscreen(&device, &queue, target_format, &uniforms, &[], &ao_settings)
+        .expect("offscreen render with isosurface + AO should succeed");
+    let ao_non_white_count = ao_pixels.chunks(4).filter(|px| !is_white(px)).count();
+    println!("{ao_non_white_count} non-background pixels out of {} (AO on)", ao_pixels.len() / 4);
+    assert!(ao_non_white_count > 100, "expected the isosurface to still visibly cover a meaningful area with AO on");
 
     println!("ALL CHECKS PASSED");
 }

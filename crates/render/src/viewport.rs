@@ -78,6 +78,8 @@ pub struct ViewportResources {
     // without fighting each other), and its own material uniform kept
     // entirely separate from the atom/bond one.
     isosurface_pipeline: wgpu::RenderPipeline,
+    isosurface_pipeline_ao: wgpu::RenderPipeline,
+    isosurface_gbuffer_pipeline: wgpu::RenderPipeline,
     isosurface_material_buffer: wgpu::Buffer,
     isosurface_material_bind_group: wgpu::BindGroup,
     isosurface_vertices: Option<(wgpu::Buffer, u32)>,
@@ -589,12 +591,48 @@ impl ViewportResources {
             vertex: wgpu::VertexState {
                 module: &isosurface_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Some(isosurface_vertex_layout)],
+                buffers: &[Some(isosurface_vertex_layout.clone())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &isosurface_shader,
                 entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: isosurface_depth.clone(),
+            multisample,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // AO-sampling variant of the isosurface pipeline — same shape as
+        // `atom_pipeline_ao`/`cylinder_pipeline_ao`, but AO has to bind at
+        // group 2 here (not group 1, already the isosurface material) and
+        // so needs its own pipeline layout. See `isosurface.wgsl`'s
+        // `fs_main_ao`/`apply_ao`.
+        let isosurface_ao_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("isosurface_ao_pipeline_layout"),
+            bind_group_layouts: &[Some(&bind_group_layout), Some(&isosurface_material_layout), Some(&ao_sample_bind_group_layout)],
+            immediate_size: 0,
+        });
+        let isosurface_pipeline_ao = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("isosurface_pipeline_ao"),
+            layout: Some(&isosurface_ao_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &isosurface_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(isosurface_vertex_layout.clone())],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &isosurface_shader,
+                entry_point: Some("fs_main_ao"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: target_format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -658,6 +696,36 @@ impl ViewportResources {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &cylinder_shader,
+                entry_point: Some("fs_gbuffer"),
+                targets: &[Some(wgpu::ColorTargetState { format: GBUFFER_NORMAL_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: gbuffer_depth_stencil.clone(),
+            multisample: gbuffer_multisample,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // Isosurface's own G-buffer pass — see `isosurface.wgsl`'s
+        // `fs_gbuffer` doc for why this matters (without it, the
+        // isosurface neither occludes atoms/bonds in AO nor receives any
+        // AO shading itself). Reuses `isosurface_pipeline_layout` (group 0
+        // scene + group 1 material) even though `fs_gbuffer` doesn't touch
+        // group 1 at all — simpler than a third pipeline layout just for
+        // this, and `draw_gbuffer_pass` already has nothing else it would
+        // need group 1 bound to at that point.
+        let isosurface_gbuffer_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("isosurface_gbuffer_pipeline"),
+            layout: Some(&isosurface_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &isosurface_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(isosurface_vertex_layout)],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &isosurface_shader,
                 entry_point: Some("fs_gbuffer"),
                 targets: &[Some(wgpu::ColorTargetState { format: GBUFFER_NORMAL_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL })],
                 compilation_options: Default::default(),
@@ -896,6 +964,8 @@ impl ViewportResources {
             bond_highlight_instances: None,
             measurement_instances: None,
             isosurface_pipeline,
+            isosurface_pipeline_ao,
+            isosurface_gbuffer_pipeline,
             isosurface_material_buffer,
             isosurface_material_bind_group,
             isosurface_vertices: None,
@@ -1113,8 +1183,11 @@ impl ViewportResources {
         // selection highlight (if any) still reads on top.
         if let Some((buffer, count)) = &self.isosurface_vertices {
             if *count > 0 {
-                render_pass.set_pipeline(&self.isosurface_pipeline);
+                render_pass.set_pipeline(if ao.is_some() { &self.isosurface_pipeline_ao } else { &self.isosurface_pipeline });
                 render_pass.set_bind_group(1, &self.isosurface_material_bind_group, &[]);
+                if let Some(ao_bind_group) = ao {
+                    render_pass.set_bind_group(2, ao_bind_group, &[]);
+                }
                 render_pass.set_vertex_buffer(0, buffer.slice(..));
                 render_pass.draw(0..*count, 0..1);
             }
@@ -1140,10 +1213,12 @@ impl ViewportResources {
         }
     }
 
-    /// The ambient-occlusion G-buffer draw sequence — atoms and bonds only
-    /// (matching the export-only AO feature's current scope: text,
-    /// isosurfaces, and highlights don't participate), using the
-    /// `fs_gbuffer` pipelines instead of the normal shaded ones.
+    /// The ambient-occlusion G-buffer draw sequence — atoms, bonds, and the
+    /// isosurface (text and highlights still don't participate: text is a
+    /// billboard overlay with no meaningful occlusion contribution, and
+    /// highlights are a flat translucent tint drawn on top of everything
+    /// else, not real geometry), using the `fs_gbuffer` pipelines instead
+    /// of the normal shaded ones.
     fn draw_gbuffer_pass(&self, render_pass: &mut wgpu::RenderPass<'_>) {
         render_pass.set_bind_group(0, &self.bind_group, &[]);
 
@@ -1162,6 +1237,21 @@ impl ViewportResources {
                 render_pass.set_pipeline(&self.atom_gbuffer_pipeline);
                 render_pass.set_vertex_buffer(0, buffer.slice(..));
                 render_pass.draw(0..6, 0..*count);
+            }
+        }
+
+        // Isosurface — see `isosurface.wgsl`'s `fs_gbuffer` doc for why
+        // this participates too. `isosurface_gbuffer_pipeline` reuses the
+        // 2-group isosurface pipeline layout even though `fs_gbuffer`
+        // doesn't read group 1 at all, so it still needs *some* compatible
+        // bind group there — the real material bind group is as good as
+        // any, and avoids a third pipeline layout just for this.
+        if let Some((buffer, count)) = &self.isosurface_vertices {
+            if *count > 0 {
+                render_pass.set_pipeline(&self.isosurface_gbuffer_pipeline);
+                render_pass.set_bind_group(1, &self.isosurface_material_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, buffer.slice(..));
+                render_pass.draw(0..*count, 0..1);
             }
         }
     }

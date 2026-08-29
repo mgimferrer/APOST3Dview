@@ -28,14 +28,24 @@ pub struct IsosurfaceVertex {
 pub struct IsosurfaceMaterial {
     /// ambient, diffuse, specular, shininess
     pub material: [f32; 4],
+    /// fresnel power, fresnel/rim strength, unused, unused
+    pub fresnel: [f32; 4],
 }
 
 impl Default for IsosurfaceMaterial {
     fn default() -> Self {
-        // A softer, glossier default than the atom/bond material — smooth
-        // translucent lobes read better with more specular and less flat
-        // ambient than a matte CPK sphere.
-        Self { material: [0.35, 0.65, 0.55, 48.0] }
+        // Specular/shininess deliberately much lower than the earlier
+        // (0.55, 48.0) default: that read as a hard glossy-plastic hotspot
+        // — exactly the "hides the atom behind a shiny balloon" look this
+        // was meant to move away from. A broad, dim specular plus the
+        // Fresnel rim below reads as soft translucent glass/jelly instead.
+        // Fresnel power lower and strength higher than a first pass (was
+        // 3.0/0.5) — a real large-orbital screenshot (2026-08-29) showed
+        // almost no visible rim at those values; a wider glow band (lower
+        // power, visible well before the true grazing edge) and a
+        // stronger one both help sell "translucent field" on a lobe big
+        // enough to fill most of the frame, not just at its silhouette.
+        Self { material: [0.35, 0.6, 0.12, 16.0], fresnel: [2.2, 0.85, 0.0, 0.0] }
     }
 }
 
