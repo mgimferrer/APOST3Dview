@@ -206,6 +206,51 @@ fn encode_signed_distance(distances: &[f32]) -> Vec<u8> {
         .collect()
 }
 
+/// Builds a full mip chain (box filter, halving each dimension down to
+/// 1x1) for the atlas texture and concatenates every level's bytes into a
+/// single buffer, the layout `create_texture_with_data` requires for a
+/// multi-level upload.
+///
+/// Addresses minification aliasing. The SDF supersampling above
+/// (`SDF_SUPERSAMPLE`) preserves edge quality only when a label is
+/// magnified beyond the atlas's native ~64px resolution. A label rendered
+/// smaller on screen than that resolution was previously sampled with
+/// bilinear filtering and no prefiltering, producing the same aliasing a
+/// minified texture shows without mipmaps. This, not the SDF's edge
+/// quality, was the source of labels appearing pixelated in still
+/// renders. Box-averaging the already-encoded SDF bytes for each mip
+/// level, rather than re-deriving the field from float distances, is an
+/// acceptable approximation given the encoding is close to linear in
+/// distance (see `encode_signed_distance`).
+fn build_mip_chain(base: &[u8], width: u32, height: u32) -> (Vec<u8>, u32) {
+    let mut levels: Vec<Vec<u8>> = vec![base.to_vec()];
+    let (mut w, mut h) = (width, height);
+    while w > 1 || h > 1 {
+        let nw = (w / 2).max(1);
+        let nh = (h / 2).max(1);
+        let prev = levels.last().unwrap();
+        let mut next = vec![0u8; (nw * nh) as usize];
+        for y in 0..nh {
+            for x in 0..nw {
+                let x0 = (x * 2).min(w - 1);
+                let x1 = (x * 2 + 1).min(w - 1);
+                let y0 = (y * 2).min(h - 1);
+                let y1 = (y * 2 + 1).min(h - 1);
+                let sum = prev[(y0 * w + x0) as usize] as u32
+                    + prev[(y0 * w + x1) as usize] as u32
+                    + prev[(y1 * w + x0) as usize] as u32
+                    + prev[(y1 * w + x1) as usize] as u32;
+                next[(y * nw + x) as usize] = (sum / 4) as u8;
+            }
+        }
+        levels.push(next);
+        w = nw;
+        h = nh;
+    }
+    let mip_count = levels.len() as u32;
+    (levels.concat(), mip_count)
+}
+
 /// Converts a desired on-screen font size (in pixels) plus the current
 /// world-units-per-pixel (see `OrbitCamera::world_units_per_pixel`) into
 /// the single scale factor `layout_label` needs, folding in the atlas's
@@ -333,12 +378,13 @@ impl GlyphAtlas {
             .map(|m| m.bearing_y + m.height * 0.5)
             .unwrap_or(0.0);
 
+        let (mip_chain, mip_level_count) = build_mip_chain(&pixels, atlas_width, atlas_height);
         let texture = device.create_texture_with_data(
             queue,
             &wgpu::TextureDescriptor {
                 label: Some("glyph_atlas_texture"),
                 size: wgpu::Extent3d { width: atlas_width, height: atlas_height, depth_or_array_layers: 1 },
-                mip_level_count: 1,
+                mip_level_count,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::R8Unorm,
@@ -346,13 +392,17 @@ impl GlyphAtlas {
                 view_formats: &[],
             },
             wgpu::util::TextureDataOrder::LayerMajor,
-            &pixels,
+            &mip_chain,
         );
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // `mipmap_filter: Linear` resolves minified-label aliasing: without
+        // it, the sampler has no prefiltered lower-resolution data to blend
+        // toward and samples the full-resolution SDF texel grid directly.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("glyph_atlas_sampler"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
@@ -436,5 +486,26 @@ mod tests {
         assert_eq!((w, h), (2, 2));
         assert_eq!(down.len(), 4);
         assert!(down.iter().all(|&v| (v - 1.0).abs() < 1e-6));
+    }
+
+    #[test]
+    fn mip_chain_halves_down_to_1x1_and_averages_correctly() {
+        // A uniform 4x4 field should produce 3 levels (4x4, 2x2, 1x1),
+        // each remaining uniform, with the concatenated buffer's length
+        // equal to the sum of each level's pixel count.
+        let base = vec![200u8; 16];
+        let (chain, mip_count) = build_mip_chain(&base, 4, 4);
+        assert_eq!(mip_count, 3, "4x4 -> 2x2 -> 1x1 is 3 levels");
+        assert_eq!(chain.len(), 16 + 4 + 1);
+        assert!(chain.iter().all(|&v| v == 200), "a uniform field should stay uniform at every mip level");
+    }
+
+    #[test]
+    fn mip_chain_handles_non_power_of_two_without_panicking() {
+        // 3x5 -> 1x2 -> 1x1 (integer halving, floor then clamped to 1).
+        let base = vec![100u8; 3 * 5];
+        let (chain, mip_count) = build_mip_chain(&base, 3, 5);
+        assert_eq!(mip_count, 3);
+        assert_eq!(chain.len(), 15 + 2 + 1);
     }
 }
