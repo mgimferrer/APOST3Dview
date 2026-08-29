@@ -28,7 +28,7 @@ fn character_set() -> Vec<char> {
 /// tag) or large (a zoomed-in measurement), since it's just a texture
 /// sampled onto a quad scaled after the fact.
 const GLYPH_RASTER_PX: f32 = 64.0;
-const ATLAS_CELL_PX: u32 = 72;
+const ATLAS_CELL_PX: u32 = 88;
 
 /// Glyphs are rasterized at `GLYPH_RASTER_PX * SDF_SUPERSAMPLE` and the
 /// resulting distance field is box-downsampled back down to the
@@ -43,6 +43,20 @@ const SDF_SUPERSAMPLE: u32 = 4;
 /// inside/outside. Encoded into the R8Unorm texture as byte 128 = exactly
 /// on the edge, 0/255 = `SDF_SPREAD_PX` or more outside/inside.
 const SDF_SPREAD_PX: f32 = 6.0;
+
+/// Margin, in final-atlas-basis pixels, added around each glyph's tight
+/// ink bounding box before the distance transform runs. Without this, a
+/// glyph whose stroke touches its own bounding box on some side (true of
+/// most digits) has no signed distance field data beyond that edge, so a
+/// bold threshold (`GlyphInstance::edge_bias` below 0.5, which asks for
+/// coverage some distance *outside* the true edge) has nowhere to render
+/// into and the stroke is hard-clipped right at the glyph's own bounding
+/// box — the "numbers look chopped, boxed into too small a box" defect.
+/// Must be at least `SDF_SPREAD_PX` (the maximum distance any edge_bias
+/// value can push the rendered edge outward) to guarantee no clipping at
+/// any bias; a small amount of extra margin is kept for sampling/mip
+/// filtering slop.
+const SDF_PAD_PX: f32 = 8.0;
 
 /// A pixel's offset (in source-bitmap texels) to the nearest "seed" pixel
 /// found so far during the distance transform below — `dist_sq()` is what
@@ -116,6 +130,23 @@ fn edt_propagate(grid: &mut [EdtPoint], width: i32, height: i32) {
             grid[(y * width + x) as usize] = best;
         }
     }
+}
+
+/// Embeds `bitmap` into a larger canvas, surrounded on all four sides by
+/// `pad` pixels of zero coverage ("definitely outside") — the source data
+/// `coverage_to_signed_distance` needs to produce valid distance values
+/// beyond the glyph's own ink, not just within its tight bounding box (see
+/// `SDF_PAD_PX`).
+fn pad_bitmap(bitmap: &[u8], width: usize, height: usize, pad: usize) -> (Vec<u8>, usize, usize) {
+    let padded_width = width + 2 * pad;
+    let padded_height = height + 2 * pad;
+    let mut out = vec![0u8; padded_width * padded_height];
+    for y in 0..height {
+        for x in 0..width {
+            out[(y + pad) * padded_width + (x + pad)] = bitmap[y * width + x];
+        }
+    }
+    (out, padded_width, padded_height)
 }
 
 /// Converts a grayscale coverage bitmap (as `fontdue` rasterizes it) into a
@@ -318,19 +349,32 @@ impl GlyphAtlas {
         let supersample = SDF_SUPERSAMPLE as usize;
         let inv_supersample = 1.0 / SDF_SUPERSAMPLE as f32;
 
+        let pad_ss = (SDF_PAD_PX * SDF_SUPERSAMPLE as f32) as usize;
+
         for (index, &ch) in chars.iter().enumerate() {
-            // Rasterize well above the atlas's stored resolution, compute
-            // the distance field at that supersampled size, then
-            // box-downsample it back down — see SDF_SUPERSAMPLE's doc
-            // comment for why this (rather than rasterizing directly at
-            // GLYPH_RASTER_PX) is what keeps magnified labels smooth
-            // instead of staircased.
+            // Rasterize well above the atlas's stored resolution, pad the
+            // canvas so the distance transform has real data beyond the
+            // glyph's own ink (see `SDF_PAD_PX`), compute the distance
+            // field at that supersampled size, then box-downsample it
+            // back down — see SDF_SUPERSAMPLE's doc comment for why this
+            // (rather than rasterizing directly at GLYPH_RASTER_PX) is
+            // what keeps magnified labels smooth instead of staircased.
             let (raster_metrics, bitmap) = font.rasterize(ch, GLYPH_RASTER_PX * SDF_SUPERSAMPLE as f32);
-            let signed_distance_ss = coverage_to_signed_distance(&bitmap, raster_metrics.width, raster_metrics.height);
-            let (signed_distance, down_w, down_h) =
-                downsample_signed_distance(&signed_distance_ss, raster_metrics.width, raster_metrics.height, supersample);
+            let has_ink = raster_metrics.width > 0 && raster_metrics.height > 0;
+            let (signed_distance_ss, source_w, source_h) = if has_ink {
+                let (padded, padded_w, padded_h) = pad_bitmap(&bitmap, raster_metrics.width, raster_metrics.height, pad_ss);
+                (coverage_to_signed_distance(&padded, padded_w, padded_h), padded_w, padded_h)
+            } else {
+                (Vec::new(), 0, 0)
+            };
+            let (signed_distance, down_w, down_h) = downsample_signed_distance(&signed_distance_ss, source_w, source_h, supersample);
             let signed_distance_final_basis: Vec<f32> = signed_distance.iter().map(|d| d * inv_supersample).collect();
             let sdf = encode_signed_distance(&signed_distance_final_basis);
+            // The padded canvas shifts the glyph's own bearing outward by
+            // `SDF_PAD_PX` on every side; subtracted back out here so the
+            // visual ink position is unchanged, only the quad grows to
+            // include the new margin.
+            let pad_final = if has_ink { SDF_PAD_PX } else { 0.0 };
 
             let col = index as u32 % columns;
             let row = index as u32 / columns;
@@ -356,8 +400,8 @@ impl GlyphAtlas {
                     ],
                     width: down_w as f32,
                     height: down_h as f32,
-                    bearing_x: raster_metrics.xmin as f32 * inv_supersample,
-                    bearing_y: raster_metrics.ymin as f32 * inv_supersample,
+                    bearing_x: raster_metrics.xmin as f32 * inv_supersample - pad_final,
+                    bearing_y: raster_metrics.ymin as f32 * inv_supersample - pad_final,
                     advance: raster_metrics.advance_width * inv_supersample,
                 },
             );
