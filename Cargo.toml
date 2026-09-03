@@ -6,3 +6,6 @@ members = ["crates/core", "crates/render", "crates/app"]
 version = "0.1.0"
 edition = "2024"
 authors = ["Martí Gimferrer <mgimferrer18@gmail.com>"]
+license = "GPL-3.0"
+repository = "https://github.com/mgimferrer/APOST3Dview"
+description = "A molecular and orbital/density visualizer for APOST-3D"

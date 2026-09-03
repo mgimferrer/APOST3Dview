@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "APOST3Dview does not yet have its own dedicated publication. Until it does, if you use it, please cite the APOST-3D paper listed under preferred-citation."
+title: "APOST3Dview"
+type: software
+authors:
+  - family-names: "Gimferrer"
+    given-names: "Martí"
+    email: "mgimferrer18@gmail.com"
+    affiliation: "University of Göttingen"
+repository-code: "https://github.com/mgimferrer/APOST3Dview"
+license: "GPL-3.0"
+preferred-citation:
+  type: article
+  title: "APOST-3D: Chemical concepts from wave function analysis"
+  authors:
+    - family-names: "Salvador"
+      given-names: "P."
+    - family-names: "Ramos-Cordoba"
+      given-names: "E."
+    - family-names: "Montilla"
+      given-names: "M."
+    - family-names: "Pujal"
+      given-names: "L."
+    - family-names: "Gimferrer"
+      given-names: "M."
+  journal: "The Journal of Chemical Physics"
+  year: 2024
+  volume: 160
+  start: "172502"
+  doi: "10.1063/5.0206187"
