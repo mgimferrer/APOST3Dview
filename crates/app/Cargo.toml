@@ -3,6 +3,9 @@ name = "apost3dview"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
 
 [dependencies]
 apost3dview-core = { version = "0.1.0", path = "../core" }
@@ -14,4 +17,6 @@ glam = "0.33.3"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 png = "0.18.1"
 rfd = "0.17.2"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.9"
 wgpu = "30.0.0"

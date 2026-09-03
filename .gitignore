@@ -52,3 +52,7 @@ PROJECT-ROADMAP.md
 # gen_molden.py script + pinned pyscf version that produced them, so the
 # whole set is reproducible from one place.
 !/TESTS-VISUALIZER/molden-pyscf/*.cube
+
+# Saved Custom style presets (Style window) — local to your own machine,
+# not tracked, so they don't clutter `git status` while you're tuning one.
+/presets/

@@ -219,6 +219,59 @@ impl Default for AtomLabelStyle {
     }
 }
 
+/// A saved "look": everything the Default/Publication buttons set
+/// together, bundled so a user's own preferred combination can be named
+/// and reused. Serialized as a plain TOML file per preset, one of at most
+/// a handful expected in practice, not a generic settings-persistence
+/// mechanism — Default and Publication stay hardcoded reference points,
+/// not files, on purpose.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StylePreset {
+    material: Material,
+    ao_settings: AoSettings,
+    dof_settings: DofSettings,
+    isosurface_material: IsosurfaceMaterial,
+}
+
+/// Where saved Custom style presets live: a `presets/` folder at the
+/// repository root, alongside `TESTS-VISUALIZER/`/`media/` — deliberately
+/// not the OS's per-user config directory, so a source-built user can
+/// find their own saved presets exactly where they'd look for anything
+/// else in this project, right next to the code, rather than in some
+/// hard-to-find system folder. Resolved via `CARGO_MANIFEST_DIR` (this
+/// crate's own source directory, a path Cargo bakes in at compile time on
+/// whoever's machine runs `cargo build`) rather than the process's
+/// current working directory, so it resolves to the same place regardless
+/// of how the binary happens to be launched (`cargo run` from the repo
+/// root vs. double-clicking the built executable directly land in
+/// different working directories, but the same `CARGO_MANIFEST_DIR`).
+/// This assumes a source build from a live checkout, which is how this
+/// app is used today; would need to change (e.g. to the OS's per-user
+/// config directory) if a prebuilt distributable binary is ever shipped
+/// to people who didn't compile it themselves.
+fn presets_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../presets")
+}
+
+/// Names (without the `.toml` extension) of every saved preset currently
+/// on disk, sorted for a stable display order. Returns empty rather than
+/// erroring if the folder doesn't exist yet — true the first time this
+/// app runs, before anyone has saved a preset.
+fn list_style_presets() -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(presets_dir()) else { return Vec::new() };
+    let mut names: Vec<String> = entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let path = entry.path();
+            (path.extension().and_then(|e| e.to_str()) == Some("toml"))
+                .then(|| path.file_stem().and_then(|s| s.to_str()).map(str::to_string))
+                .flatten()
+        })
+        .collect();
+    names.sort();
+    names
+}
+
 /// Two ways to size a render: `Dpi` (the default) asks for a figure width
 /// in inches and a DPI instead of a bare pixel count, matching how
 /// journals actually specify figure requirements, then derives pixel
@@ -287,15 +340,22 @@ enum OrbitalAccuracyPreset {
 const ORBITAL_SPACING_LOW_BOHR: f64 = 0.40;
 const ORBITAL_SPACING_MEDIUM_BOHR: f64 = 0.28;
 const ORBITAL_SPACING_HIGH_BOHR: f64 = 0.15;
-/// Padding around the wavefunction's own shell centers on every side —
-/// enough for an orbital's decaying tail to read as fully closed rather
-/// than clipped at the grid boundary, matching the kind of margin
-/// `cubegen`/Chemcraft/APOST-3D use by default.
+/// Default padding around the wavefunction's own shell centers on every
+/// side — a starting point for an orbital's decaying tail to read as
+/// fully closed rather than clipped at the grid boundary, matching the
+/// kind of margin `cubegen`/Chemcraft/APOST-3D use by default. Not always
+/// enough on its own (a sufficiently diffuse orbital, or a low isovalue
+/// chosen to show a larger lobe, can still extend past it — visible as a
+/// flat, clipped face on the isosurface) — `OrbitalGenerationState.
+/// padding_bohr` is user-adjustable specifically so that case has a fix
+/// without needing a single constant to be large enough for every case,
+/// which isn't really possible in general.
 const ORBITAL_GRID_PADDING_BOHR: f64 = 4.0;
 
 struct OrbitalGenerationState {
     preset: OrbitalAccuracyPreset,
     custom_spacing_bohr: f64,
+    padding_bohr: f64,
     /// 1-based, inclusive — state for the "Select range" convenience
     /// button in the MO picker.
     range_start: usize,
@@ -312,6 +372,7 @@ impl Default for OrbitalGenerationState {
         Self {
             preset: OrbitalAccuracyPreset::Medium,
             custom_spacing_bohr: ORBITAL_SPACING_MEDIUM_BOHR,
+            padding_bohr: ORBITAL_GRID_PADDING_BOHR,
             range_start: 1,
             range_end: 1,
             isovalue: DEFAULT_ISOSURFACE_ISOVALUE,
@@ -545,6 +606,13 @@ pub struct App {
     /// "Clean" empties this back out.
     kept_isosurfaces: Vec<KeptIsosurface>,
 
+    /// Names of every saved Custom style preset on disk (see
+    /// `presets_dir`), cached so the Style window doesn't re-read the
+    /// directory every frame — refreshed after a save or delete.
+    style_presets: Vec<String>,
+    /// Text field buffer for naming a new Custom preset before saving.
+    new_preset_name: String,
+
     warning: Option<(String, Color32, Instant)>,
 }
 
@@ -594,6 +662,8 @@ impl App {
             dof_enabled: true,
             dof_settings: DofSettings::default(),
             kept_isosurfaces: Vec::new(),
+            style_presets: list_style_presets(),
+            new_preset_name: String::new(),
             warning: None,
         }
     }
@@ -711,6 +781,66 @@ impl App {
         let Some(iso) = &mut structure.isosurface else { return };
         iso.reset_to_default();
         self.extract_active_isosurface();
+    }
+
+    /// Loads a saved Custom preset by name and applies it, the same shape
+    /// as the Default/Publication buttons (reset first, so a preset saved
+    /// before some other field existed still ends up with a sane value
+    /// for it, then overwrite with whatever the preset actually specifies).
+    fn apply_style_preset(&mut self, name: &str) {
+        let path = presets_dir().join(format!("{name}.toml"));
+        let contents = match std::fs::read_to_string(&path) {
+            Ok(contents) => contents,
+            Err(err) => {
+                self.show_warning(format!("Could not read preset '{name}': {err}"));
+                return;
+            }
+        };
+        let preset: StylePreset = match toml::from_str(&contents) {
+            Ok(preset) => preset,
+            Err(err) => {
+                self.show_warning(format!("Could not parse preset '{name}': {err}"));
+                return;
+            }
+        };
+        self.reset_active_isosurface_to_default();
+        self.material = preset.material;
+        self.ao_settings = preset.ao_settings;
+        self.dof_settings = preset.dof_settings;
+        self.isosurface_material = preset.isosurface_material;
+        self.rebuild_isosurface();
+    }
+
+    /// Saves the current material/AO/depth-of-field/isosurface-material
+    /// settings as a new named Custom preset, overwriting one of the same
+    /// name if it already exists.
+    fn save_style_preset(&mut self, name: &str) {
+        let preset = StylePreset { material: self.material, ao_settings: self.ao_settings, dof_settings: self.dof_settings, isosurface_material: self.isosurface_material };
+        let contents = match toml::to_string_pretty(&preset) {
+            Ok(contents) => contents,
+            Err(err) => {
+                self.show_warning(format!("Could not save preset: {err}"));
+                return;
+            }
+        };
+        let dir = presets_dir();
+        if let Err(err) = std::fs::create_dir_all(&dir) {
+            self.show_warning(format!("Could not create presets folder: {err}"));
+            return;
+        }
+        if let Err(err) = std::fs::write(dir.join(format!("{name}.toml")), contents) {
+            self.show_warning(format!("Could not save preset '{name}': {err}"));
+            return;
+        }
+        self.style_presets = list_style_presets();
+    }
+
+    fn delete_style_preset(&mut self, name: &str) {
+        if let Err(err) = std::fs::remove_file(presets_dir().join(format!("{name}.toml"))) {
+            self.show_warning(format!("Could not delete preset '{name}': {err}"));
+            return;
+        }
+        self.style_presets = list_style_presets();
     }
 
     /// Freezes the active structure's current isosurface (geometry *and*
@@ -999,7 +1129,7 @@ impl App {
 
         let mut generated = Vec::new();
         let mut failures = Vec::new();
-        match generate_mo_grids(&wfn.basis, &requests, spacing, ORBITAL_GRID_PADDING_BOHR) {
+        match generate_mo_grids(&wfn.basis, &requests, spacing, self.orbital_generation.padding_bohr) {
             Ok(grids) => {
                 for (grid, label) in grids.into_iter().zip(labels) {
                     let mut new_structure = LoadedStructure::new(label, molecule.clone(), None);
@@ -1470,27 +1600,39 @@ impl App {
                         self.isosurface_material.material[2] *= 0.6;
                         self.rebuild_isosurface();
                     }
-                    if ui.button("Space-filling").clicked() {
-                        // Not a new rendering mode — atom_scale near 1.0
-                        // (real van der Waals radius) already makes
-                        // neighboring spheres overlap, and the impostor
-                        // renderer's own silhouette already carves a real
-                        // seam at that overlap (see `sphere.wgsl` — no
-                        // texture/bump map involved). Bonds need no special
-                        // handling either: at this scale a normal covalent
-                        // bond's cylinder sits entirely inside the two
-                        // overlapping spheres already, so it's naturally
-                        // hidden. AO tightened to match — a much smaller
-                        // radius so it darkens right at sphere-sphere
-                        // contact instead of broad ambient shading, and
-                        // higher contrast so that darkening reads as a
-                        // crisp line (confirmed 2026-08-29 via a real
-                        // side-by-side render, see git history).
-                        self.material = Material { atom_scale: 0.95, ..Material::default() };
-                        self.ao_settings = AoSettings { radius: 0.45, strength: 1.0, bias: 0.01, contrast_power: 4.5, outline_strength: AoSettings::default().outline_strength };
-                        self.ao_enabled = true;
-                        self.dof_settings = DofSettings::default();
-                        self.reset_active_isosurface_to_default();
+                });
+
+                ui.add_space(8.0);
+                ui.label("Custom presets");
+                if self.style_presets.is_empty() {
+                    ui.label(egui::RichText::new("No custom presets saved yet — tune the settings below, then save one.").small().weak());
+                } else {
+                    let mut apply_name = None;
+                    let mut delete_name = None;
+                    ui.horizontal_wrapped(|ui| {
+                        for name in &self.style_presets {
+                            if ui.button(name).clicked() {
+                                apply_name = Some(name.clone());
+                            }
+                            if ui.small_button("×").clicked() {
+                                delete_name = Some(name.clone());
+                            }
+                        }
+                    });
+                    if let Some(name) = apply_name {
+                        self.apply_style_preset(&name);
+                    }
+                    if let Some(name) = delete_name {
+                        self.delete_style_preset(&name);
+                    }
+                }
+                ui.horizontal(|ui| {
+                    ui.add(egui::TextEdit::singleline(&mut self.new_preset_name).hint_text("preset name").desired_width(120.0));
+                    let can_save = !self.new_preset_name.trim().is_empty();
+                    if ui.add_enabled(can_save, egui::Button::new("Save current as preset")).clicked() {
+                        let name = self.new_preset_name.trim().to_string();
+                        self.save_style_preset(&name);
+                        self.new_preset_name.clear();
                     }
                 });
 
@@ -1894,6 +2036,15 @@ impl App {
                                 .weak(),
                         );
                     }
+                    ui.horizontal(|ui| {
+                        ui.label("Box padding (Bohr):");
+                        ui.add(egui::DragValue::new(&mut self.orbital_generation.padding_bohr).speed(0.1).range(1.0..=20.0));
+                    });
+                    ui.label(
+                        egui::RichText::new("If a generated orbital's isosurface looks flat-cut at one side, raise this.")
+                            .small()
+                            .weak(),
+                    );
 
                     ui.add_space(4.0);
                     let selected_count = self.structures[active].selected_alpha_mos.len() + self.structures[active].selected_beta_mos.len();
@@ -2133,6 +2284,25 @@ impl App {
                         "Sister project to APOST-3D, a software to extract state-of-the-art \
                          chemical bonding indicators from wavefunction analysis",
                     );
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(8.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "APOST3Dview does not yet have its own dedicated publication. \
+                             If you use it, please cite the APOST-3D paper:",
+                        )
+                        .small(),
+                    );
+                    ui.label(
+                        egui::RichText::new(
+                            "P. Salvador, E. Ramos-Cordoba, M. Montilla, L. Pujal and \
+                             M. Gimferrer, J. Chem. Phys., 2024, 160, 172502",
+                        )
+                        .small()
+                        .italics(),
+                    );
+                    ui.hyperlink_to("DOI: 10.1063/5.0206187", "https://doi.org/10.1063/5.0206187");
                 });
             });
         self.show_about = open;

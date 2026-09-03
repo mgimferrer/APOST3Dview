@@ -12,7 +12,7 @@ use glam::Vec3;
 /// since removed) showed the isosurface in particular reading as
 /// noticeably more dimensional under GGX — a real, defined highlight
 /// instead of a flatter, more matte response on that large a surface.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Material {
     /// Hemisphere-ambient strength (see `hemisphere_ambient` in the
     /// shaders) — unrelated to the BRDF swap, kept as-is.

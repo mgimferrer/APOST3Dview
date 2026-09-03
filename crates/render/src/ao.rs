@@ -50,7 +50,7 @@ pub struct AoUniforms {
 /// the live view's settle-quality logic (see `App`) — dragging a slider
 /// has to be able to trigger a recompute the exact same way moving the
 /// camera does.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AoSettings {
     pub radius: f32,
     pub strength: f32,

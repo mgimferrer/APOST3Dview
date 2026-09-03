@@ -32,7 +32,7 @@ pub struct IsosurfaceVertex {
 /// to read as genuinely more dimensional than Blinn-Phong's flatter
 /// response on the same geometry.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable, serde::Serialize, serde::Deserialize)]
 pub struct IsosurfaceMaterial {
     /// ambient, roughness, reflectance (F0), light_intensity
     pub material: [f32; 4],

@@ -3,6 +3,8 @@ name = "apost3dview-render"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 apost3dview-core = { version = "0.1.0", path = "../core" }
@@ -11,6 +13,7 @@ egui = "0.36.1"
 egui-wgpu = "0.36.1"
 fontdue = "0.9.4"
 glam = "0.33.3"
+serde = { version = "1.0", features = ["derive"] }
 wgpu = "30.0.0"
 
 [dev-dependencies]
