@@ -1791,6 +1791,10 @@ impl App {
                 match self.active_structure.and_then(|i| self.structures.get(i)) {
                     Some(structure) => {
                         let text = format_coordinates(&structure.molecule, self.coordinate_unit, self.coordinate_format, &structure.label);
+                        if ui.button("Copy").clicked() {
+                            ui.ctx().copy_text(text.clone());
+                        }
+                        ui.add_space(4.0);
                         egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
                             ui.add(
                                 egui::Label::new(egui::RichText::new(text).monospace())
