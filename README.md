@@ -85,7 +85,8 @@ The binary is then at `target/release/apost3dview` (`.exe` on Windows). For acti
 ## How to use
 
 1. Launch the app and open the **Structures** panel (top toolbar).
-2. Open a `.fchk`, `.molden`, `.xyz`, or `.cube` file.
+2. Open one or more `.fchk`, `.molden`, `.xyz`, or `.cube` files (each file becomes its own entry in the Structures list).
+   Drag with the mouse or trackpad to rotate (freely, in any direction, including over the top), shift+drag to pan, and scroll or pinch to zoom. The arrow keys rotate too, two at once for a diagonal, and the Space bar starts or stops a continuous auto-spin in the direction of the last arrow pressed, handy for presentations.
 3. For a `.fchk` or `.molden` file, the **Visualization** panel's "Generate orbitals" section lists every molecular orbital (HOMO/LUMO tagged, with energy and occupation). Tick the ones you want and click Generate. Each becomes its own isosurface, using the same controls as a `.cube` file (isovalue, refinement, per-lobe color, "Keep surface" to compose several orbitals in one image).
 4. The **Style** panel controls lighting/material (or pick Default or Publication), atom/bond scale, and ambient occlusion/depth of field. Once you've tuned something you like, save it as a named Custom preset; it's written as a plain TOML file under `presets/` at the root of this repository (not tracked by git), so it's easy to find, back up, or hand to someone else. Custom presets you've saved appear as their own buttons alongside Default and Publication.
 5. The **Analysis** panel builds distance/angle/dihedral measurements from whatever atoms are currently selected (2, 3, or 4 of them), no separate mode to switch into first.

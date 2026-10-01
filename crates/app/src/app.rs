@@ -13,7 +13,7 @@ use apost3dview_render::{
     OrbitCamera, SceneUniforms, ViewportCallback, ViewportResources,
 };
 use egui::{Color32, Slider};
-use glam::{Vec3, Vec4};
+use glam::{Vec2, Vec3, Vec4};
 
 /// Minimum time the splash screen stays up, regardless of how fast startup
 /// actually finishes.
@@ -337,6 +337,12 @@ enum OrbitalAccuracyPreset {
     Custom,
 }
 
+/// Arrow-key rotation speed, radians per second.
+const ARROW_ROTATE_SPEED: f32 = 1.2;
+/// Default auto-spin speed, radians per second (one turn in ~12.5 s), a
+/// calm pace suited to presentations.
+const DEFAULT_AUTO_SPIN_SPEED: f32 = 0.5;
+
 const ORBITAL_SPACING_LOW_BOHR: f64 = 0.40;
 const ORBITAL_SPACING_MEDIUM_BOHR: f64 = 0.28;
 const ORBITAL_SPACING_HIGH_BOHR: f64 = 0.15;
@@ -528,6 +534,15 @@ impl LoadedStructure {
 
 pub struct App {
     camera: OrbitCamera,
+    /// Continuous rotation, toggled with the Space bar or the
+    /// Visualization window. Pauses while the user is rotating by hand.
+    auto_spin: bool,
+    /// Radians per second.
+    auto_spin_speed: f32,
+    /// Screen-space direction of auto-spin (x = horizontal, y = vertical),
+    /// unit length — follows whichever arrow key(s) were pressed last, so
+    /// tapping e.g. right+up then Space spins diagonally.
+    spin_direction: Vec2,
     material: Material,
     structures: Vec<LoadedStructure>,
     active_structure: Option<usize>,
@@ -631,6 +646,9 @@ impl App {
 
         Self {
             camera: OrbitCamera::default(),
+            auto_spin: false,
+            auto_spin_speed: DEFAULT_AUTO_SPIN_SPEED,
+            spin_direction: Vec2::X,
             material: Material::default(),
             structures: Vec::new(),
             active_structure: None,
@@ -939,86 +957,74 @@ impl App {
     }
 
     fn open_fchk(&mut self) {
-        let Some(path) = rfd::FileDialog::new().add_filter("Gaussian checkpoint", &["fchk"]).pick_file() else { return };
-        match Molecule::from_fchk(&path) {
-            Ok(molecule) => {
-                let label = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled.fchk".into());
-                let mut structure = LoadedStructure::new(label, molecule, Some(path.clone()));
-                // Parsing the wavefunction (basis set + MO coefficients) is
-                // a separate, slower full-file pass from the geometry-only
-                // one above — failure here just means no "Generate
-                // orbitals" section for this structure, not a failure to
-                // open it at all.
-                match parse_fchk_wavefunction(&path) {
-                    Ok(wfn) => {
-                        // `evaluate_basis_functions` evaluates every shell
-                        // in the basis regardless of which MO is being
-                        // asked for (it computes the whole basis-function
-                        // vector, then a separate dot product picks out
-                        // one MO) — so a single h-or-higher shell anywhere
-                        // in the file blocks *every* orbital, not just
-                        // ones with real weight on it. Worth flagging
-                        // right away rather than only on the first failed
-                        // "Generate" click.
-                        let max_angular_momentum = wfn.basis.shells.iter().map(|s| s.angular_momentum).max().unwrap_or(0);
-                        if wfn.alpha.num_orbitals() > 0 {
-                            structure.selected_alpha_mos.insert(wfn.alpha.homo_index() - 1);
-                        }
-                        if let Some(beta) = &wfn.beta {
-                            if beta.num_orbitals() > 0 {
-                                structure.selected_beta_mos.insert(beta.homo_index() - 1);
-                            }
-                        }
-                        structure.wavefunction = Some(wfn);
-                        if max_angular_momentum > 4 {
-                            self.show_warning("This basis set includes h (or higher) shells — orbital generation isn't supported yet for this file.");
-                        }
-                    }
-                    Err(err) => self.show_warning(format!("Geometry loaded, but orbitals unavailable: {err}")),
-                }
-                let index = self.structures.len();
-                self.structures.push(structure);
-                self.set_active(index);
-            }
-            Err(err) => self.show_warning(format!("Could not load {}: {err}", path.display())),
-        }
+        self.open_wavefunction_files("Gaussian checkpoint", &["fchk"], Molecule::from_fchk, parse_fchk_wavefunction);
     }
 
-    /// Same shape as `open_fchk` — geometry + wavefunction, feeding the
-    /// same "Generate orbitals" section — sourced from a `.molden` file
-    /// instead. `generate_mo_grid`/`evaluate_mo` already take
-    /// `(&BasisSet, &MolecularOrbitals)` rather than a `.fchk`-specific
-    /// `Wavefunction`, so nothing downstream of `parse_molden_wavefunction`
-    /// needed to change for a second source to plug in here.
+    /// Same as `open_fchk`, sourced from `.molden` files instead.
+    /// `generate_mo_grid`/`evaluate_mo` already take `(&BasisSet,
+    /// &MolecularOrbitals)` rather than a `.fchk`-specific `Wavefunction`,
+    /// so nothing downstream of `parse_molden_wavefunction` needed to
+    /// change for a second source to plug in here.
     fn open_molden(&mut self) {
-        let Some(path) = rfd::FileDialog::new().add_filter("Molden format", &["molden", "inp"]).pick_file() else { return };
-        match Molecule::from_molden(&path) {
-            Ok(molecule) => {
-                let label = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled.molden".into());
-                let mut structure = LoadedStructure::new(label, molecule, Some(path.clone()));
-                match parse_molden_wavefunction(&path) {
-                    Ok(wfn) => {
-                        let max_angular_momentum = wfn.basis.shells.iter().map(|s| s.angular_momentum).max().unwrap_or(0);
-                        if wfn.alpha.num_orbitals() > 0 {
-                            structure.selected_alpha_mos.insert(wfn.alpha.homo_index() - 1);
-                        }
-                        if let Some(beta) = &wfn.beta {
-                            if beta.num_orbitals() > 0 {
-                                structure.selected_beta_mos.insert(beta.homo_index() - 1);
-                            }
-                        }
-                        structure.wavefunction = Some(wfn);
-                        if max_angular_momentum > 4 {
-                            self.show_warning("This basis set includes h (or higher) shells — orbital generation isn't supported yet for this file.");
+        self.open_wavefunction_files("Molden format", &["molden", "inp"], Molecule::from_molden, parse_molden_wavefunction);
+    }
+
+    /// Opens one or more files that carry both a geometry and a
+    /// wavefunction (`.fchk`, `.molden`) — same multi-select UX as `.xyz`/
+    /// `.cube`, each file becoming its own Structures entry. Parsing the
+    /// wavefunction (basis set + MO coefficients) is a separate, slower
+    /// full-file pass from the geometry-only one; failure there just means
+    /// no "Generate orbitals" section for that structure, not a failure to
+    /// open it at all.
+    fn open_wavefunction_files(
+        &mut self,
+        filter_name: &str,
+        extensions: &[&str],
+        load_molecule: fn(&std::path::Path) -> std::io::Result<Molecule>,
+        load_wavefunction: fn(&std::path::Path) -> std::io::Result<Wavefunction>,
+    ) {
+        let Some(paths) = rfd::FileDialog::new().add_filter(filter_name, extensions).pick_files() else { return };
+        let mut first_new_index = None;
+        for path in paths {
+            let label = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled".into());
+            let molecule = match load_molecule(&path) {
+                Ok(molecule) => molecule,
+                Err(err) => {
+                    self.show_warning(format!("Could not load {label}: {err}"));
+                    continue;
+                }
+            };
+            let mut structure = LoadedStructure::new(label.clone(), molecule, Some(path.clone()));
+            match load_wavefunction(&path) {
+                Ok(wfn) => {
+                    // `evaluate_basis_functions` evaluates every shell in
+                    // the basis regardless of which MO is being asked for,
+                    // so a single h-or-higher shell anywhere in the file
+                    // blocks *every* orbital, not just ones with real
+                    // weight on it. Worth flagging right away rather than
+                    // only on the first failed "Generate" click.
+                    let max_angular_momentum = wfn.basis.shells.iter().map(|s| s.angular_momentum).max().unwrap_or(0);
+                    if wfn.alpha.num_orbitals() > 0 {
+                        structure.selected_alpha_mos.insert(wfn.alpha.homo_index() - 1);
+                    }
+                    if let Some(beta) = &wfn.beta {
+                        if beta.num_orbitals() > 0 {
+                            structure.selected_beta_mos.insert(beta.homo_index() - 1);
                         }
                     }
-                    Err(err) => self.show_warning(format!("Geometry loaded, but orbitals unavailable: {err}")),
+                    structure.wavefunction = Some(wfn);
+                    if max_angular_momentum > 4 {
+                        self.show_warning(format!("{label}: the basis set includes h (or higher) shells, orbital generation isn't supported yet for this file."));
+                    }
                 }
-                let index = self.structures.len();
-                self.structures.push(structure);
-                self.set_active(index);
+                Err(err) => self.show_warning(format!("{label}: geometry loaded, but orbitals unavailable: {err}")),
             }
-            Err(err) => self.show_warning(format!("Could not load {}: {err}", path.display())),
+            let index = self.structures.len();
+            self.structures.push(structure);
+            first_new_index.get_or_insert(index);
+        }
+        if let Some(index) = first_new_index {
+            self.set_active(index);
         }
     }
 
@@ -1819,10 +1825,17 @@ impl App {
             .default_width(260.0)
             .show(ctx, |ui| {
                 ui.label(
-                    egui::RichText::new("Click atoms/bonds in the viewport to select them.")
+                    egui::RichText::new("Click atoms/bonds to select them. Drag (or arrow keys) to rotate, shift+drag to pan, scroll or pinch to zoom.")
                         .small()
                         .italics(),
                 );
+
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.auto_spin, "Auto-spin (Space)");
+                    ui.add(Slider::new(&mut self.auto_spin_speed, 0.05..=3.0).text("speed"));
+                });
+                ui.label(egui::RichText::new("Spins in the direction of the last arrow key(s) pressed.").small().weak());
 
                 ui.add_space(10.0);
                 ui.separator();
@@ -2395,11 +2408,15 @@ impl eframe::App for App {
                     egui::Sense::click_and_drag(),
                 );
 
-                // Right-click drags the camera; left-click is reserved
-                // entirely for selection (below) — `dragged()` alone
-                // doesn't distinguish which button caused it, so this has
-                // to be `dragged_by` the specific button.
-                let camera_dragging = response.dragged_by(egui::PointerButton::Secondary);
+                // Left- or right-drag rotates, shift+drag pans. A left
+                // *click* without movement still selects (below): egui only
+                // reports a drag once the pointer moves past its drag
+                // threshold, so the two don't conflict. This makes the
+                // viewport usable from a trackpad, where a right-button
+                // drag is awkward or unavailable. Dragging a measurement
+                // label still moves the label, since labels are registered
+                // later, on top of the viewport.
+                let camera_dragging = response.dragged_by(egui::PointerButton::Primary) || response.dragged_by(egui::PointerButton::Secondary);
                 let drag_delta = response.drag_delta();
                 if camera_dragging {
                     if ui.input(|i| i.modifiers.shift) {
@@ -2412,30 +2429,50 @@ impl eframe::App for App {
                 if scroll_delta != 0.0 {
                     self.camera.zoom(scroll_delta * 0.02);
                 }
+                // Trackpad pinch (and ctrl/cmd+scroll, which egui reports
+                // the same way): a multiplicative zoom factor.
+                let zoom_factor = ui.input(|i| i.zoom_delta());
+                if zoom_factor != 1.0 && zoom_factor > 0.0 {
+                    self.camera.zoom(self.camera.distance * (1.0 - 1.0 / zoom_factor));
+                }
 
-                // Arrow keys orbit continuously while held, at a speed
-                // independent of frame rate.
-                const ARROW_ROTATE_SPEED: f32 = 1.2;
-                let (key_yaw, key_pitch, dt) = ui.input(|i| {
-                    let mut yaw = 0.0;
-                    let mut pitch = 0.0;
+                // Arrow keys rotate continuously while held, at a speed
+                // independent of frame rate, with no limit in any
+                // direction (see `OrbitCamera`). Two arrows together turn
+                // along the diagonal, at the same speed as a single arrow.
+                // Ignored while a text field (or other widget) has
+                // keyboard focus, so typing doesn't rotate the molecule.
+                let keyboard_free = !ui.ctx().egui_wants_keyboard_input();
+                let (key_direction, space_pressed, dt) = ui.input(|i| {
+                    let mut direction = Vec2::ZERO;
                     if i.key_down(egui::Key::ArrowLeft) {
-                        yaw -= 1.0;
+                        direction.x -= 1.0;
                     }
                     if i.key_down(egui::Key::ArrowRight) {
-                        yaw += 1.0;
+                        direction.x += 1.0;
                     }
                     if i.key_down(egui::Key::ArrowUp) {
-                        pitch += 1.0;
+                        direction.y += 1.0;
                     }
                     if i.key_down(egui::Key::ArrowDown) {
-                        pitch -= 1.0;
+                        direction.y -= 1.0;
                     }
-                    (yaw, pitch, i.stable_dt)
+                    // Clamped so a stalled frame doesn't produce a jump.
+                    (direction, i.key_pressed(egui::Key::Space), i.stable_dt.min(0.1))
                 });
-                let keyboard_rotating = key_yaw != 0.0 || key_pitch != 0.0;
+                let key_direction = if keyboard_free { key_direction.normalize_or_zero() } else { Vec2::ZERO };
+                let keyboard_rotating = key_direction != Vec2::ZERO;
                 if keyboard_rotating {
-                    self.camera.orbit(key_yaw * ARROW_ROTATE_SPEED * dt, key_pitch * ARROW_ROTATE_SPEED * dt);
+                    self.spin_direction = key_direction;
+                    self.camera.orbit(key_direction.x * ARROW_ROTATE_SPEED * dt, key_direction.y * ARROW_ROTATE_SPEED * dt);
+                }
+                if keyboard_free && space_pressed {
+                    self.auto_spin = !self.auto_spin;
+                }
+                let auto_spinning = self.auto_spin && !keyboard_rotating && !camera_dragging;
+                if auto_spinning {
+                    let step = self.auto_spin_speed * dt;
+                    self.camera.orbit(self.spin_direction.x * step, self.spin_direction.y * step);
                 }
 
                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -2623,7 +2660,7 @@ impl eframe::App for App {
 
                 self.show_warning_overlay(ui.ctx(), rect);
 
-                if camera_dragging || scroll_delta != 0.0 || keyboard_rotating || any_label_dragged {
+                if camera_dragging || scroll_delta != 0.0 || zoom_factor != 1.0 || keyboard_rotating || auto_spinning || any_label_dragged {
                     ui.ctx().request_repaint();
                 }
             });
