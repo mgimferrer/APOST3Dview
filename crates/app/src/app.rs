@@ -9,8 +9,9 @@ use apost3dview_core::{
 };
 use apost3dview_render::{
     glyph_scale_for_font_size, glyph_scale_for_world_size, layout_label, pick_atom, pick_bond, push_isosurface_vertices, ray_from_ndc,
+    render_turntable_gif,
     AoSettings, BondVisualStyle, DofSettings, ExportSettings, GlyphAtlas, GlyphInstance, IsosurfaceMaterial, IsosurfaceVertex, Material,
-    OrbitCamera, SceneUniforms, ViewportCallback, ViewportResources,
+    OrbitCamera, SceneUniforms, TurntableSettings, ViewportCallback, ViewportResources,
 };
 use egui::{Color32, Slider};
 use glam::{Vec2, Vec3, Vec4};
@@ -299,6 +300,9 @@ const FIGURE_WIDTH_DOUBLE_COLUMN_IN: f64 = 6.75;
 /// downsamples back — smooths edges beyond the live view's real-time MSAA,
 /// independent of whatever DPI/size is chosen.
 const PUBLICATION_SUPERSAMPLE: u32 = 2;
+/// gifski's own recommended default (1-100). 100 is visibly no better on
+/// molecule renders but produces noticeably larger files.
+const GIF_QUALITY: u8 = 90;
 
 struct RenderExportState {
     preset: RenderPreset,
@@ -308,6 +312,12 @@ struct RenderExportState {
     transparent_background: bool,
     dpi: u32,
     figure_width_in: f64,
+    /// Animated GIF export: output width in pixels (height follows the
+    /// live view's aspect ratio, like the DPI preset), loop duration in
+    /// seconds (one full turn), and frame rate.
+    gif_width: u32,
+    gif_seconds: f32,
+    gif_fps: u32,
 }
 
 impl Default for RenderExportState {
@@ -320,6 +330,9 @@ impl Default for RenderExportState {
             transparent_background: false,
             dpi: DEFAULT_PUBLICATION_DPI,
             figure_width_in: FIGURE_WIDTH_SINGLE_COLUMN_IN,
+            gif_width: 800,
+            gif_seconds: 6.0,
+            gif_fps: 20,
         }
     }
 }
@@ -1302,7 +1315,7 @@ impl App {
     /// simplified copy rather than sharing code with the live-view block:
     /// that block also does interactive drag hit-testing (needs `ui`,
     /// mutates measurement state), which a one-shot export has no use for.
-    fn build_export_label_instances(&self, active: usize, target_height_px: f32) -> Vec<GlyphInstance> {
+    fn build_export_label_instances(&self, active: usize, camera: &OrbitCamera, target_height_px: f32) -> Vec<GlyphInstance> {
         let mut label_instances: Vec<GlyphInstance> = Vec::new();
         let structure = &self.structures[active];
 
@@ -1320,18 +1333,18 @@ impl App {
                     AtomLabelMode::NumberType => format!("{}{}", element_data(z).symbol, index + 1),
                     AtomLabelMode::None => unreachable!(),
                 };
-                let to_camera = (self.camera.eye() - position).normalize_or_zero();
+                let to_camera = (camera.eye() - position).normalize_or_zero();
                 let label_anchor = position + to_camera * (radius * 1.15 + 0.02);
                 push_label(&mut label_instances, &self.glyph_atlas, &text, label_anchor, scale, color, EDGE_BIAS_ATOM_LABEL);
             }
         }
 
-        let (camera_right, camera_up) = self.camera.screen_basis();
+        let (camera_right, camera_up) = camera.screen_basis();
         let measurement_color = color32_to_rgb(self.measurement_style.text_color);
         for measurement in &structure.measurements {
             let anchor = measurement_anchor(&structure.molecule, measurement.kind);
-            let distance = (anchor - self.camera.eye()).length();
-            let world_per_pixel = self.camera.world_units_per_pixel(distance, target_height_px);
+            let distance = (anchor - camera.eye()).length();
+            let world_per_pixel = camera.world_units_per_pixel(distance, target_height_px);
             let world_offset = camera_right * (measurement.label_offset.x * world_per_pixel)
                 - camera_up * (measurement.label_offset.y * world_per_pixel);
             let final_anchor = anchor + world_offset;
@@ -1371,7 +1384,7 @@ impl App {
         let mut uniforms = SceneUniforms::new(&self.camera, export_aspect, &self.ao_render_material());
         let target_format = self.render_state.target_format;
         uniforms.set_srgb_target(target_format.is_srgb());
-        let label_instances = self.build_export_label_instances(active, settings.height as f32);
+        let label_instances = self.build_export_label_instances(active, &self.camera, settings.height as f32);
 
         let mut renderer = self.render_state.renderer.write();
         let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() else {
@@ -1402,6 +1415,93 @@ impl App {
                 }
             }
             Err(err) => self.show_warning(format!("Render failed: {err}")),
+        }
+    }
+
+    /// Size/quality for animated GIF export: always an opaque background
+    /// (GIF only has 1-bit transparency, which would leave hard, haloed
+    /// edges around antialiased atoms), height from the live view's
+    /// aspect ratio so the animation frames exactly what's on screen.
+    fn gif_export_settings(&self) -> ExportSettings {
+        let width = self.render_export.gif_width.max(16);
+        let aspect_ratio = if self.last_aspect_ratio > 0.0 { self.last_aspect_ratio } else { 1.0 };
+        let height = ((width as f32 / aspect_ratio).round() as u32).max(16);
+        let [r, g, b] = self.material.background;
+        ExportSettings {
+            width,
+            height,
+            supersample: PUBLICATION_SUPERSAMPLE,
+            background: Some([r, g, b, 1.0]),
+            ambient_occlusion: self.ao_enabled.then_some(self.ao_settings),
+            depth_of_field: self.dof_enabled.then_some(self.dof_settings),
+            dof_focus_distance: self.camera.distance,
+        }
+    }
+
+    fn gif_frame_count(&self) -> usize {
+        ((self.render_export.gif_seconds * self.render_export.gif_fps as f32).round() as usize).max(2)
+    }
+
+    /// Renders one full turn of the active structure, starting from the
+    /// current view and turning in the auto-spin direction (the last arrow
+    /// key(s) pressed), and saves it as a looping animated GIF (see
+    /// `apost3dview_render::render_turntable_gif`). Blocks the UI until
+    /// done, like PNG export.
+    fn export_render_gif(&mut self) {
+        let Some(active) = self.active_structure else {
+            self.show_warning("Open a structure first.");
+            return;
+        };
+        let default_name = self
+            .structures[active]
+            .source_path
+            .as_ref()
+            .and_then(|p| p.file_stem())
+            .map(|s| format!("{}.gif", s.to_string_lossy()))
+            .unwrap_or_else(|| "animation.gif".to_string());
+        let Some(path) = rfd::FileDialog::new().add_filter("GIF animation", &["gif"]).set_file_name(default_name).save_file() else {
+            return;
+        };
+        let file = match std::fs::File::create(&path) {
+            Ok(file) => std::io::BufWriter::new(file),
+            Err(err) => {
+                self.show_warning(format!("Could not create {}: {err}", path.display()));
+                return;
+            }
+        };
+
+        let settings = self.gif_export_settings();
+        let turntable = TurntableSettings {
+            frames: self.gif_frame_count(),
+            fps: self.render_export.gif_fps as f64,
+            direction: self.spin_direction,
+            quality: GIF_QUALITY,
+        };
+        let material = self.ao_render_material();
+        let result = {
+            let mut renderer = self.render_state.renderer.write();
+            match renderer.callback_resources.get_mut::<ViewportResources>() {
+                None => Err("Renderer not ready.".to_string()),
+                Some(resources) => render_turntable_gif(
+                    resources,
+                    &self.render_state.device,
+                    &self.render_state.queue,
+                    self.render_state.target_format,
+                    &self.camera,
+                    &material,
+                    &settings,
+                    turntable,
+                    |camera| self.build_export_label_instances(active, camera, settings.height as f32),
+                    file,
+                ),
+            }
+        };
+        match result {
+            Ok(()) => self.show_status(format!("Saved {}", path.display())),
+            Err(message) => {
+                let _ = std::fs::remove_file(&path);
+                self.show_warning(message);
+            }
         }
     }
 
@@ -1481,6 +1581,37 @@ impl App {
 
                 if ui.add_sized([ui.available_width(), 30.0], egui::Button::new("Render and save PNG...")).clicked() {
                     self.export_render_png(settings);
+                }
+
+                ui.add_space(12.0);
+                ui.separator();
+                ui.label(egui::RichText::new("Animation (GIF)").strong());
+                ui.horizontal(|ui| {
+                    ui.label("Width:");
+                    ui.add(egui::DragValue::new(&mut self.render_export.gif_width).range(160..=1920).suffix(" px"));
+                    ui.label("Duration:");
+                    ui.add(egui::DragValue::new(&mut self.render_export.gif_seconds).range(1.0..=30.0).speed(0.1).suffix(" s"));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Frame rate:");
+                    for fps in [15, 20, 25] {
+                        ui.selectable_value(&mut self.render_export.gif_fps, fps, format!("{fps} fps"));
+                    }
+                });
+                let gif_settings = self.gif_export_settings();
+                ui.label(
+                    egui::RichText::new(format!(
+                        "One full turn from the current view, {} frames, {} x {} px, looping seamlessly. Turns in the auto-spin direction (the last arrow key(s) pressed), around the center of the view, so leave some margin around the molecule. Uses the Style background color.",
+                        self.gif_frame_count(),
+                        gif_settings.width,
+                        gif_settings.height
+                    ))
+                    .small()
+                    .weak(),
+                );
+                ui.add_space(6.0);
+                if ui.add_sized([ui.available_width(), 30.0], egui::Button::new("Render and save GIF...")).clicked() {
+                    self.export_render_gif();
                 }
             });
         self.show_render = open;
@@ -2471,8 +2602,7 @@ impl eframe::App for App {
                 }
                 let auto_spinning = self.auto_spin && !keyboard_rotating && !camera_dragging;
                 if auto_spinning {
-                    let step = self.auto_spin_speed * dt;
-                    self.camera.orbit(self.spin_direction.x * step, self.spin_direction.y * step);
+                    self.camera.orbit_along(self.spin_direction, self.auto_spin_speed * dt);
                 }
 
                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {

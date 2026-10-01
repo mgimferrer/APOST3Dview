@@ -1,4 +1,4 @@
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 
 /// Trackball-style orbit camera: rotates around a fixed target at a fixed
 /// distance, with its orientation stored as a quaternion. Every rotation
@@ -81,6 +81,22 @@ impl OrbitCamera {
         self.orientation = (self.orientation * Quat::from_rotation_y(delta_yaw) * Quat::from_rotation_x(-delta_pitch)).normalize();
     }
 
+    /// Rotates by `angle` radians along a screen-space `direction` (x =
+    /// horizontal, y = vertical, need not be normalized), as one exact
+    /// rotation about the fixed screen axis perpendicular to it. Applying
+    /// it N times with `angle = TAU / N` returns exactly to the starting
+    /// view, diagonals included, which is what makes a seamless looping
+    /// animation possible (chaining small `orbit` steps only approximates
+    /// a diagonal axis). Matches `orbit`'s sign conventions.
+    pub fn orbit_along(&mut self, direction: Vec2, angle: f32) {
+        let direction = direction.normalize_or_zero();
+        if direction == Vec2::ZERO {
+            return;
+        }
+        let axis = Vec3::new(-direction.y, direction.x, 0.0);
+        self.orientation = (self.orientation * Quat::from_axis_angle(axis, angle)).normalize();
+    }
+
     pub fn pan(&mut self, delta_x: f32, delta_y: f32) {
         let (right, up) = self.screen_basis();
         self.target += right * delta_x + up * delta_y;
@@ -156,6 +172,38 @@ mod tests {
         }
         assert!(highest > camera.distance * 0.99, "camera never passed over the top (max height {highest})");
         assert_vec_close(camera.eye(), start, 1e-2);
+    }
+
+    #[test]
+    fn diagonal_spin_closes_into_a_seamless_loop() {
+        // One full turn split into animation frames must land exactly back
+        // on the first frame, for any direction, so a looping GIF has no
+        // visible jump.
+        for direction in [Vec2::new(1.0, 0.0), Vec2::new(0.0, -1.0), Vec2::new(1.0, 1.0), Vec2::new(-0.3, 0.8)] {
+            let mut camera = OrbitCamera::default();
+            let start = camera.eye();
+            let frames = 90;
+            for _ in 0..frames {
+                camera.orbit_along(direction, std::f32::consts::TAU / frames as f32);
+            }
+            assert_vec_close(camera.eye(), start, 1e-3);
+        }
+    }
+
+    #[test]
+    fn orbit_along_matches_orbit_for_small_steps() {
+        // Same sign conventions as `orbit`: a tiny step along +x/+y should
+        // move the eye the same way a tiny yaw/pitch step does.
+        let mut a = OrbitCamera::default();
+        let mut b = OrbitCamera::default();
+        a.orbit(1e-3, 0.0);
+        b.orbit_along(Vec2::X, 1e-3);
+        assert_vec_close(a.eye(), b.eye(), 1e-5);
+        let mut a = OrbitCamera::default();
+        let mut b = OrbitCamera::default();
+        a.orbit(0.0, 1e-3);
+        b.orbit_along(Vec2::Y, 1e-3);
+        assert_vec_close(a.eye(), b.eye(), 1e-5);
     }
 
     #[test]

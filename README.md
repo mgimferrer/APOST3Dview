@@ -28,6 +28,7 @@ What's already here, usable today:
 - **Orbitals generated directly from a wave function**, no `.cube` file needed. A from-scratch Rust GTO evaluator (s/p/d/f/g shells, restricted and unrestricted, ECPs handled transparently) reads a `.fchk` or a PySCF-written `.molden` file and evaluates any molecular orbital on a grid on the spot. Validated against independently generated reference cubes down to numerical noise (RMS around 10⁻⁶ to 10⁻⁷ of peak magnitude) across every shell type, and both restricted and open-shell cases.
 - **Physically-based rendering**: Cook-Torrance/GGX lighting, screen-space ambient occlusion, depth of field, and linear-light tone mapping, with Default and Publication (figure-ready, orientation-independent lighting) style presets, plus your own saved Custom looks.
 - **Analysis**: distance, angle, and dihedral measurements from a normal atom selection, with draggable, fully customizable labels.
+- **Export**: publication PNGs at a chosen DPI and figure size, and looping animated GIFs of the rotating molecule for presentations.
 
 ## Installation
 
@@ -91,6 +92,7 @@ The binary is then at `target/release/apost3dview` (`.exe` on Windows). For acti
 4. The **Style** panel controls lighting/material (or pick Default or Publication), atom/bond scale, and ambient occlusion/depth of field. Once you've tuned something you like, save it as a named Custom preset; it's written as a plain TOML file under `presets/` at the root of this repository (not tracked by git), so it's easy to find, back up, or hand to someone else. Custom presets you've saved appear as their own buttons alongside Default and Publication.
 5. The **Analysis** panel builds distance/angle/dihedral measurements from whatever atoms are currently selected (2, 3, or 4 of them), no separate mode to switch into first.
 6. The **Render** panel exports the current view as a PNG at a given DPI and physical figure size, or a custom resolution.
+   It also saves a looping animated GIF (one full turn of the molecule, in the auto-spin direction) for presentations, with your choice of width, duration and frame rate. The GIF works directly in PowerPoint, Keynote and Google Slides.
 
 `TESTS-VISUALIZER/` in this repository has real committed `.fchk`/`.cube`/`.molden` test files (H2O and BiCl3 at several basis sets, an open-shell triplet, and a real APOST-3D bismuth complex), good for opening something right away.
 
