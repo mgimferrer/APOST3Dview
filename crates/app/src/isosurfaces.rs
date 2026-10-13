@@ -3,11 +3,14 @@
 //! `Surface` in that structure's list, shown or hidden on its own, so
 //! several are composed into one picture just by showing them together.
 
+use std::path::PathBuf;
+
 use apost3dview_core::{extract_isosurface, refine_grid, IsosurfaceMesh, ScalarGrid};
 use apost3dview_render::{push_isosurface_vertices, IsosurfaceVertex, ViewportResources};
 use egui::Color32;
 
 use crate::app::App;
+use crate::orbitals::OrbitalChoice;
 use crate::util::color32_to_rgb;
 
 /// Isovalue is a fixed constant rather than derived from each grid's own
@@ -57,9 +60,19 @@ struct ExtractionKey {
     both_signs: bool,
 }
 
+/// Where a surface's grid came from — what a session records to recreate
+/// it: the file for an opened cube, the recipe for a generated orbital
+/// (recomputed on reopening, rather than storing the grid itself).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum SurfaceSource {
+    Cube(PathBuf),
+    Orbital { choice: OrbitalChoice, spacing_bohr: f64, padding_bohr: f64 },
+}
+
 pub(crate) struct Surface {
     /// "H2O-HOMO.cube", "HOMO", "MO 12 (beta)", ...
     pub(crate) label: String,
+    pub(crate) source: SurfaceSource,
     pub(crate) grid: ScalarGrid,
     pub(crate) visible: bool,
     pub(crate) settings: SurfaceSettings,
@@ -71,8 +84,8 @@ pub(crate) struct Surface {
 }
 
 impl Surface {
-    pub(crate) fn new(label: String, grid: ScalarGrid, settings: SurfaceSettings) -> Self {
-        Self { label, grid, visible: false, settings, positive: None, negative: None, extracted_with: None }
+    pub(crate) fn new(label: String, grid: ScalarGrid, settings: SurfaceSettings, source: SurfaceSource) -> Self {
+        Self { label, source, grid, visible: false, settings, positive: None, negative: None, extracted_with: None }
     }
 
     fn extraction_key(&self) -> ExtractionKey {

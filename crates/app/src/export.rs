@@ -3,6 +3,7 @@
 use apost3dview_render::{render_turntable_gif, ExportSettings, SceneUniforms, TurntableSettings, ViewportResources};
 
 use crate::app::App;
+use crate::session::SESSION_EXTENSION;
 
 /// Two ways to size a render: `Dpi` (the default) asks for a figure width
 /// in inches and a DPI instead of a bare pixel count, matching how
@@ -41,6 +42,8 @@ pub(crate) struct RenderExportState {
     pub(crate) custom_height: u32,
     pub(crate) custom_supersample: u32,
     pub(crate) transparent_background: bool,
+    /// Write the session next to every exported image (on by default).
+    pub(crate) save_session_with_image: bool,
     pub(crate) dpi: u32,
     pub(crate) figure_width_in: f64,
     /// Animated GIF export: output width in pixels (height follows the
@@ -59,6 +62,7 @@ impl Default for RenderExportState {
             custom_height: 1080,
             custom_supersample: 2,
             transparent_background: false,
+            save_session_with_image: true,
             dpi: DEFAULT_PUBLICATION_DPI,
             figure_width_in: FIGURE_WIDTH_SINGLE_COLUMN_IN,
             gif_width: 800,
@@ -163,6 +167,22 @@ impl App {
             return;
         };
 
+        match self.render_rgba(active, &settings) {
+            Ok(pixels) => {
+                let dpi = self.resolve_export_dpi();
+                match Self::write_png(&path, &pixels, settings.width, settings.height, dpi) {
+                    Ok(()) => self.report_saved_image(&path),
+                    Err(err) => self.show_warning(format!("Could not write {}: {err}", path.display())),
+                }
+            }
+            Err(err) => self.show_warning(format!("Render failed: {err}")),
+        }
+    }
+
+    /// Renders structure `active` offscreen at `settings`, as RGBA8 rows.
+    /// Blocks until the GPU is done (see `ViewportResources::
+    /// render_offscreen`) — fine for an explicit, one-shot action.
+    fn render_rgba(&self, active: usize, settings: &ExportSettings) -> Result<Vec<u8>, String> {
         let export_aspect = settings.width as f32 / settings.height.max(1) as f32;
         let mut uniforms = SceneUniforms::new(&self.camera, export_aspect, &self.ao_render_material());
         let target_format = self.render_state.target_format;
@@ -170,34 +190,53 @@ impl App {
         let label_instances = self.build_export_label_instances(active, &self.camera, settings.height as f32);
 
         let mut renderer = self.render_state.renderer.write();
-        let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() else {
-            drop(renderer);
-            self.show_warning("Renderer not ready.");
-            return;
-        };
-        let result = resources.render_offscreen(&self.render_state.device, &self.render_state.queue, target_format, &uniforms, &label_instances, &settings);
-        drop(renderer);
-
-        match result {
-            Ok(mut pixels) => {
-                // The swapchain format on some platforms/backends is
-                // BGRA rather than RGBA — the offscreen texture (and so
-                // the readback) is in whatever channel order that format
-                // uses, since the pipelines are fixed to it. Swap back to
-                // RGB order before handing to the PNG encoder, which
-                // always expects RGBA.
-                if matches!(target_format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb) {
-                    for px in pixels.chunks_mut(4) {
-                        px.swap(0, 2);
-                    }
-                }
-                let dpi = self.resolve_export_dpi();
-                match Self::write_png(&path, &pixels, settings.width, settings.height, dpi) {
-                    Ok(()) => self.show_status(format!("Saved {}", path.display())),
-                    Err(err) => self.show_warning(format!("Could not write {}: {err}", path.display())),
-                }
+        let resources = renderer.callback_resources.get_mut::<ViewportResources>().ok_or("Renderer not ready.")?;
+        let mut pixels = resources.render_offscreen(&self.render_state.device, &self.render_state.queue, target_format, &uniforms, &label_instances, settings)?;
+        // The swapchain format on some platforms/backends is BGRA rather
+        // than RGBA — the offscreen texture (and so the readback) is in
+        // whatever channel order that format uses, since the pipelines are
+        // fixed to it. Swap back to RGBA, which image encoders expect.
+        if matches!(target_format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb) {
+            for px in pixels.chunks_mut(4) {
+                px.swap(0, 2);
             }
-            Err(err) => self.show_warning(format!("Render failed: {err}")),
+        }
+        Ok(pixels)
+    }
+
+    /// The current view, as an export would render it (labels, ambient
+    /// occlusion, depth of field), at `width` x `height`, as RGBA8 rows.
+    /// Without a file — for tests, and later for rendering from the
+    /// command line.
+    pub fn render_image(&mut self, width: u32, height: u32) -> Result<Vec<u8>, String> {
+        let active = self.active_structure.ok_or("nothing open")?;
+        let [r, g, b] = self.material.background;
+        let settings = ExportSettings {
+            width,
+            height,
+            supersample: 1,
+            background: Some([r, g, b, 1.0]),
+            ambient_occlusion: self.ao_enabled.then_some(self.ao_settings),
+            depth_of_field: self.dof_enabled.then_some(self.dof_settings),
+            dof_focus_distance: self.camera.distance,
+        };
+        self.render_rgba(active, &settings)
+    }
+
+    /// After an image is written: also writes the session next to it
+    /// (same name, `.a3dview`) when "Also save the session" is ticked, so
+    /// every figure keeps the exact setup that produced it.
+    fn report_saved_image(&mut self, image: &std::path::Path) {
+        let image_name = image.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        if !self.render_export.save_session_with_image {
+            self.show_status(format!("Saved {image_name}"));
+            return;
+        }
+        let session = image.with_extension(SESSION_EXTENSION);
+        let session_name = session.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        match self.save_session_to(&session) {
+            Ok(()) => self.show_status(format!("Saved {image_name} and its session {session_name}")),
+            Err(err) => self.show_warning(format!("Saved {image_name}, but not its session: {err}")),
         }
     }
 
@@ -280,7 +319,7 @@ impl App {
             }
         };
         match result {
-            Ok(()) => self.show_status(format!("Saved {}", path.display())),
+            Ok(()) => self.report_saved_image(&path),
             Err(message) => {
                 let _ = std::fs::remove_file(&path);
                 self.show_warning(message);

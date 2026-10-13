@@ -156,6 +156,11 @@ pub struct App {
     pub(crate) new_preset_name: String,
 
     pub(crate) toasts: Vec<Toast>,
+    /// The session file last opened or saved: where Save session writes,
+    /// and what the window title names.
+    pub(crate) session_path: Option<PathBuf>,
+    /// The window title last sent, to send it again only when it changes.
+    shown_title: String,
 }
 
 impl App {
@@ -217,6 +222,8 @@ impl App {
             style_presets: list_style_presets(),
             new_preset_name: String::new(),
             toasts: Vec::new(),
+            session_path: None,
+            shown_title: String::new(),
         }
     }
 
@@ -451,6 +458,7 @@ impl App {
 
     pub(crate) fn show_toolbar(&mut self, ui: &mut egui::Ui) {
         let mut open_request: Option<Option<FileKind>> = None;
+        let mut save_request: Option<bool> = None;
         egui::Panel::top("toolbar").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(4.0);
@@ -466,6 +474,17 @@ impl App {
                             open_request = Some(Some(kind));
                         }
                     }
+                });
+                ui.add_enabled_ui(!self.structures.is_empty(), |ui| {
+                    ui.menu_button("Save", |ui| {
+                        let save = ui.button("Save session").on_hover_text("Shortcut: Cmd/Ctrl+S. Everything open, how it is shown, and the camera, to reopen later");
+                        if save.clicked() {
+                            save_request = Some(false);
+                        }
+                        if ui.button("Save session as...").clicked() {
+                            save_request = Some(true);
+                        }
+                    });
                 });
                 ui.separator();
                 for (open, name) in [
@@ -489,6 +508,9 @@ impl App {
         });
         if let Some(kind) = open_request {
             self.open_dialog(kind);
+        }
+        if let Some(ask_for_name) = save_request {
+            self.save_session(ask_for_name);
         }
     }
 
@@ -514,6 +536,18 @@ impl App {
                 }
             });
         ctx.request_repaint_after(Duration::from_millis(200));
+    }
+
+    /// "APOST3Dview — name.a3dview" while a session is open.
+    fn update_title(&mut self, ctx: &egui::Context) {
+        let title = match self.session_path.as_ref().and_then(|p| p.file_name()) {
+            Some(name) => format!("APOST3Dview \u{2014} {}", name.to_string_lossy()),
+            None => "APOST3Dview".to_string(),
+        };
+        if title != self.shown_title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.shown_title = title;
+        }
     }
 
     /// Files dragged over the window: a hint while they hover, opened when
@@ -573,6 +607,10 @@ impl eframe::App for App {
         if ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O))) {
             self.open_dialog(None);
         }
+        if ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S))) {
+            self.save_session(false);
+        }
+        self.update_title(&ctx);
         self.handle_dropped_files(&ctx);
         self.update_surfaces(&ctx);
 

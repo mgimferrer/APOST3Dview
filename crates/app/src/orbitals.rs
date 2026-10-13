@@ -2,10 +2,10 @@
 
 use std::collections::HashSet;
 
-use apost3dview_core::{generate_mo_grids, MolecularOrbitals};
+use apost3dview_core::{generate_mo_grids, MolecularOrbitals, Wavefunction};
 
 use crate::app::App;
-use crate::isosurfaces::Surface;
+use crate::isosurfaces::{Surface, SurfaceSettings, SurfaceSource};
 
 /// One spin channel's tick-box list in the "Generate orbitals" section —
 /// factored out since alpha and beta need identical rendering, just
@@ -102,6 +102,64 @@ impl OrbitalGenerationState {
     }
 }
 
+/// One orbital to put on a grid: its spin channel and 0-based index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OrbitalChoice {
+    pub(crate) beta: bool,
+    pub(crate) mo_index: usize,
+}
+
+/// "HOMO", "LUMO", "MO 12", with " (alpha)"/" (beta)" for an unrestricted
+/// wavefunction only (a restricted one has nothing to tell apart).
+fn orbital_label(wfn: &Wavefunction, choice: OrbitalChoice) -> String {
+    let orbitals = if choice.beta { wfn.beta.as_ref().unwrap_or(&wfn.alpha) } else { &wfn.alpha };
+    let mo_number = choice.mo_index + 1;
+    let tag = if mo_number == orbitals.homo_index() {
+        "HOMO".to_string()
+    } else if mo_number == orbitals.lumo_index() {
+        "LUMO".to_string()
+    } else {
+        format!("MO {mo_number}")
+    };
+    let spin = match (wfn.beta.is_some(), choice.beta) {
+        (false, _) => "",
+        (true, false) => " (alpha)",
+        (true, true) => " (beta)",
+    };
+    format!("{tag}{spin}")
+}
+
+/// Evaluates the chosen orbitals on grids and returns them as surfaces
+/// drawn with `settings`. All of them in one batched `generate_mo_grids`
+/// call: the basis functions (the expensive part, hundreds of shells on a
+/// real molecule) are computed once per grid point and shared, rather
+/// than once per orbital.
+pub(crate) fn orbital_surfaces(
+    wfn: &Wavefunction,
+    choices: &[OrbitalChoice],
+    spacing_bohr: f64,
+    padding_bohr: f64,
+    settings: SurfaceSettings,
+) -> Result<Vec<Surface>, String> {
+    let mut requests: Vec<(&MolecularOrbitals, usize)> = Vec::new();
+    for choice in choices {
+        let orbitals = if choice.beta { wfn.beta.as_ref().ok_or("this wavefunction has no beta orbitals")? } else { &wfn.alpha };
+        if choice.mo_index >= orbitals.num_orbitals() {
+            return Err(format!("there is no orbital {} in this wavefunction", choice.mo_index + 1));
+        }
+        requests.push((orbitals, choice.mo_index));
+    }
+    let grids = generate_mo_grids(&wfn.basis, &requests, spacing_bohr, padding_bohr)?;
+    Ok(grids
+        .into_iter()
+        .zip(choices)
+        .map(|(grid, &choice)| {
+            let source = SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr };
+            Surface::new(orbital_label(wfn, choice), grid, settings, source)
+        })
+        .collect())
+}
+
 impl App {
     /// Evaluates every ticked MO of the active structure's wavefunction on
     /// a grid and adds each as a surface of that structure ("HOMO",
@@ -117,54 +175,20 @@ impl App {
         }
 
         let spacing = self.orbital_generation.resolve_spacing_bohr();
-        let is_unrestricted = wfn.beta.is_some();
-
-        // One entry per spin channel that has anything selected — for a
-        // restricted file there's only ever the alpha one (and its
-        // generated labels stay unsuffixed, since there's no beta
-        // channel to disambiguate from).
-        let mut channels: Vec<(&MolecularOrbitals, Vec<usize>, &str)> = Vec::new();
-        let mut alpha_indices: Vec<usize> = structure.selected_alpha_mos.iter().copied().collect();
-        alpha_indices.sort_unstable();
-        channels.push((&wfn.alpha, alpha_indices, if is_unrestricted { " (alpha)" } else { "" }));
-        if let Some(beta) = &wfn.beta {
-            let mut beta_indices: Vec<usize> = structure.selected_beta_mos.iter().copied().collect();
-            beta_indices.sort_unstable();
-            channels.push((beta, beta_indices, " (beta)"));
+        let mut choices: Vec<OrbitalChoice> = structure.selected_alpha_mos.iter().map(|&mo_index| OrbitalChoice { beta: false, mo_index }).collect();
+        if wfn.beta.is_some() {
+            choices.extend(structure.selected_beta_mos.iter().map(|&mo_index| OrbitalChoice { beta: true, mo_index }));
         }
+        choices.sort_unstable_by_key(|c| (c.beta, c.mo_index));
 
-        // Every ticked orbital, across both spin channels, is evaluated in
-        // one batched `generate_mo_grids` call — the basis functions
-        // themselves (the expensive part, hundreds of shells on a real
-        // molecule) get computed once per grid point and shared across all
-        // of them, rather than once per orbital as a separate full grid pass.
-        let mut requests: Vec<(&MolecularOrbitals, usize)> = Vec::new();
-        let mut labels: Vec<String> = Vec::new();
-        for (orbitals, mo_indices, spin_suffix) in &channels {
-            let homo = orbitals.homo_index();
-            let lumo = orbitals.lumo_index();
-            for &mo_index in mo_indices {
-                let mo_number = mo_index + 1;
-                let tag = if mo_number == homo {
-                    "HOMO".to_string()
-                } else if mo_number == lumo {
-                    "LUMO".to_string()
-                } else {
-                    format!("MO {mo_number}")
-                };
-                requests.push((*orbitals, mo_index));
-                labels.push(format!("{tag}{spin_suffix}"));
-            }
-        }
-
-        let surfaces = match generate_mo_grids(&wfn.basis, &requests, spacing, self.orbital_generation.padding_bohr) {
-            Ok(grids) => grids.into_iter().zip(labels).map(|(grid, label)| Surface::new(label, grid, self.surface_defaults)).collect(),
+        let surfaces = match orbital_surfaces(wfn, &choices, spacing, self.orbital_generation.padding_bohr, self.surface_defaults) {
+            Ok(surfaces) => surfaces,
             Err(err) => {
                 self.show_warning(format!("Orbitals could not be generated: {err}"));
                 return;
             }
         };
-        let count = requests.len();
+        let count = choices.len();
         self.add_surfaces(active, surfaces, true);
         self.show_status(format!("{count} orbital{} generated", if count == 1 { "" } else { "s" }));
     }

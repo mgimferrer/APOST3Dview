@@ -4,7 +4,8 @@
 /// Bohr -> angstrom, CODATA 2018.
 pub const ANGSTROM_PER_BOHR: f64 = 0.529177210903;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum LengthUnit {
     Angstrom,
     Bohr,

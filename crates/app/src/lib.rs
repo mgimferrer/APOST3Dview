@@ -12,6 +12,7 @@ mod labels;
 mod orbitals;
 mod presets;
 mod results;
+mod session;
 mod state;
 mod util;
 mod viewport;

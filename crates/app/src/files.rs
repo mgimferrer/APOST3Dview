@@ -11,8 +11,9 @@ use apost3dview_core::{
 };
 
 use crate::app::App;
-use crate::isosurfaces::Surface;
+use crate::isosurfaces::{Surface, SurfaceSource};
 use crate::results::ApostAttachment;
+use crate::session::SESSION_EXTENSION;
 use crate::state::LoadedStructure;
 use crate::util::molecules_share_geometry;
 
@@ -24,10 +25,11 @@ pub(crate) enum FileKind {
     Xyz,
     Cube,
     ApostResults,
+    Session,
 }
 
 impl FileKind {
-    pub(crate) const ALL: [FileKind; 5] = [FileKind::Fchk, FileKind::Molden, FileKind::Xyz, FileKind::Cube, FileKind::ApostResults];
+    pub(crate) const ALL: [FileKind; 6] = [FileKind::Fchk, FileKind::Molden, FileKind::Xyz, FileKind::Cube, FileKind::ApostResults, FileKind::Session];
 
     /// For the Open menu and the file dialog's filter.
     pub(crate) fn label(self) -> &'static str {
@@ -37,6 +39,7 @@ impl FileKind {
             FileKind::Xyz => "XYZ coordinates (.xyz)",
             FileKind::Cube => "Gaussian cube (.cube)",
             FileKind::ApostResults => "APOST-3D results (.apost.json)",
+            FileKind::Session => "APOST3Dview session (.a3dview)",
         }
     }
 
@@ -49,6 +52,7 @@ impl FileKind {
             FileKind::Xyz => &["xyz"],
             FileKind::Cube => &["cube"],
             FileKind::ApostResults => &["json"],
+            FileKind::Session => &[SESSION_EXTENSION],
         }
     }
 
@@ -125,6 +129,13 @@ impl App {
                     opened
                 }
                 Some(FileKind::ApostResults) => self.open_results(&path),
+                // A session replaces everything and sets its own active
+                // structure and camera.
+                Some(FileKind::Session) => {
+                    self.open_session(&path);
+                    first_new_index = None;
+                    None
+                }
                 None => {
                     self.show_warning(format!("{label}: not a supported file type"));
                     None
@@ -136,6 +147,24 @@ impl App {
         }
         if let Some(index) = first_new_index {
             self.set_active(index);
+        }
+    }
+
+    /// Opens one file as one structure, the way a session recorded it: a
+    /// `.cube` becomes a structure of its own without its surface (the
+    /// session lists the surfaces), and nothing is merged into structures
+    /// already open.
+    pub(crate) fn open_structure_file(&mut self, path: &Path) -> Option<usize> {
+        match FileKind::of_path(path)? {
+            FileKind::Fchk => self.open_wavefunction_file(path, Molecule::from_fchk, parse_fchk_wavefunction, true),
+            FileKind::Molden => self.open_wavefunction_file(path, Molecule::from_molden, parse_molden_wavefunction, false),
+            FileKind::Xyz => self.open_xyz(path),
+            FileKind::Cube => {
+                let cube = parse_cube(path).ok()?;
+                Some(self.push_structure(LoadedStructure::new(file_label(path), cube.molecule, Some(path.to_path_buf()))))
+            }
+            FileKind::ApostResults => self.open_results(path),
+            FileKind::Session => None,
         }
     }
 
@@ -227,7 +256,7 @@ impl App {
             Some(index) => index,
             None => self.push_structure(LoadedStructure::new(file_label(path), cube_file.molecule, Some(path.to_path_buf()))),
         };
-        let surface = Surface::new(file_label(path), cube_file.grid, self.surface_defaults);
+        let surface = Surface::new(file_label(path), cube_file.grid, self.surface_defaults, SurfaceSource::Cube(path.to_path_buf()));
         self.add_surfaces(index, vec![surface], !already_showing.contains(&index));
         Some(index)
     }

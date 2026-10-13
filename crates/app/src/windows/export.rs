@@ -16,6 +16,9 @@ impl App {
                     return;
                 }
 
+                ui.checkbox(&mut self.render_export.save_session_with_image, "Also save the session")
+                    .on_hover_text("Writes name.a3dview next to the image: open it later to get exactly this picture again");
+                ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.render_export.preset, RenderPreset::Dpi, "DPI");
                     ui.selectable_value(&mut self.render_export.preset, RenderPreset::Custom, "Custom (pixels)");

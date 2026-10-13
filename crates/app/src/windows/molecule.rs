@@ -144,7 +144,7 @@ impl App {
         ui.label(RichText::new("With the selection").strong());
 
         ui.horizontal_wrapped(|ui| {
-            if ui.button("Hide").on_hover_text("Hide the selected atoms and bonds").clicked() {
+            if ui.button("Hide selected").clicked() {
                 let structure = &mut self.structures[active];
                 let atoms = std::mem::take(&mut structure.selected_atoms);
                 let bonds = std::mem::take(&mut structure.selected_bonds);

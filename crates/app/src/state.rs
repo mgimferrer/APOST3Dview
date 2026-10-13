@@ -40,7 +40,8 @@ impl Default for MeasurementStyle {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum AtomLabelMode {
     None,
     /// 1-based index, matching the Coordinates window's atom numbering.
@@ -85,6 +86,9 @@ pub(crate) struct LoadedStructure {
     pub(crate) hidden_atoms: HashSet<usize>,
     pub(crate) hidden_bonds: HashSet<usize>,
     pub(crate) bond_styles: Vec<BondVisualStyle>,
+    /// How many of `molecule.bonds` came from bond perception; the ones
+    /// after were created by hand ("Create bond"), which a session records.
+    pub(crate) perceived_bonds: usize,
     pub(crate) selected_atoms: Vec<usize>,
     pub(crate) selected_bonds: Vec<usize>,
     pub(crate) measurements: Vec<Measurement>,
@@ -113,6 +117,7 @@ pub(crate) struct LoadedStructure {
 impl LoadedStructure {
     pub(crate) fn new(label: String, molecule: Molecule, source_path: Option<PathBuf>) -> Self {
         let bond_styles = vec![BondVisualStyle::Single; molecule.bonds.len()];
+        let perceived_bonds = molecule.bonds.len();
         Self {
             label,
             molecule,
@@ -120,6 +125,7 @@ impl LoadedStructure {
             hidden_atoms: HashSet::new(),
             hidden_bonds: HashSet::new(),
             bond_styles,
+            perceived_bonds,
             selected_atoms: Vec::new(),
             selected_bonds: Vec::new(),
             measurements: Vec::new(),
