@@ -1,4 +1,6 @@
-mod app;
+
+
+
 
 fn main() -> eframe::Result<()> {
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png"))
@@ -14,6 +16,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "APOST3Dview",
         native_options,
-        Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
+        Box::new(|cc| Ok(Box::new(apost3dview::App::new(cc)))),
     )
 }
