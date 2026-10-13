@@ -106,7 +106,11 @@ fn gradient_normal(grid: &ScalarGrid, fi: f32, fj: f32, fk: f32) -> Vec3 {
 /// Builds each vertex's set of unique mesh neighbors (vertices sharing a
 /// triangle edge with it) from a triangle index list — needed for
 /// smoothing, since "average of my neighbors" only means something once
-/// vertices are actually shared rather than duplicated per-triangle.
+/// vertices are actually shared rather than duplicated per-triangle. Each
+/// list is sorted: a `HashSet`'s order differs from run to run, and the
+/// smoothing sums neighbors in list order, so unsorted lists made the same
+/// surface come out different in the last bits each time it was extracted
+/// (and a reopened session's picture differ by a level here and there).
 fn build_adjacency(vertex_count: usize, indices: &[u32]) -> Vec<Vec<u32>> {
     let mut neighbor_sets: Vec<std::collections::HashSet<u32>> = vec![std::collections::HashSet::new(); vertex_count];
     for tri in indices.chunks_exact(3) {
@@ -115,7 +119,14 @@ fn build_adjacency(vertex_count: usize, indices: &[u32]) -> Vec<Vec<u32>> {
             neighbor_sets[b as usize].insert(a);
         }
     }
-    neighbor_sets.into_iter().map(|s| s.into_iter().collect()).collect()
+    neighbor_sets
+        .into_iter()
+        .map(|s| {
+            let mut neighbors: Vec<u32> = s.into_iter().collect();
+            neighbors.sort_unstable();
+            neighbors
+        })
+        .collect()
 }
 
 /// Taubin smoothing (Taubin 1995, "Curve and Surface Smoothing without
