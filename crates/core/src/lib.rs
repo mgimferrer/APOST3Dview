@@ -1,7 +1,8 @@
-//! Data model and file parsing (.fchk, .cube, later .apost). No rendering
-//! dependencies — kept separate so the render/app crates can't accidentally
+//! Data model and file parsing (.fchk, .cube, .molden, APOST-3D results).
+//! No rendering dependencies — kept separate so the render/app crates can't accidentally
 //! couple parsing logic to wgpu or egui.
 
+pub mod apost;
 pub mod coordinates;
 pub mod cube;
 pub mod element;
@@ -16,8 +17,13 @@ pub mod units;
 pub mod wavefunction;
 pub mod xyz;
 
+pub use apost::{
+    check_against_fchk, find_results_for, fragment_coverage, fragment_of_atom, is_results_file, load_apost_results, parse_apost_results,
+    report_path_for, results_path_for, wavefunction_path_for, ApostResults, Fragment, FragmentCoverage,
+};
 pub use coordinates::{format_coordinates, CoordinateFormat};
 pub use cube::{parse_cube, CubeFile, ScalarGrid};
+pub use fchk::{parse_fchk_summary, FchkSummary};
 pub use element::{atomic_number_from_symbol, element_data, ElementData};
 pub use gto::{evaluate_basis_functions, evaluate_mo, generate_mo_grids};
 pub use interpolation::refine_grid;

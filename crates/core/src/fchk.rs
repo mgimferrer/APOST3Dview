@@ -114,3 +114,72 @@ pub fn parse_fchk_geometry(path: &Path) -> io::Result<FchkGeometry> {
 
     Ok(FchkGeometry { atomic_numbers, positions })
 }
+
+/// What the APOST-3D results consistency check compares against (see
+/// `apost::check_against_fchk`): the geometry in the file's own units, plus
+/// two scalars that tell apart calculations sharing one geometry (the same
+/// molecule in another basis set, or with another method).
+pub struct FchkSummary {
+    pub atomic_numbers: Vec<u32>,
+    pub coordinates_bohr: Vec<[f64; 3]>,
+    pub n_basis_functions: Option<usize>,
+    /// The "SCF Energy" field, the energy APOST-3D reports as
+    /// `wavefunction.energy_au` (not "Total Energy", which holds the MP2
+    /// energy in an MP2 file). Absent from Q-Chem files.
+    pub scf_energy: Option<f64>,
+}
+
+/// Reads `FchkSummary` from a `.fchk`. Gaussian writes all four fields
+/// before the MO coefficients, so the scan stops there once the geometry is
+/// known; Q-Chem writes the coordinates after the MOs, in which case the
+/// scan continues until they are found.
+pub fn parse_fchk_summary(path: &Path) -> io::Result<FchkSummary> {
+    let file = File::open(path)?;
+    let mut lines = BufReader::new(file).lines();
+
+    let mut atomic_numbers: Option<Vec<u32>> = None;
+    let mut coordinates: Option<Vec<f64>> = None;
+    let mut n_basis_functions = None;
+    let mut scf_energy = None;
+
+    while let Some(line) = lines.next() {
+        let line = line?;
+        let Some(header) = parse_header(&line) else { continue };
+        match header.kind {
+            HeaderKind::Scalar => {
+                let value = line.split_whitespace().last().unwrap_or("");
+                match header.label.as_str() {
+                    "Number of basis functions" => n_basis_functions = value.parse().ok(),
+                    "SCF Energy" => scf_energy = value.parse().ok(),
+                    _ => {}
+                }
+            }
+            HeaderKind::Array(count) => {
+                let geometry_known = atomic_numbers.is_some() && coordinates.is_some();
+                if header.label == "Alpha MO coefficients" && geometry_known {
+                    break;
+                }
+                let tokens = read_array_tokens(&mut lines, count)?;
+                match header.label.as_str() {
+                    "Atomic numbers" => atomic_numbers = Some(tokens.iter().map(|t| t.parse().unwrap_or(0)).collect()),
+                    "Current cartesian coordinates" => coordinates = Some(tokens.iter().map(|t| t.parse().unwrap_or(0.0)).collect()),
+                    _ => {}
+                }
+            }
+        }
+        if atomic_numbers.is_some() && coordinates.is_some() && n_basis_functions.is_some() && scf_energy.is_some() {
+            break;
+        }
+    }
+
+    let atomic_numbers = atomic_numbers
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "fchk missing 'Atomic numbers' section"))?;
+    let coordinates = coordinates
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "fchk missing 'Current cartesian coordinates' section"))?;
+    if coordinates.len() != atomic_numbers.len() * 3 {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "fchk coordinate count doesn't match 3x atom count"));
+    }
+    let coordinates_bohr = coordinates.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
+
+    Ok(FchkSummary { atomic_numbers, coordinates_bohr, n_basis_functions, scf_energy })
+}

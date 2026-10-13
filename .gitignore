@@ -56,3 +56,8 @@ PROJECT-ROADMAP.md
 # Saved Custom style presets (Style window) — local to your own machine,
 # not tracked, so they don't clutter `git status` while you're tuning one.
 /presets/
+
+# APOST-3D reference results (.apost.json/.apost/.fchk) for the viewer's
+# own tests, copied from a local APOST3D checkout by
+# scripts/sync-apost3d-fixtures.sh. Local only: rerun the script to get them.
+/fixtures/
