@@ -2,7 +2,7 @@
 
 <h3 align="center">A molecular and orbital/density visualizer for APOST-3D</h3>
 
-<p align="center">APOST3Dview is being built as the visual companion to <a href="https://github.com/mgimferrer/APOST3D">APOST-3D</a>: reading its <code>.apost</code> output directly and presenting the chemical bonding indicators it computes (fragment analysis, effective oxidation states, IQA energy decomposition, QTAIM, and more) in a clear, user-friendly way. That piece is still in development. Today, it already renders real-time, GPU-rendered geometry, <code>.cube</code> isosurfaces, and orbitals generated directly from a <code>.fchk</code> or <code>.molden</code> file, no external <code>cubegen</code>/Multiwfn step required.</p>
+<p align="center">APOST3Dview is being built as the visual companion to <a href="https://github.com/mgimferrer/APOST3D">APOST-3D</a>: reading the results file APOST-3D writes next to every run and presenting the chemical bonding indicators it computes (fragment analysis, effective oxidation states, IQA energy decomposition, and more) on the molecule, in a clear, user-friendly way. The first part of that is in: APOST3Dview reads the run information and the fragments, and the indicators themselves follow as APOST-3D writes them. Today, it already renders real-time, GPU-rendered geometry, <code>.cube</code> isosurfaces, and orbitals generated directly from a <code>.fchk</code> or <code>.molden</code> file, no external <code>cubegen</code>/Multiwfn step required.</p>
 
 <!-- Screenshots section: coming soon, once a representative set of images is chosen. -->
 
@@ -19,15 +19,16 @@
 
 ## What it does
 
-[APOST-3D](https://github.com/mgimferrer/APOST3D) computes chemical bonding concepts (fragment analysis, effective oxidation states, IQA energy decomposition, QTAIM, and more) from a wave function, as plain text output. APOST3Dview's eventual purpose is to read that `.apost` output directly and display its most relevant indicators on top of the molecule, in a clear, user-friendly way, so results don't have to be read out of a text file by hand. That part isn't built yet (see [Known limitations](#known-limitations)).
+[APOST-3D](https://github.com/mgimferrer/APOST3D) computes chemical bonding concepts (fragment analysis, effective oxidation states, IQA energy decomposition, and more) from a wave function. Besides its text report (`<job>.apost`), it writes a machine-readable results file (`<job>.apost.json`) on every run. APOST3Dview's purpose is to read that file and display the indicators on top of the molecule, in a clear, user-friendly way, so results don't have to be read out of a text file by hand.
 
 What's already here, usable today:
 
+- **APOST-3D results**: opening a `.fchk` also loads the `<job>.apost.json` next to it, if there is one (or open the `.apost.json` itself). The APOST-3D window shows how the run went (a run that stopped shows its message first), what was computed and how (method, atomic definition), the input, and the text report. The fragments are listed with their atoms, can be selected with one click, and color the molecule (one color per fragment, switched off with one click for a figure in the usual element colors). Results computed from another calculation than the opened `.fchk` (other geometry, basis set or energy) are refused, with the reason.
 - **Geometry viewing**: `.fchk` and `.xyz`, raymarched sphere/cylinder impostors (not polygon meshes) with CPK coloring, true 3D depth-tested atom labels, and one-click PNG export sized for a journal figure (DPI and physical size embedded in the file).
-- **`.cube` isosurfaces**: standard Gaussian cube files, rendered as a smoothed (Surface Nets + Taubin) mesh, with tunable isovalue, refinement, and color per lobe.
+- **`.cube` isosurfaces**: standard Gaussian cube files, rendered as a smoothed (Surface Nets + Taubin) mesh, with tunable isovalue, refinement, and color per lobe. Every cube of a molecule, and every orbital generated for it, is one surface in that molecule's list: show one alone, or several together in one picture.
 - **Orbitals generated directly from a wave function**, no `.cube` file needed. A from-scratch Rust GTO evaluator (s/p/d/f/g shells, restricted and unrestricted, ECPs handled transparently) reads a `.fchk` or a PySCF-written `.molden` file and evaluates any molecular orbital on a grid on the spot. Validated against independently generated reference cubes down to numerical noise (RMS around 10⁻⁶ to 10⁻⁷ of peak magnitude) across every shell type, and both restricted and open-shell cases.
 - **Physically-based rendering**: Cook-Torrance/GGX lighting, screen-space ambient occlusion, depth of field, and linear-light tone mapping, with Default and Publication (figure-ready, orientation-independent lighting) style presets, plus your own saved Custom looks.
-- **Analysis**: distance, angle, and dihedral measurements from a normal atom selection, with draggable, fully customizable labels.
+- **Measurements**: distance, angle, and dihedral from a normal atom selection, with draggable, fully customizable labels.
 - **Export**: publication PNGs at a chosen DPI and figure size, and looping animated GIFs of the rotating molecule for presentations.
 
 ## Installation
@@ -81,18 +82,20 @@ cargo build --release -p apost3dview
 
 The binary is then at `target/release/apost3dview` (`.exe` on Windows). For active development, `cargo run -p apost3dview` builds and launches in one step.
 
+**Tests**: `cargo test --workspace`. The tests that check APOST-3D's reference results need them copied from a local APOST-3D checkout first, with `scripts/sync-apost3d-fixtures.sh path/to/APOST3D`; without them, those tests are skipped.
+
 **Troubleshooting**: if `cargo`/`rustc` aren't found right after installing Rust, open a new terminal window. `rustup` adds `~/.cargo/bin` to `PATH` in your shell's startup file, which an already-open terminal won't have picked up yet.
 
 ## How to use
 
-1. Launch the app and open the **Structures** panel (top toolbar).
-2. Open one or more `.fchk`, `.molden`, `.xyz`, or `.cube` files (each file becomes its own entry in the Structures list).
-   Drag with the mouse or trackpad to rotate (freely, in any direction, including over the top), shift+drag to pan, and scroll or pinch to zoom. The arrow keys rotate too, two at once for a diagonal, and the Space bar starts or stops a continuous auto-spin in the direction of the last arrow pressed, handy for presentations.
-3. For a `.fchk` or `.molden` file, the **Visualization** panel's "Generate orbitals" section lists every molecular orbital (HOMO/LUMO tagged, with energy and occupation). Tick the ones you want and click Generate. Each becomes its own isosurface, using the same controls as a `.cube` file (isovalue, refinement, per-lobe color, "Keep surface" to compose several orbitals in one image).
-4. The **Style** panel controls lighting/material (or pick Default or Publication), atom/bond scale, and ambient occlusion/depth of field. Once you've tuned something you like, save it as a named Custom preset; it's written as a plain TOML file under `presets/` at the root of this repository (not tracked by git), so it's easy to find, back up, or hand to someone else. Custom presets you've saved appear as their own buttons alongside Default and Publication.
-5. The **Analysis** panel builds distance/angle/dihedral measurements from whatever atoms are currently selected (2, 3, or 4 of them), no separate mode to switch into first.
-6. The **Render** panel exports the current view as a PNG at a given DPI and physical figure size, or a custom resolution.
-   It also saves a looping animated GIF (one full turn of the molecule, in the auto-spin direction) for presentations, with your choice of width, duration and frame rate. The GIF works directly in PowerPoint, Keynote and Google Slides.
+1. Launch the app (`apost3dview`, optionally followed by files to open) and open files with **Open** in the toolbar, Cmd+O (Ctrl+O on Windows and Linux), or by dragging them onto the window. `.fchk`, `.molden`, `.xyz`, `.cube` and APOST-3D `.apost.json` files are recognized by their name; the Open menu can also show one kind of file at a time.
+2. Drag with the mouse or trackpad to rotate (freely, in any direction, including over the top), shift+drag to pan, and scroll or pinch to zoom. The arrow keys rotate too, two at once for a diagonal, and the Space bar starts or stops a continuous spin in the direction of the last arrow pressed, handy for presentations. Click atoms or bonds to select them; Esc clears the selection. The bar along the bottom shows what is open and selected.
+3. **Molecule** lists the open structures and sets how the active one is drawn: atom and bond size, labels, hidden hydrogens. While something is selected, it offers what to do with it: hide it, create or hide a bond between two atoms, make bonds dashed (transition states), or add a measurement.
+4. **Surfaces** generates orbitals from a `.fchk` or `.molden` file: tick the orbitals you want (HOMO/LUMO tagged, with energy and occupation) and click Generate. Generated orbitals and opened `.cube` files of the same molecule are listed together: click a name to show that surface alone, or tick several to show them together. Changes to the isovalue, refinement or colors show up immediately.
+5. **Measure** lists distances, angles and dihedrals (select 2, 3 or 4 atoms, then Add).
+6. **APOST-3D** shows the results of an APOST-3D run (see [What it does](#what-it-does)).
+7. **Appearance** sets the look of the scene: Default or Publication, the background, ambient occlusion and depth of field; the fine-tuning sliders are under Advanced. Once you like a look, save it under a name: it's written as a plain TOML file under `presets/` at the root of this repository (not tracked by git), easy to find, back up, or hand to someone else, and appears as its own button next to Default and Publication.
+8. **Export** saves the current view as a PNG at a given DPI and physical figure size (or a custom resolution), or a looping animated GIF of one full turn of the molecule, with your choice of width, duration and frame rate. The GIF works directly in PowerPoint, Keynote and Google Slides.
 
 `TESTS-VISUALIZER/` in this repository has real committed `.fchk`/`.cube`/`.molden` test files (H2O and BiCl3 at several basis sets, an open-shell triplet, and a real APOST-3D bismuth complex), good for opening something right away.
 
@@ -101,12 +104,13 @@ The binary is then at `target/release/apost3dview` (`.exe` on Windows). For acti
 - `.molden` support currently targets PySCF's own writer specifically. Other programs' `.molden` output (ORCA in particular is known to deviate from the format for f/g functions) isn't tested yet.
 - Basis functions above g (h, i, and so on) aren't supported. This fails with an explicit error rather than a silently wrong orbital.
 - Cartesian g shells aren't implemented (pure/spherical g is). In practice, every basis set that reaches g is spherical by convention, so this hasn't been a real limitation so far.
-- `.apost` (APOST-3D's own output format) isn't read yet. That's the next major piece of work, to visualize fragment/EOS/IQA/QTAIM descriptors directly on the geometry.
+- From APOST-3D's results file, only the run information and the fragments are shown so far. The bonding indicators themselves (populations, bond orders, oxidation states, energy decomposition, ...) are added as APOST-3D writes them into the file.
+- Orbitals can't be generated from a Q-Chem `.fchk` yet (it has no orbital energies block); its geometry and APOST-3D results open normally.
 - Windows builds aren't verified end-to-end yet (see [Installation](#installation)).
 
 ## Connection to APOST-3D
 
-APOST3Dview is a sister project to [APOST-3D](https://github.com/mgimferrer/APOST3D) (see its own README for the full scope of what it computes), but a fully independent codebase and language stack: Rust/wgpu, no Fortran, no shared code. It's built specifically to read the files APOST-3D works with, `.fchk` today, and soon `.apost` directly, rather than being a general-purpose molecular viewer that happens to also open them.
+APOST3Dview is a sister project to [APOST-3D](https://github.com/mgimferrer/APOST3D) (see its own README for the full scope of what it computes), but a fully independent codebase and language stack: Rust/wgpu, no Fortran, no shared code. It's built specifically to read the files APOST-3D works with, the `.fchk` it reads and the `.apost.json` results file it writes, rather than being a general-purpose molecular viewer that happens to also open them. The format of the results file is documented in the APOST-3D repository (`docs/source/developer/json-output.md`).
 
 If you use APOST-3D itself, or the chemical bonding methods it implements, see APOST-3D's own README for the specific paper to cite for each method.
 
