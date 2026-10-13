@@ -13,6 +13,9 @@
 //! same Bohr units as everything else here — no cross-referencing atom
 //! positions required.
 //!
+//! The blocks are read in whatever order the file has them: Gaussian
+//! writes orbital energies before MO coefficients, Q-Chem after.
+//!
 //! Handles both restricted (closed-shell) and unrestricted (open-shell)
 //! wavefunctions. A restricted calculation only ever writes an "Alpha"
 //! MO block — beta is implicitly identical, so `Wavefunction::beta` is
@@ -141,6 +144,9 @@ pub fn parse_fchk_wavefunction(path: &Path) -> io::Result<Wavefunction> {
 
     while let Some(line) = lines.next() {
         let line = line?;
+        if alpha_orbital_energies.is_some() && alpha_mo_coefficients.is_some() && beta_orbital_energies.is_some() && beta_mo_coefficients.is_some() {
+            break;
+        }
         let Some(header) = parse_header(&line) else { continue };
 
         match (header.label.as_str(), &header.kind) {
@@ -192,22 +198,21 @@ pub fn parse_fchk_wavefunction(path: &Path) -> io::Result<Wavefunction> {
             ("Alpha MO coefficients", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
                 alpha_mo_coefficients = Some(parse_f64_tokens(&tokens, "MO coefficient")?);
-                // A restricted file (the common case) has nothing more
-                // this parser needs after this block — stop here rather
-                // than reading the rest of a potentially huge file. An
-                // unrestricted one still has a "Beta MO coefficients"
-                // block coming up next (confirmed field order: alpha
-                // energies, beta energies, alpha coefficients, beta
-                // coefficients) — `beta_orbital_energies` having already
-                // been seen by this point is how we know to keep going.
-                if beta_orbital_energies.is_none() {
+                // Gaussian writes alpha energies, beta energies, alpha
+                // coefficients, beta coefficients, in that order. With the
+                // alpha energies already read and no beta energies, this
+                // is a restricted Gaussian file and nothing more is needed:
+                // stop rather than read the rest of a potentially huge
+                // file. Other programs order the blocks differently (Q-Chem
+                // writes the energies after the coefficients), so without
+                // that evidence the reading goes on.
+                if alpha_orbital_energies.is_some() && beta_orbital_energies.is_none() {
                     break;
                 }
             }
             ("Beta MO coefficients", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
                 beta_mo_coefficients = Some(parse_f64_tokens(&tokens, "beta MO coefficient")?);
-                break;
             }
             (_, HeaderKind::Array(count)) => {
                 read_array_tokens(&mut lines, *count)?;

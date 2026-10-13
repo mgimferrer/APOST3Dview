@@ -105,7 +105,7 @@ The binary is then at `target/release/apost3dview` (`.exe` on Windows). For acti
 - Basis functions above g (h, i, and so on) aren't supported. This fails with an explicit error rather than a silently wrong orbital.
 - Cartesian g shells aren't implemented (pure/spherical g is). In practice, every basis set that reaches g is spherical by convention, so this hasn't been a real limitation so far.
 - From APOST-3D's results file, only the run information and the fragments are shown so far. The bonding indicators themselves (populations, bond orders, oxidation states, energy decomposition, ...) are added as APOST-3D writes them into the file.
-- Orbitals can't be generated from a Q-Chem `.fchk` yet (it has no orbital energies block); its geometry and APOST-3D results open normally.
+- Orbitals generated from a Q-Chem `.fchk` haven't been checked against a Q-Chem reference cube yet (Gaussian and PySCF files have, down to numerical noise).
 - Windows builds aren't verified end-to-end yet (see [Installation](#installation)).
 
 ## Connection to APOST-3D

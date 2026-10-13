@@ -9,8 +9,8 @@
 use std::path::{Path, PathBuf};
 
 use apost3dview_core::{
-    check_against_fchk, find_results_for, fragment_coverage, load_apost_results, parse_fchk_summary, report_path_for, wavefunction_path_for,
-    ApostResults,
+    check_against_fchk, find_results_for, fragment_coverage, load_apost_results, parse_fchk_summary, parse_fchk_wavefunction, report_path_for,
+    wavefunction_path_for, ApostResults,
 };
 
 fn fixtures_dir() -> Option<PathBuf> {
@@ -70,6 +70,12 @@ fn particular_cases() {
     // Q-Chem .fchk: no energy on either side.
     assert_eq!(load(&dir, "FeO4-2").wavefunction.unwrap().energy_au, None);
     assert_eq!(parse_fchk_summary(&dir.join("FeO4-2.fchk")).unwrap().scf_energy, None);
+    // Q-Chem writes the orbital energies after the MO coefficients
+    // (Gaussian: before); the wavefunction must still be read.
+    let qchem = parse_fchk_wavefunction(&dir.join("FeO4-2.fchk")).unwrap();
+    assert_eq!(qchem.alpha.num_basis_functions, 169);
+    assert_eq!(qchem.alpha.orbital_energies.len(), qchem.alpha.num_orbitals());
+    assert_eq!(qchem.alpha.homo_index(), 30);
 
     // ECP: nuclear charge 25 for iodine (Z = 53).
     let ecp = load(&dir, "HI-ECP-pySCF").molecule.unwrap();
