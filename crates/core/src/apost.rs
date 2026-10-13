@@ -56,6 +56,8 @@ pub struct ApostResults {
 pub struct ProgramInfo {
     pub name: Option<String>,
     pub version: Option<String>,
+    /// Release date of that version, ISO 8601 ("2026-09-22"). Since 0.2.
+    pub version_date: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -111,9 +113,15 @@ pub struct Fragment {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RunInfo {
+    /// `job_name`, `input_file` and `wavefunction_file` are bare file
+    /// names (since 0.2); the input, wavefunction and results files are
+    /// always in the same folder.
     pub job_name: Option<String>,
     pub input_file: Option<String>,
     pub wavefunction_file: Option<String>,
+    /// When the run started, ISO 8601 with time zone
+    /// ("2026-10-13T14:05:31+02:00"). Since 0.2.
+    pub date: Option<String>,
     pub threads: Option<u32>,
     /// "normal" or "stopped".
     pub status: Option<String>,
@@ -236,7 +244,8 @@ fn job_stem(results_path: &Path) -> Option<String> {
 }
 
 /// The existing file `dir/name`, trying `name` as written, then its bare
-/// file name (in case it carries a directory from where the run started).
+/// file name. Since schema 0.2 names are always bare; the second try is a
+/// fallback for files written by 0.1.
 fn existing_beside(dir: &Path, name: &str) -> Option<PathBuf> {
     let as_written = dir.join(name);
     if as_written.is_file() {
@@ -246,8 +255,9 @@ fn existing_beside(dir: &Path, name: &str) -> Option<PathBuf> {
     bare.is_file().then_some(bare)
 }
 
-/// The `.fchk` a results file was computed from, if it exists next to it:
-/// `run.wavefunction_file`, else `<job>.fchk`.
+/// The `.fchk` a results file was computed from, if it exists next to it
+/// (APOST-3D keeps them in the same folder): `run.wavefunction_file`, else
+/// `<job>.fchk` (for a renamed results file).
 pub fn wavefunction_path_for(results_path: &Path, results: &ApostResults) -> Option<PathBuf> {
     let dir = results_path.parent()?;
     let named = results.run.as_ref().and_then(|r| r.wavefunction_file.as_deref());

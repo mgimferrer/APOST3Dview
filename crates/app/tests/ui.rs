@@ -48,6 +48,8 @@ fn a_fchk_picks_up_its_results_and_shows_the_run() {
     harness.get_by_label("FeCN5NO3--UBLYP.apost.json");
     harness.get_by_label("Lowdin (LOWDIN), Hilbert space");
     harness.get_by_label("199");
+    harness.get_by_label_contains("version 5.0 (20");
+    harness.get_by_label_contains(" (UTC");
     harness.get_by_label_contains("Unrestricted");
 }
 

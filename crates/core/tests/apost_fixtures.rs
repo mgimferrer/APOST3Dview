@@ -63,6 +63,11 @@ fn every_fixture_loads_and_matches_its_fchk() {
 fn particular_cases() {
     let Some(dir) = fixtures_dir() else { return };
 
+    // Schema 0.2: run date and version release date.
+    let dimer = load(&dir, "H2O-Dimer-RHF");
+    assert!(dimer.run.as_ref().unwrap().date.as_deref().is_some_and(|d| d.len() >= 19 && &d[10..11] == "T"));
+    assert!(dimer.program.as_ref().unwrap().version_date.is_some());
+
     let stopped = load(&dir, "H2O-TPSS");
     assert!(stopped.stopped());
     assert_eq!(stopped.run.as_ref().unwrap().stop_message.as_deref(), Some("META-GGA FUNCTIONALS NOT YET SUPPORTED"));

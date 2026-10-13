@@ -31,6 +31,22 @@ fn capitalized(text: &str) -> String {
     chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
 }
 
+/// "2026-10-13T14:05:31+02:00" -> "2026-10-13 14:05 (UTC+02:00)"; any
+/// other form is shown as written.
+fn readable_date(iso: &str) -> String {
+    let Some((date, rest)) = iso.split_once('T') else { return iso.to_string() };
+    if rest.len() < 5 {
+        return iso.to_string();
+    }
+    let time = &rest[..5];
+    let zone = rest.find(['+', '-', 'Z']).map(|i| &rest[i..]).unwrap_or("");
+    match zone {
+        "" => format!("{date} {time}"),
+        "Z" => format!("{date} {time} (UTC)"),
+        offset => format!("{date} {time} (UTC{offset})"),
+    }
+}
+
 fn show_run_summary(ui: &mut egui::Ui, attachment: &ApostAttachment, results: &ApostResults) {
     let run = results.run.as_ref();
     let wavefunction = results.wavefunction.as_ref();
@@ -46,10 +62,20 @@ fn show_run_summary(ui: &mut egui::Ui, attachment: &ApostAttachment, results: &A
         ui.end_row();
 
         ui.label("APOST-3D");
-        let version = results.program.as_ref().and_then(|p| p.version.clone()).map(|v| format!("version {v}"));
+        let program = results.program.as_ref();
+        let version = program.and_then(|p| p.version.clone()).map(|v| match program.and_then(|p| p.version_date.as_deref()) {
+            Some(date) => format!("version {v} ({date})"),
+            None => format!("version {v}"),
+        });
         let threads = run.and_then(|r| r.threads).map(|t| format!("{t} thread{}", if t == 1 { "" } else { "s" }));
         ui.label(or_dash(Some([version, threads].into_iter().flatten().collect::<Vec<_>>().join(", ")).filter(|s| !s.is_empty())));
         ui.end_row();
+
+        if let Some(date) = run.and_then(|r| r.date.as_deref()) {
+            ui.label("Run started");
+            ui.label(readable_date(date));
+            ui.end_row();
+        }
 
         ui.label("Wavefunction");
         let method = wavefunction.and_then(|w| w.method.clone());
@@ -332,5 +358,19 @@ impl App {
                 self.rebuild_highlights();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::readable_date;
+
+    #[test]
+    fn dates() {
+        assert_eq!(readable_date("2026-10-13T14:05:31+02:00"), "2026-10-13 14:05 (UTC+02:00)");
+        assert_eq!(readable_date("2026-10-13T14:05:31-05:00"), "2026-10-13 14:05 (UTC-05:00)");
+        assert_eq!(readable_date("2026-10-13T14:05:31Z"), "2026-10-13 14:05 (UTC)");
+        assert_eq!(readable_date("2026-10-13T14:05:31"), "2026-10-13 14:05");
+        assert_eq!(readable_date("yesterday"), "yesterday");
     }
 }
