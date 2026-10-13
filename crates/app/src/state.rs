@@ -8,6 +8,7 @@ use apost3dview_render::BondVisualStyle;
 use egui::Color32;
 
 use crate::isosurfaces::IsosurfaceState;
+use crate::results::ApostAttachment;
 
 /// A committed distance/angle/dihedral, with a screen-space label position
 /// the user can drag away from the default (the involved atoms' centroid)
@@ -101,6 +102,8 @@ pub(crate) struct LoadedStructure {
     /// unused, and hidden in the UI otherwise.
     pub(crate) selected_alpha_mos: HashSet<usize>,
     pub(crate) selected_beta_mos: HashSet<usize>,
+    /// APOST-3D results found for (or opened with) this structure.
+    pub(crate) apost: Option<ApostAttachment>,
 }
 
 impl LoadedStructure {
@@ -120,6 +123,7 @@ impl LoadedStructure {
             wavefunction: None,
             selected_alpha_mos: HashSet::new(),
             selected_beta_mos: HashSet::new(),
+            apost: None,
         }
     }
 }

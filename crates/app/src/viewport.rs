@@ -290,8 +290,6 @@ impl App {
         ui.painter()
             .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
 
-        self.show_warning_overlay(ui.ctx(), rect);
-
         if camera_dragging || scroll_delta != 0.0 || zoom_factor != 1.0 || keyboard_rotating || auto_spinning || any_label_dragged {
             ui.ctx().request_repaint();
         }

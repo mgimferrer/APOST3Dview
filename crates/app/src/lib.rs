@@ -11,9 +11,10 @@ mod isosurfaces;
 mod labels;
 mod orbitals;
 mod presets;
+mod results;
 mod state;
 mod util;
 mod viewport;
 mod windows;
 
-pub use app::App;
+pub use app::{App, StartupOptions};

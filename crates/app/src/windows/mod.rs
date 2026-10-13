@@ -4,6 +4,7 @@
 
 mod about;
 mod analysis;
+mod apost;
 mod render;
 mod structures;
 mod style;

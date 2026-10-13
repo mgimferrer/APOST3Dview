@@ -20,3 +20,7 @@ rfd = "0.17.2"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.9"
 wgpu = "30.0.0"
+
+[dev-dependencies]
+egui_kittest = { version = "0.36.1", features = ["wgpu", "eframe"] }
+eframe = { version = "0.36.1", default-features = false, features = ["wgpu", "default_fonts", "persistence"] }

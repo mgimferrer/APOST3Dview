@@ -1,5 +1,6 @@
 //! The application state and frame loop.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -9,6 +10,7 @@ use egui::Color32;
 use glam::Vec2;
 
 use crate::export::RenderExportState;
+use crate::files::FileKind;
 use crate::isosurfaces::KeptIsosurface;
 use crate::orbitals::OrbitalGenerationState;
 use crate::presets::list_style_presets;
@@ -16,11 +18,38 @@ use crate::state::{AtomLabelMode, AtomLabelStyle, LoadedStructure, MeasurementSt
 use crate::util::molecules_share_geometry;
 use crate::viewport::DEFAULT_AUTO_SPIN_SPEED;
 
-/// Minimum time the splash screen stays up, regardless of how fast startup
-/// actually finishes.
-pub(crate) const SPLASH_MIN_DURATION: Duration = Duration::from_secs(4);
+/// How long the splash screen stays up at most. A click dismisses it
+/// earlier.
+pub(crate) const SPLASH_DURATION: Duration = Duration::from_millis(1500);
 
-pub(crate) const WARNING_DURATION: Duration = Duration::from_secs(3);
+/// Warnings stay up longer than plain status messages: they usually say
+/// something the user has to act on.
+const WARNING_TOAST_DURATION: Duration = Duration::from_secs(7);
+const STATUS_TOAST_DURATION: Duration = Duration::from_secs(3);
+const MAX_TOASTS: usize = 4;
+
+/// A short message over the top of the viewport. Several can be up at
+/// once, newest at the bottom.
+pub(crate) struct Toast {
+    text: String,
+    color: Color32,
+    shown_at: Instant,
+    duration: Duration,
+}
+
+/// Choices made before the window opens (`main.rs`, tests).
+pub struct StartupOptions {
+    /// Opened as soon as the splash screen is gone, as if dropped onto the
+    /// window — the command-line arguments.
+    pub files: Vec<PathBuf>,
+    pub splash: bool,
+}
+
+impl Default for StartupOptions {
+    fn default() -> Self {
+        Self { files: Vec::new(), splash: true }
+    }
+}
 
 pub(crate) fn load_texture(ctx: &egui::Context, name: &str, png_bytes: &[u8]) -> egui::TextureHandle {
     let image = image::load_from_memory(png_bytes).expect("bundled image should be valid").to_rgba8();
@@ -50,6 +79,9 @@ pub struct App {
     /// renderer.
     pub(crate) glyph_atlas: Arc<GlyphAtlas>,
     pub(crate) start_time: Instant,
+    pub(crate) splash: bool,
+    /// Files to open once the splash screen is gone (see `StartupOptions`).
+    pub(crate) pending_files: Vec<PathBuf>,
     pub(crate) render_state: egui_wgpu::RenderState,
 
     // Each tool panel is an independent floating window, toggled from the
@@ -63,6 +95,7 @@ pub struct App {
     pub(crate) show_structures: bool,
     pub(crate) show_about: bool,
     pub(crate) show_render: bool,
+    pub(crate) show_apost: bool,
 
     pub(crate) coordinate_unit: LengthUnit,
     pub(crate) coordinate_format: CoordinateFormat,
@@ -125,11 +158,15 @@ pub struct App {
     /// Text field buffer for naming a new Custom preset before saving.
     pub(crate) new_preset_name: String,
 
-    pub(crate) warning: Option<(String, Color32, Instant)>,
+    pub(crate) toasts: Vec<Toast>,
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        Self::with_options(cc, StartupOptions::default())
+    }
+
+    pub fn with_options(cc: &eframe::CreationContext<'_>, options: StartupOptions) -> Self {
         let render_state = cc
             .wgpu_render_state
             .clone()
@@ -152,6 +189,8 @@ impl App {
             logo_texture,
             glyph_atlas,
             start_time: Instant::now(),
+            splash: options.splash,
+            pending_files: options.files,
             render_state,
             show_style: false,
             show_xyz: false,
@@ -160,6 +199,7 @@ impl App {
             show_structures: true,
             show_about: false,
             show_render: false,
+            show_apost: false,
             coordinate_unit: LengthUnit::Angstrom,
             coordinate_format: CoordinateFormat::AtomicNumberTable,
             measurement_style: MeasurementStyle::default(),
@@ -179,7 +219,7 @@ impl App {
             kept_isosurfaces: Vec::new(),
             style_presets: list_style_presets(),
             new_preset_name: String::new(),
-            warning: None,
+            toasts: Vec::new(),
         }
     }
 
@@ -218,11 +258,24 @@ impl App {
     }
 
     pub(crate) fn show_warning(&mut self, message: impl Into<String>) {
-        self.warning = Some((message.into(), Color32::from_rgb(196, 60, 40), Instant::now()));
+        self.push_toast(message.into(), Color32::from_rgb(196, 60, 40), WARNING_TOAST_DURATION);
     }
 
     pub(crate) fn show_status(&mut self, message: impl Into<String>) {
-        self.warning = Some((message.into(), Color32::from_rgb(45, 130, 80), Instant::now()));
+        self.push_toast(message.into(), Color32::from_rgb(45, 130, 80), STATUS_TOAST_DURATION);
+    }
+
+    fn push_toast(&mut self, text: String, color: Color32, duration: Duration) {
+        self.toasts.retain(|t| t.text != text);
+        self.toasts.push(Toast { text, color, shown_at: Instant::now(), duration });
+        if self.toasts.len() > MAX_TOASTS {
+            self.toasts.remove(0);
+        }
+    }
+
+    /// Texts of the messages currently up — for tests.
+    pub fn toast_texts(&self) -> Vec<String> {
+        self.toasts.iter().map(|t| t.text.clone()).collect()
     }
 
     pub(crate) fn clear_selection(&mut self) {
@@ -335,10 +388,23 @@ impl App {
     }
 
     pub(crate) fn show_toolbar(&mut self, ui: &mut egui::Ui) {
+        let mut open_request: Option<Option<FileKind>> = None;
         egui::Panel::top("toolbar").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(4.0);
                 ui.label(egui::RichText::new("APOST3Dview").strong());
+                ui.separator();
+                ui.menu_button("Open", |ui| {
+                    if ui.button("All supported files...").on_hover_text("Shortcut: Cmd/Ctrl+O. Files can also be dragged onto the window.").clicked() {
+                        open_request = Some(None);
+                    }
+                    ui.separator();
+                    for kind in FileKind::ALL {
+                        if ui.button(format!("{}...", kind.label())).clicked() {
+                            open_request = Some(Some(kind));
+                        }
+                    }
+                });
                 ui.separator();
                 if ui.selectable_label(self.show_structures, "Structures").clicked() {
                     self.show_structures = !self.show_structures;
@@ -355,6 +421,9 @@ impl App {
                 if ui.selectable_label(self.show_analysis, "Analysis").clicked() {
                     self.show_analysis = !self.show_analysis;
                 }
+                if ui.selectable_label(self.show_apost, "APOST-3D").clicked() {
+                    self.show_apost = !self.show_apost;
+                }
                 if ui.selectable_label(self.show_render, "Render").clicked() {
                     self.show_render = !self.show_render;
                 }
@@ -363,25 +432,48 @@ impl App {
                 }
             });
         });
+        if let Some(kind) = open_request {
+            self.open_dialog(kind);
+        }
     }
 
-    pub(crate) fn show_warning_overlay(&mut self, ctx: &egui::Context, rect: egui::Rect) {
-        let Some((message, color, shown_at)) = &self.warning else { return };
-        if shown_at.elapsed() > WARNING_DURATION {
-            self.warning = None;
+    /// Draws the messages currently up, stacked over the top of the window,
+    /// and drops the expired ones.
+    fn show_toasts(&mut self, ctx: &egui::Context) {
+        self.toasts.retain(|t| t.shown_at.elapsed() < t.duration);
+        if self.toasts.is_empty() {
             return;
         }
-
-        egui::Area::new(egui::Id::new("warning_toast"))
-            .fixed_pos(egui::pos2(rect.center().x - 90.0, rect.top() + 20.0))
+        let screen = ctx.content_rect();
+        egui::Area::new(egui::Id::new("toasts"))
+            .anchor(egui::Align2::CENTER_TOP, [0.0, 40.0])
             .order(egui::Order::Foreground)
+            .interactable(false)
             .show(ctx, |ui| {
-                egui::Frame::popup(ui.style()).fill(*color).show(ui, |ui| {
-                    ui.label(egui::RichText::new(message).color(Color32::WHITE).strong());
-                });
+                ui.set_max_width((screen.width() - 40.0).min(560.0));
+                for toast in &self.toasts {
+                    egui::Frame::popup(ui.style()).fill(toast.color).show(ui, |ui| {
+                        ui.label(egui::RichText::new(&toast.text).color(Color32::WHITE).strong());
+                    });
+                    ui.add_space(4.0);
+                }
             });
+        ctx.request_repaint_after(Duration::from_millis(200));
+    }
 
-        ctx.request_repaint_after(Duration::from_millis(100));
+    /// Files dragged over the window: a hint while they hover, opened when
+    /// dropped.
+    fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
+        if !dropped.is_empty() {
+            self.open_paths(dropped);
+        }
+        if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("drop_hint")));
+            let rect = ctx.content_rect();
+            painter.rect_filled(rect, 0.0, Color32::from_black_alpha(140));
+            painter.text(rect.center(), egui::Align2::CENTER_CENTER, "Drop to open", egui::FontId::proportional(28.0), Color32::WHITE);
+        }
     }
 
     pub(crate) fn show_empty_state(&self, ui: &egui::Ui, rect: egui::Rect) {
@@ -401,7 +493,7 @@ impl App {
         ui.painter().text(
             egui::pos2(rect.center().x, logo_rect.bottom() + 28.0),
             egui::Align2::CENTER_CENTER,
-            "Open a .fchk or .xyz file from the Structures panel to get started",
+            "Drag files here, or use Open in the toolbar (.fchk, .molden, .xyz, .cube, .apost.json)",
             egui::FontId::proportional(15.0),
             Color32::from_gray(130),
         );
@@ -409,22 +501,38 @@ impl App {
 }
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        if self.start_time.elapsed() < SPLASH_MIN_DURATION {
-            self.show_splash(ui);
-            return;
+        if self.splash {
+            let dismissed = ui.input(|i| i.pointer.any_click());
+            if self.start_time.elapsed() < SPLASH_DURATION && !dismissed {
+                self.show_splash(ui);
+                return;
+            }
+            self.splash = false;
+        }
+        if !self.pending_files.is_empty() {
+            let files = std::mem::take(&mut self.pending_files);
+            self.open_paths(files);
         }
 
+        let ctx = ui.ctx().clone();
+        if ctx.input_mut(|i| i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O))) {
+            self.open_dialog(None);
+        }
+        self.handle_dropped_files(&ctx);
+
         self.show_toolbar(ui);
-        self.show_structures_window(ui.ctx());
-        self.show_style_window(ui.ctx());
-        self.show_xyz_window(ui.ctx());
-        self.show_visualization_window(ui.ctx());
-        self.show_analysis_window(ui.ctx());
-        self.show_render_window(ui.ctx());
-        self.show_about_window(ui.ctx());
+        self.show_structures_window(&ctx);
+        self.show_style_window(&ctx);
+        self.show_xyz_window(&ctx);
+        self.show_visualization_window(&ctx);
+        self.show_analysis_window(&ctx);
+        self.show_apost_window(&ctx);
+        self.show_render_window(&ctx);
+        self.show_about_window(&ctx);
 
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| self.show_viewport(ui));
+        self.show_toasts(&ctx);
     }
 }

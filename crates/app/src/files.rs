@@ -1,96 +1,129 @@
-//! Opening files.
+//! Opening files: one entry point (`App::open_paths`) shared by the Open
+//! dialog, drag-and-drop and the command line, which recognizes each file
+//! by its name.
 
-use apost3dview_core::{parse_cube, parse_fchk_wavefunction, parse_molden_wavefunction, parse_xyz, Molecule, Wavefunction};
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+
+use apost3dview_core::{
+    find_results_for, is_results_file, load_apost_results, parse_cube, parse_fchk_wavefunction, parse_molden_wavefunction, parse_xyz,
+    wavefunction_path_for, Molecule, Wavefunction,
+};
 
 use crate::app::App;
 use crate::isosurfaces::IsosurfaceState;
+use crate::results::ApostAttachment;
 use crate::state::LoadedStructure;
 
+/// Every kind of file APOST3Dview opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileKind {
+    Fchk,
+    Molden,
+    Xyz,
+    Cube,
+    ApostResults,
+}
+
+impl FileKind {
+    pub(crate) const ALL: [FileKind; 5] = [FileKind::Fchk, FileKind::Molden, FileKind::Xyz, FileKind::Cube, FileKind::ApostResults];
+
+    /// For the Open menu and the file dialog's filter.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            FileKind::Fchk => "Gaussian checkpoint (.fchk)",
+            FileKind::Molden => "Molden (.molden)",
+            FileKind::Xyz => "XYZ coordinates (.xyz)",
+            FileKind::Cube => "Gaussian cube (.cube)",
+            FileKind::ApostResults => "APOST-3D results (.apost.json)",
+        }
+    }
+
+    /// Extensions for the file dialog. The dialog filters on the last
+    /// extension only, so APOST-3D results are offered as `.json`.
+    fn extensions(self) -> &'static [&'static str] {
+        match self {
+            FileKind::Fchk => &["fchk"],
+            FileKind::Molden => &["molden", "inp"],
+            FileKind::Xyz => &["xyz"],
+            FileKind::Cube => &["cube"],
+            FileKind::ApostResults => &["json"],
+        }
+    }
+
+    pub(crate) fn of_path(path: &Path) -> Option<FileKind> {
+        if is_results_file(path) {
+            return Some(FileKind::ApostResults);
+        }
+        let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+        FileKind::ALL.into_iter().find(|kind| kind.extensions().contains(&extension.as_str()))
+    }
+}
+
+fn file_label(path: &Path) -> String {
+    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled".into())
+}
+
+/// Some programs write Molden files as `.inp`, which is also the extension
+/// of APOST-3D inputs. A Molden file opens with a `[Molden Format]` or
+/// `[Atoms]` section tag; anything else is not one.
+fn looks_like_molden(path: &Path) -> bool {
+    let Ok(file) = std::fs::File::open(path) else { return false };
+    BufReader::new(file)
+        .lines()
+        .take(20)
+        .map_while(Result::ok)
+        .any(|line| {
+            let line = line.trim().to_ascii_lowercase();
+            line.starts_with("[molden format]") || line.starts_with("[atoms]")
+        })
+}
+
 impl App {
-    pub(crate) fn open_fchk(&mut self) {
-        self.open_wavefunction_files("Gaussian checkpoint", &["fchk"], Molecule::from_fchk, parse_fchk_wavefunction);
+    /// Shows the native file dialog, filtered to one kind of file, or to
+    /// every supported kind when `kind` is `None`, and opens the choice.
+    pub(crate) fn open_dialog(&mut self, kind: Option<FileKind>) {
+        let mut dialog = rfd::FileDialog::new();
+        dialog = match kind {
+            Some(kind) => dialog.add_filter(kind.label(), kind.extensions()),
+            None => {
+                let all: Vec<&str> = FileKind::ALL.iter().flat_map(|k| k.extensions().iter().copied()).collect();
+                dialog.add_filter("All supported files", &all)
+            }
+        };
+        if let Some(paths) = dialog.pick_files() {
+            self.open_paths(paths);
+        }
     }
 
-    /// Same as `open_fchk`, sourced from `.molden` files instead.
-    /// `generate_mo_grid`/`evaluate_mo` already take `(&BasisSet,
-    /// &MolecularOrbitals)` rather than a `.fchk`-specific `Wavefunction`,
-    /// so nothing downstream of `parse_molden_wavefunction` needed to
-    /// change for a second source to plug in here.
-    pub(crate) fn open_molden(&mut self) {
-        self.open_wavefunction_files("Molden format", &["molden", "inp"], Molecule::from_molden, parse_molden_wavefunction);
-    }
-
-    /// Opens one or more files that carry both a geometry and a
-    /// wavefunction (`.fchk`, `.molden`) — same multi-select UX as `.xyz`/
-    /// `.cube`, each file becoming its own Structures entry. Parsing the
-    /// wavefunction (basis set + MO coefficients) is a separate, slower
-    /// full-file pass from the geometry-only one; failure there just means
-    /// no "Generate orbitals" section for that structure, not a failure to
-    /// open it at all.
-    pub(crate) fn open_wavefunction_files(
-        &mut self,
-        filter_name: &str,
-        extensions: &[&str],
-        load_molecule: fn(&std::path::Path) -> std::io::Result<Molecule>,
-        load_wavefunction: fn(&std::path::Path) -> std::io::Result<Wavefunction>,
-    ) {
-        let Some(paths) = rfd::FileDialog::new().add_filter(filter_name, extensions).pick_files() else { return };
+    /// Opens files of any supported kind, each recognized by its name. The
+    /// first one opened becomes the active structure.
+    pub fn open_paths(&mut self, paths: Vec<PathBuf>) {
         let mut first_new_index = None;
         for path in paths {
-            let label = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled".into());
-            let molecule = match load_molecule(&path) {
-                Ok(molecule) => molecule,
-                Err(err) => {
-                    self.show_warning(format!("Could not load {label}: {err}"));
-                    continue;
+            let label = file_label(&path);
+            let opened = match FileKind::of_path(&path) {
+                Some(FileKind::Fchk) => self.open_wavefunction_file(&path, Molecule::from_fchk, parse_fchk_wavefunction, true),
+                Some(FileKind::Molden) => {
+                    if looks_like_molden(&path) {
+                        self.open_wavefunction_file(&path, Molecule::from_molden, parse_molden_wavefunction, false)
+                    } else {
+                        self.show_warning(format!(
+                            "{label} is not a Molden file. APOST-3D input files cannot be opened: open the job's .fchk or .apost.json instead."
+                        ));
+                        None
+                    }
+                }
+                Some(FileKind::Xyz) => self.open_xyz(&path),
+                Some(FileKind::Cube) => self.open_cube(&path),
+                Some(FileKind::ApostResults) => self.open_results(&path),
+                None => {
+                    self.show_warning(format!("{label}: not a supported file type"));
+                    None
                 }
             };
-            let mut structure = LoadedStructure::new(label.clone(), molecule, Some(path.clone()));
-            match load_wavefunction(&path) {
-                Ok(wfn) => {
-                    // `evaluate_basis_functions` evaluates every shell in
-                    // the basis regardless of which MO is being asked for,
-                    // so a single h-or-higher shell anywhere in the file
-                    // blocks *every* orbital, not just ones with real
-                    // weight on it. Worth flagging right away rather than
-                    // only on the first failed "Generate" click.
-                    let max_angular_momentum = wfn.basis.shells.iter().map(|s| s.angular_momentum).max().unwrap_or(0);
-                    if wfn.alpha.num_orbitals() > 0 {
-                        structure.selected_alpha_mos.insert(wfn.alpha.homo_index() - 1);
-                    }
-                    if let Some(beta) = &wfn.beta {
-                        if beta.num_orbitals() > 0 {
-                            structure.selected_beta_mos.insert(beta.homo_index() - 1);
-                        }
-                    }
-                    structure.wavefunction = Some(wfn);
-                    if max_angular_momentum > 4 {
-                        self.show_warning(format!("{label}: the basis set includes h (or higher) shells, orbital generation isn't supported yet for this file."));
-                    }
-                }
-                Err(err) => self.show_warning(format!("{label}: geometry loaded, but orbitals unavailable: {err}")),
-            }
-            let index = self.structures.len();
-            self.structures.push(structure);
-            first_new_index.get_or_insert(index);
-        }
-        if let Some(index) = first_new_index {
-            self.set_active(index);
-        }
-    }
-
-    pub(crate) fn open_xyz(&mut self) {
-        let Some(paths) = rfd::FileDialog::new().add_filter("XYZ", &["xyz"]).pick_files() else { return };
-        let mut first_new_index = None;
-        for path in paths {
-            match parse_xyz(&path) {
-                Ok(molecule) => {
-                    let label = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled.xyz".into());
-                    let index = self.structures.len();
-                    self.structures.push(LoadedStructure::new(label, molecule, Some(path)));
-                    first_new_index.get_or_insert(index);
-                }
-                Err(err) => self.show_warning(format!("Could not load {}: {err}", path.display())),
+            if let Some(index) = opened {
+                first_new_index.get_or_insert(index);
             }
         }
         if let Some(index) = first_new_index {
@@ -98,29 +131,134 @@ impl App {
         }
     }
 
-    /// Opens one or more `.cube` files — same multi-select UX as `.xyz`.
-    /// Each becomes its own Structures entry with both a molecule (parsed
-    /// from the cube's own atom section) and an isosurface (see
+    fn push_structure(&mut self, structure: LoadedStructure) -> usize {
+        self.structures.push(structure);
+        self.structures.len() - 1
+    }
+
+    /// A file that carries both a geometry and a wavefunction (`.fchk`,
+    /// `.molden`). Parsing the wavefunction (basis set + MO coefficients) is
+    /// a separate, slower full-file pass from the geometry-only one; failure
+    /// there just means no orbital generation for that structure, not a
+    /// failure to open it. A `.fchk` also picks up the APOST-3D results
+    /// written next to it, if any (`look_for_results`); having none is the
+    /// normal case for a first look at a system, so it is not reported.
+    fn open_wavefunction_file(
+        &mut self,
+        path: &Path,
+        load_molecule: fn(&Path) -> std::io::Result<Molecule>,
+        load_wavefunction: fn(&Path) -> std::io::Result<Wavefunction>,
+        look_for_results: bool,
+    ) -> Option<usize> {
+        let label = file_label(path);
+        let molecule = match load_molecule(path) {
+            Ok(molecule) => molecule,
+            Err(err) => {
+                self.show_warning(format!("Could not load {label}: {err}"));
+                return None;
+            }
+        };
+        let mut structure = LoadedStructure::new(label.clone(), molecule, Some(path.to_path_buf()));
+        match load_wavefunction(path) {
+            Ok(wfn) => {
+                // `evaluate_basis_functions` evaluates every shell in
+                // the basis regardless of which MO is being asked for,
+                // so a single h-or-higher shell anywhere in the file
+                // blocks *every* orbital, not just ones with real
+                // weight on it. Worth flagging right away rather than
+                // only on the first failed "Generate" click.
+                let max_angular_momentum = wfn.basis.shells.iter().map(|s| s.angular_momentum).max().unwrap_or(0);
+                if wfn.alpha.num_orbitals() > 0 {
+                    structure.selected_alpha_mos.insert(wfn.alpha.homo_index() - 1);
+                }
+                if let Some(beta) = &wfn.beta {
+                    if beta.num_orbitals() > 0 {
+                        structure.selected_beta_mos.insert(beta.homo_index() - 1);
+                    }
+                }
+                structure.wavefunction = Some(wfn);
+                if max_angular_momentum > 4 {
+                    self.show_warning(format!("{label}: the basis set includes h (or higher) shells, orbital generation isn't supported yet for this file."));
+                }
+            }
+            Err(err) => self.show_warning(format!("{label}: geometry loaded, but orbitals unavailable: {err}")),
+        }
+        let index = self.push_structure(structure);
+        if look_for_results {
+            if let Some(results_path) = find_results_for(path) {
+                self.attach_results(index, &results_path);
+            }
+        }
+        Some(index)
+    }
+
+    fn open_xyz(&mut self, path: &Path) -> Option<usize> {
+        match parse_xyz(path) {
+            Ok(molecule) => Some(self.push_structure(LoadedStructure::new(file_label(path), molecule, Some(path.to_path_buf())))),
+            Err(err) => {
+                self.show_warning(format!("Could not load {}: {err}", file_label(path)));
+                None
+            }
+        }
+    }
+
+    /// A `.cube` file becomes its own structure with both a molecule
+    /// (parsed from the cube's own atom section) and an isosurface (see
     /// `IsosurfaceState`); `set_active` handles the shared-geometry
     /// camera-freeze and the one-time initial extraction.
-    pub(crate) fn open_cube(&mut self) {
-        let Some(paths) = rfd::FileDialog::new().add_filter("Gaussian cube", &["cube"]).pick_files() else { return };
-        let mut first_new_index = None;
-        for path in paths {
-            match parse_cube(&path) {
-                Ok(cube_file) => {
-                    let label = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled.cube".into());
-                    let mut structure = LoadedStructure::new(label, cube_file.molecule, Some(path));
-                    structure.isosurface = Some(IsosurfaceState::new(cube_file.grid));
-                    let index = self.structures.len();
-                    self.structures.push(structure);
-                    first_new_index.get_or_insert(index);
-                }
-                Err(err) => self.show_warning(format!("Could not load {}: {err}", path.display())),
+    fn open_cube(&mut self, path: &Path) -> Option<usize> {
+        match parse_cube(path) {
+            Ok(cube_file) => {
+                let mut structure = LoadedStructure::new(file_label(path), cube_file.molecule, Some(path.to_path_buf()));
+                structure.isosurface = Some(IsosurfaceState::new(cube_file.grid));
+                Some(self.push_structure(structure))
+            }
+            Err(err) => {
+                self.show_warning(format!("Could not load {}: {err}", file_label(path)));
+                None
             }
         }
-        if let Some(index) = first_new_index {
-            self.set_active(index);
+    }
+
+    /// An APOST-3D results file opened directly. Its `.fchk` (named in the
+    /// file, next to it) is opened too and the results attached to it; if
+    /// that `.fchk` is already open, the results attach to the open one.
+    /// Without a `.fchk`, the geometry stored in the results file is shown
+    /// instead, with a warning, since orbitals are then unavailable.
+    fn open_results(&mut self, path: &Path) -> Option<usize> {
+        let label = file_label(path);
+        let results = match load_apost_results(path) {
+            Ok(results) => results,
+            Err(err) => {
+                self.show_warning(format!("Could not load {label}: {err}"));
+                return None;
+            }
+        };
+
+        if let Some(fchk) = wavefunction_path_for(path, &results) {
+            let already_open = self.structures.iter().position(|s| s.source_path.as_deref().is_some_and(|p| same_file(p, &fchk)));
+            let index = match already_open {
+                Some(index) => index,
+                None => self.open_wavefunction_file(&fchk, Molecule::from_fchk, parse_fchk_wavefunction, false)?,
+            };
+            self.attach_results(index, path);
+            return Some(index);
         }
+
+        self.show_warning(format!(
+            "No .fchk found for {label}: showing the geometry stored in the results file. Orbitals are not available."
+        ));
+        let molecule = results.molecule().unwrap_or_else(|| Molecule::from_atoms(Vec::new(), Vec::new()));
+        let mut structure = LoadedStructure::new(label, molecule, Some(path.to_path_buf()));
+        structure.apost = Some(ApostAttachment::without_fchk(path, results));
+        self.show_apost = true;
+        Some(self.push_structure(structure))
+    }
+}
+
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
     }
 }
