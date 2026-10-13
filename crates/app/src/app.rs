@@ -226,6 +226,7 @@ impl App {
     pub(crate) fn rebuild_geometry(&self) {
         let Some(active) = self.active_structure else { return };
         let Some(structure) = self.structures.get(active) else { return };
+        let atom_colors = structure.apost.as_ref().and_then(|a| a.atom_colors(structure.molecule.atomic_numbers.len()));
         let mut renderer = self.render_state.renderer.write();
         if let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() {
             resources.update_geometry(
@@ -234,6 +235,7 @@ impl App {
                 &structure.hidden_atoms,
                 &structure.hidden_bonds,
                 &structure.bond_styles,
+                atom_colors.as_deref(),
             );
         }
     }
@@ -276,6 +278,12 @@ impl App {
     /// Texts of the messages currently up — for tests.
     pub fn toast_texts(&self) -> Vec<String> {
         self.toasts.iter().map(|t| t.text.clone()).collect()
+    }
+
+    /// The active structure's selected atoms (0-based, in click order) —
+    /// for tests.
+    pub fn selected_atoms(&self) -> Vec<usize> {
+        self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.selected_atoms.clone()).unwrap_or_default()
     }
 
     pub(crate) fn clear_selection(&mut self) {

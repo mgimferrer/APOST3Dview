@@ -31,7 +31,7 @@ pub struct AtomInstance {
 }
 
 /// One half of a bond's cylinder — split at the midpoint so each half can
-/// take its nearer atom's CPK color (matches VMD's default CPK-coloring
+/// take its nearer atom's color (CPK, or its override) (matches VMD's default CPK-coloring
 /// convention for bonds).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -45,21 +45,26 @@ pub struct BondInstance {
     pub _padding: f32,
 }
 
-pub fn build_atom_instances(molecule: &Molecule, hidden_atoms: &HashSet<usize>) -> Vec<AtomInstance> {
+/// An atom's display color: its entry in `atom_colors` when given (e.g.
+/// coloring by fragment), otherwise its element's CPK color. Both sRGB.
+fn atom_color(molecule: &Molecule, atom_colors: Option<&[[f32; 3]]>, index: usize) -> [f32; 3] {
+    atom_colors
+        .and_then(|colors| colors.get(index).copied())
+        .unwrap_or_else(|| element_data(molecule.atomic_numbers[index]).cpk_color)
+}
+
+pub fn build_atom_instances(molecule: &Molecule, hidden_atoms: &HashSet<usize>, atom_colors: Option<&[[f32; 3]]>) -> Vec<AtomInstance> {
     molecule
         .atomic_numbers
         .iter()
         .zip(&molecule.positions)
         .enumerate()
         .filter(|(index, _)| !hidden_atoms.contains(index))
-        .map(|(_, (&z, &position))| {
-            let element = element_data(z);
-            AtomInstance {
-                center: position.to_array(),
-                vdw_radius: element.vdw_radius,
-                color: element.cpk_color,
-                _padding: 0.0,
-            }
+        .map(|(index, (&z, &position))| AtomInstance {
+            center: position.to_array(),
+            vdw_radius: element_data(z).vdw_radius,
+            color: atom_color(molecule, atom_colors, index),
+            _padding: 0.0,
         })
         .collect()
 }
@@ -69,6 +74,7 @@ pub fn build_bond_instances(
     hidden_atoms: &HashSet<usize>,
     hidden_bonds: &HashSet<usize>,
     bond_styles: &[BondVisualStyle],
+    atom_colors: Option<&[[f32; 3]]>,
 ) -> Vec<BondInstance> {
     let mut instances = Vec::with_capacity(molecule.bonds.len() * 2);
     for (bond_index, bond) in molecule.bonds.iter().enumerate() {
@@ -91,7 +97,7 @@ pub fn build_bond_instances(
         let (color_a, color_b) = if is_transition_state {
             (TRANSITION_STATE_COLOR, TRANSITION_STATE_COLOR)
         } else {
-            (element_data(molecule.atomic_numbers[bond.atom_a]).cpk_color, element_data(molecule.atomic_numbers[bond.atom_b]).cpk_color)
+            (atom_color(molecule, atom_colors, bond.atom_a), atom_color(molecule, atom_colors, bond.atom_b))
         };
         let midpoint = (a + b) * 0.5;
 

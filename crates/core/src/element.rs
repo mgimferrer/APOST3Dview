@@ -175,3 +175,45 @@ pub fn atomic_number_from_symbol(symbol: &str) -> Option<u32> {
         .find(|(_, element)| element.symbol.eq_ignore_ascii_case(symbol))
         .map(|(z, _)| z as u32)
 }
+
+/// Molecular formula in Hill order: C first, then H, then the other
+/// elements alphabetically; without carbon, all alphabetically. Counts of
+/// one are left out ("CH3F", "H2O", "Fe", "CN").
+pub fn hill_formula(atomic_numbers: impl IntoIterator<Item = u32>) -> String {
+    let mut counts: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
+    for z in atomic_numbers {
+        *counts.entry(element_data(z).symbol).or_default() += 1;
+    }
+    let mut order: Vec<&str> = Vec::new();
+    if counts.contains_key("C") {
+        order.push("C");
+        if counts.contains_key("H") {
+            order.push("H");
+        }
+    }
+    let rest: Vec<&str> = counts.keys().copied().filter(|s| !order.contains(s)).collect();
+    order.extend(rest);
+    order
+        .into_iter()
+        .map(|symbol| match counts[symbol] {
+            1 => symbol.to_string(),
+            n => format!("{symbol}{n}"),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hill_order() {
+        assert_eq!(hill_formula([6, 1, 1, 1, 9]), "CH3F");
+        assert_eq!(hill_formula([8, 1, 1]), "H2O");
+        assert_eq!(hill_formula([26]), "Fe");
+        assert_eq!(hill_formula([7, 6]), "CN");
+        assert_eq!(hill_formula([5, 1, 1, 1]), "BH3");
+        assert_eq!(hill_formula([17, 83, 17, 17]), "BiCl3");
+        assert_eq!(hill_formula([]), "");
+    }
+}

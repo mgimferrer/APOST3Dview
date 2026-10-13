@@ -32,6 +32,31 @@ fn apost3d_results() {
     let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
     harness.run_steps(4);
     assert!(has_content(&screenshot(&mut harness, "apost3d")));
+    let mut harness = app_with(vec![dir.join("FeO4-2.fchk")]);
+    harness.run_steps(4);
+    assert!(has_content(&screenshot(&mut harness, "apost3d-fragments")));
     let mut harness = app_with(vec![dir.join("H2O-TPSS.apost.json")]);
     assert!(has_content(&screenshot(&mut harness, "apost3d-stopped")));
+}
+
+/// The fragment-color toggle changes the picture, and switching it back
+/// restores it exactly.
+#[test]
+fn fragment_colors_switch_off_and_back_on() {
+    use egui_kittest::kittest::Queryable;
+    let Some(dir) = fixtures_dir() else { return };
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
+    harness.run_steps(4);
+    let colored = screenshot(&mut harness, "fragments-on");
+    harness.get_by_label("Color atoms by fragment").click();
+    harness.remove_cursor();
+    harness.run_steps(4);
+    let element_colors = screenshot(&mut harness, "fragments-off");
+    harness.get_by_label("Color atoms by fragment").click();
+    harness.remove_cursor();
+    harness.run_steps(4);
+    let colored_again = screenshot(&mut harness, "fragments-on-again");
+    let differing = |a: &image::RgbaImage, b: &image::RgbaImage| a.pixels().zip(b.pixels()).filter(|(p, q)| p != q).count();
+    assert!(differing(&colored, &element_colors) > 10_000);
+    assert_eq!(differing(&colored, &colored_again), 0);
 }

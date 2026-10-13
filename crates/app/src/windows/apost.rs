@@ -1,11 +1,11 @@
 //! APOST-3D window: what was computed and how (run information), then the
 //! results themselves, for the active structure.
 
-use apost3dview_core::ApostResults;
+use apost3dview_core::{element_data, fragment_coverage, hill_formula, ApostResults};
 use egui::{Color32, RichText};
 
 use crate::app::App;
-use crate::results::ApostAttachment;
+use crate::results::{fragment_color, ApostAttachment, FRAGMENT_PALETTE, UNASSIGNED_COLOR};
 
 const ERROR_FILL: Color32 = Color32::from_rgb(196, 60, 40);
 const NOTICE_FILL: Color32 = Color32::from_rgb(200, 130, 20);
@@ -124,6 +124,96 @@ fn show_input_text(ui: &mut egui::Ui, results: &ApostResults) {
     });
 }
 
+/// Atom numbers as the user sees them elsewhere ("Fe1, C2, N3"), from
+/// 0-based indices.
+fn atom_names(atomic_numbers: &[u32], atoms: impl IntoIterator<Item = usize>) -> Vec<String> {
+    atoms.into_iter().map(|i| format!("{}{}", element_data(atomic_numbers[i]).symbol, i + 1)).collect()
+}
+
+/// At most `limit` names, then a count of the rest.
+fn abbreviated(names: &[String], limit: usize) -> String {
+    if names.len() <= limit {
+        names.join(", ")
+    } else {
+        format!("{}, ... (+{} more)", names[..limit].join(", "), names.len() - limit)
+    }
+}
+
+fn swatch(ui: &mut egui::Ui, color: [u8; 3]) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+    ui.painter().rect_filled(rect, 2.0, Color32::from_rgb(color[0], color[1], color[2]));
+}
+
+/// What the fragment list asks the window to do after drawing.
+enum FragmentAction {
+    /// Select the atoms of the fragment at this position in the list;
+    /// `add` keeps the current selection (Cmd/Ctrl-click).
+    Select { position: usize, add: bool },
+    ToggleColors,
+}
+
+/// The fragments as APOST-3D defined them, which doubles as the user's check
+/// that they were defined as intended: atoms in no fragment, or in two, are
+/// called out.
+fn show_fragments(ui: &mut egui::Ui, attachment: &ApostAttachment, results: &ApostResults, atomic_numbers: &[u32], selected: &[usize]) -> Option<FragmentAction> {
+    let fragments = results.fragments();
+    let mut action = None;
+    egui::CollapsingHeader::new(format!("Fragments ({})", fragments.len())).id_salt("apost_fragments").default_open(true).show(ui, |ui| {
+        if fragments.is_empty() {
+            ui.label(RichText::new("This run defines no fragments.").weak());
+            return;
+        }
+        let mut colors_on = attachment.fragment_colors;
+        if ui
+            .toggle_value(&mut colors_on, "Color atoms by fragment")
+            .on_hover_text("Switch off for a figure in the usual element colors; switch on again at any time.")
+            .changed()
+        {
+            action = Some(FragmentAction::ToggleColors);
+        }
+        if fragments.len() > FRAGMENT_PALETTE.len() {
+            ui.label(RichText::new(format!("More than {} fragments: colors repeat. Click a fragment to see its atoms.", FRAGMENT_PALETTE.len())).small().weak());
+        }
+
+        let coverage = fragment_coverage(atomic_numbers.len(), fragments);
+        if !coverage.unassigned.is_empty() {
+            let names = atom_names(atomic_numbers, coverage.unassigned.iter().copied());
+            ui.horizontal_wrapped(|ui| {
+                swatch(ui, UNASSIGNED_COLOR);
+                ui.label(RichText::new(format!("In no fragment: {}", abbreviated(&names, 12))).color(Color32::from_rgb(200, 130, 20)));
+            });
+        }
+        if !coverage.shared.is_empty() {
+            let names = atom_names(atomic_numbers, coverage.shared.iter().copied());
+            ui.label(RichText::new(format!("In more than one fragment: {}", abbreviated(&names, 12))).color(Color32::from_rgb(196, 60, 40)));
+        }
+
+        ui.add_space(4.0);
+        egui::ScrollArea::vertical().id_salt("apost_fragment_list").max_height(260.0).show(ui, |ui| {
+            for (position, fragment) in fragments.iter().enumerate() {
+                let atoms: Vec<usize> = fragment.atoms.iter().map(|&a| a - 1).collect();
+                let names = atom_names(atomic_numbers, atoms.iter().copied());
+                let formula = hill_formula(atoms.iter().map(|&i| atomic_numbers[i]));
+                let is_selected = !selected.is_empty() && selected.len() == atoms.len() && atoms.iter().all(|a| selected.contains(a));
+                ui.horizontal(|ui| {
+                    swatch(ui, fragment_color(position));
+                    let text = format!("{}  {formula}   {}", fragment.id, abbreviated(&names, 8));
+                    let response = ui.selectable_label(is_selected, text).on_hover_text(format!(
+                        "Fragment {}: {}\nClick to select its atoms, Cmd/Ctrl-click to add them to the selection.",
+                        fragment.id,
+                        names.join(", ")
+                    ));
+                    if response.clicked() {
+                        let add = ui.input(|i| i.modifiers.command);
+                        action = Some(FragmentAction::Select { position, add });
+                    }
+                });
+            }
+        });
+    });
+    action
+}
+
 /// The `.apost` text report, read on first expand and drawn one visible row
 /// at a time, since a large system's report runs to many thousands of lines.
 fn show_report(ui: &mut egui::Ui, attachment: &mut ApostAttachment) {
@@ -158,13 +248,19 @@ fn show_report(ui: &mut egui::Ui, attachment: &mut ApostAttachment) {
 impl App {
     pub(crate) fn show_apost_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_apost;
+        let mut fragment_action = None;
         egui::Window::new("APOST-3D")
             .open(&mut open)
             .default_pos([ctx.content_rect().right() - 400.0, 60.0])
             .default_width(360.0)
             .show(ctx, |ui| {
-                let attachment = self.active_structure.and_then(|i| self.structures.get_mut(i)).and_then(|s| s.apost.as_mut());
-                let Some(attachment) = attachment else {
+                let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else {
+                    ui.label(RichText::new("Open a structure first.").weak());
+                    return;
+                };
+                let atomic_numbers = structure.molecule.atomic_numbers.clone();
+                let selected_atoms = structure.selected_atoms.clone();
+                let Some(attachment) = structure.apost.as_mut() else {
                     ui.label(RichText::new("No APOST-3D results for this structure.").weak());
                     ui.label(
                         RichText::new(
@@ -202,9 +298,39 @@ impl App {
 
                 show_run_summary(ui, attachment, results);
                 ui.add_space(8.0);
+                if results.molecule.is_some() {
+                    fragment_action = show_fragments(ui, attachment, results, &atomic_numbers, &selected_atoms);
+                }
                 show_input_text(ui, results);
                 show_report(ui, attachment);
             });
         self.show_apost = open;
+        self.apply_fragment_action(fragment_action);
+    }
+
+    fn apply_fragment_action(&mut self, action: Option<FragmentAction>) {
+        let Some(action) = action else { return };
+        let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
+        let Some(attachment) = structure.apost.as_mut() else { return };
+        match action {
+            FragmentAction::ToggleColors => {
+                attachment.fragment_colors = !attachment.fragment_colors;
+                self.rebuild_geometry();
+            }
+            FragmentAction::Select { position, add } => {
+                let Ok(results) = &attachment.results else { return };
+                let Some(fragment) = results.fragments().get(position) else { return };
+                if !add {
+                    structure.selected_atoms.clear();
+                    structure.selected_bonds.clear();
+                }
+                for atom in fragment.atoms.iter().map(|&a| a - 1) {
+                    if !structure.selected_atoms.contains(&atom) {
+                        structure.selected_atoms.push(atom);
+                    }
+                }
+                self.rebuild_highlights();
+            }
+        }
     }
 }

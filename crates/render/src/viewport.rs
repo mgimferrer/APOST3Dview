@@ -992,7 +992,7 @@ impl ViewportResources {
     /// Initial upload when a molecule is opened — everything visible, no
     /// selection, all bonds solid, no measurements.
     pub fn load_molecule(&mut self, device: &wgpu::Device, molecule: &Molecule) {
-        self.update_geometry(device, molecule, &HashSet::new(), &HashSet::new(), &[]);
+        self.update_geometry(device, molecule, &HashSet::new(), &HashSet::new(), &[], None);
         self.update_highlights(device, molecule, &[], &[]);
         self.update_measurements(device, molecule, &[], [0.0, 0.0, 0.0]);
     }
@@ -1009,9 +1009,10 @@ impl ViewportResources {
         hidden_atoms: &HashSet<usize>,
         hidden_bonds: &HashSet<usize>,
         bond_styles: &[BondVisualStyle],
+        atom_colors: Option<&[[f32; 3]]>,
     ) {
-        let atom_data = build_atom_instances(molecule, hidden_atoms);
-        let bond_data = build_bond_instances(molecule, hidden_atoms, hidden_bonds, bond_styles);
+        let atom_data = build_atom_instances(molecule, hidden_atoms, atom_colors);
+        let bond_data = build_bond_instances(molecule, hidden_atoms, hidden_bonds, bond_styles, atom_colors);
 
         let atom_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("atom_instance_buffer"),

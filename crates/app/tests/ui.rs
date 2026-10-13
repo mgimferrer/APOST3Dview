@@ -96,3 +96,41 @@ fn opening_results_for_an_open_fchk_attaches_to_it() {
     assert_eq!(harness.query_all_by_label("CH3F.fchk").count(), 1);
     harness.get_by_label("CH3F.apost.json");
 }
+
+#[test]
+fn fragments_are_listed_and_select_their_atoms() {
+    let Some(dir) = fixtures_dir() else { return };
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
+    harness.get_by_label("Fragments (7)");
+    harness.get_by_label("Color atoms by fragment");
+    harness.get_by_label("1  Fe   Fe1");
+    harness.get_by_label("7  NO   N12, O13").click();
+    harness.run_steps(2);
+    assert_eq!(harness.state().selected_atoms(), vec![11, 12]);
+    // Cmd/Ctrl-click adds a fragment to the selection.
+    harness.get_by_label("1  Fe   Fe1").click_modifiers(egui::Modifiers::COMMAND);
+    harness.run_steps(2);
+    assert_eq!(harness.state().selected_atoms(), vec![11, 12, 0]);
+    harness.get_by_label("1  Fe   Fe1").click();
+    harness.run_steps(2);
+    assert_eq!(harness.state().selected_atoms(), vec![0]);
+}
+
+#[test]
+fn atoms_in_no_fragment_are_called_out() {
+    let Some(fixtures) = fixtures_dir() else { return };
+    let dir = scratch_dir("unassigned");
+    std::fs::copy(fixtures.join("CH3F.fchk"), dir.join("CH3F.fchk")).unwrap();
+    let text = std::fs::read_to_string(fixtures.join("CH3F.apost.json")).unwrap().replace("\"atoms\": [1, 3, 4, 5]", "\"atoms\": [3]");
+    std::fs::write(dir.join("CH3F.apost.json"), text).unwrap();
+    let harness = app_with(vec![dir.join("CH3F.fchk")]);
+    harness.get_by_label("In no fragment: C1, H4, H5");
+}
+
+#[test]
+fn a_run_without_fragments_says_so() {
+    let Some(dir) = fixtures_dir() else { return };
+    let harness = app_with(vec![dir.join("C2H6-B3LYP.fchk")]);
+    harness.get_by_label("Fragments (0)");
+    harness.get_by_label("This run defines no fragments.");
+}

@@ -3,9 +3,35 @@
 
 use std::path::{Path, PathBuf};
 
-use apost3dview_core::{check_against_fchk, load_apost_results, parse_fchk_summary, report_path_for, ApostResults};
+use apost3dview_core::{check_against_fchk, fragment_of_atom, load_apost_results, parse_fchk_summary, report_path_for, ApostResults};
 
 use crate::app::App;
+
+/// Fragment colors, in a fixed order: fragment 1 always gets the first.
+/// Eight distinct hues chosen to stay apart for color-blind viewers too
+/// (validated categorical order, light background); a ninth fragment
+/// reuses the first color, so the fragment list (swatch + click to
+/// highlight) stays the reference for which atoms belong where.
+pub(crate) const FRAGMENT_PALETTE: [[u8; 3]; 8] = [
+    [0x2a, 0x78, 0xd6], // blue
+    [0xeb, 0x68, 0x34], // orange
+    [0x1b, 0xaf, 0x7a], // aqua
+    [0xed, 0xa1, 0x00], // yellow
+    [0xe8, 0x7b, 0xa4], // magenta
+    [0x00, 0x83, 0x00], // green
+    [0x4a, 0x3a, 0xa7], // violet
+    [0xe3, 0x49, 0x48], // red
+];
+/// Atoms in no fragment: a neutral gray, unlike any fragment's hue.
+pub(crate) const UNASSIGNED_COLOR: [u8; 3] = [0xb0, 0xae, 0xa6];
+
+pub(crate) fn fragment_color(position: usize) -> [u8; 3] {
+    FRAGMENT_PALETTE[position % FRAGMENT_PALETTE.len()]
+}
+
+fn to_unit_rgb(color: [u8; 3]) -> [f32; 3] {
+    color.map(|c| c as f32 / 255.0)
+}
 
 /// The APOST-3D results file found for (or opened with) a structure.
 pub(crate) struct ApostAttachment {
@@ -23,12 +49,17 @@ pub(crate) struct ApostAttachment {
     /// front).
     pub(crate) report_path: Option<PathBuf>,
     pub(crate) report_lines: Option<Result<Vec<String>, String>>,
+    /// "Color atoms by fragment" — on when results with fragments are
+    /// loaded; switched off for a figure in the usual element colors and
+    /// back on at any time, without losing anything.
+    pub(crate) fragment_colors: bool,
 }
 
 impl ApostAttachment {
     fn new(results_path: &Path, results: Result<ApostResults, String>, has_fchk: bool) -> Self {
         let report_path = results.as_ref().ok().and_then(|r| report_path_for(results_path, r));
-        Self { results_path: results_path.to_path_buf(), results, has_fchk, report_path, report_lines: None }
+        let fragment_colors = results.as_ref().is_ok_and(|r| !r.fragments().is_empty());
+        Self { results_path: results_path.to_path_buf(), results, has_fchk, report_path, report_lines: None, fragment_colors }
     }
 
     pub(crate) fn without_fchk(results_path: &Path, results: ApostResults) -> Self {
@@ -37,6 +68,16 @@ impl ApostAttachment {
 
     pub(crate) fn file_name(&self) -> String {
         self.results_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    }
+
+    /// Per-atom colors for the renderer while coloring by fragment.
+    pub(crate) fn atom_colors(&self, n_atoms: usize) -> Option<Vec<[f32; 3]>> {
+        let results = self.results.as_ref().ok()?;
+        if !self.fragment_colors || results.fragments().is_empty() || results.molecule.as_ref()?.n_atoms != n_atoms {
+            return None;
+        }
+        let owners = fragment_of_atom(n_atoms, results.fragments());
+        Some(owners.into_iter().map(|owner| to_unit_rgb(owner.map_or(UNASSIGNED_COLOR, fragment_color))).collect())
     }
 
     pub(crate) fn load_report(&mut self) {
