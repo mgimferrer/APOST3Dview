@@ -1,4 +1,5 @@
-//! XYZ (coordinates) window.
+//! Coordinates window: the active structure's Cartesian coordinates, to
+//! copy or save as .xyz.
 
 use apost3dview_core::{format_coordinates, CoordinateFormat, LengthUnit};
 
@@ -19,11 +20,11 @@ impl App {
         }
     }
 
-    pub(crate) fn show_xyz_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_xyz;
-        egui::Window::new("XYZ")
+    pub(crate) fn show_coordinates_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_coordinates;
+        egui::Window::new("Coordinates")
             .open(&mut open)
-            .default_pos([320.0, 60.0])
+            .default_pos([650.0, 300.0])
             .default_width(420.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -77,6 +78,6 @@ impl App {
                     }
                 }
             });
-        self.show_xyz = open;
+        self.show_coordinates = open;
     }
 }

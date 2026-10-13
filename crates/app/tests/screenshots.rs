@@ -94,3 +94,21 @@ fn surfaces_update_by_themselves() {
     assert!(differing(&homo, &refined) > 500, "2x refinement re-extracts");
     assert!(differing(&refined, &lumo) > 5_000, "clicking another surface shows it instead");
 }
+
+/// Every window open at once over a molecule with results and orbitals.
+#[test]
+fn every_window_open() {
+    use egui_kittest::kittest::Queryable;
+    let Some(dir) = fixtures_dir() else { return };
+    let mut harness = app_with(vec![dir.join("CH3F.fchk")]);
+    for name in ["Surfaces", "Measure", "Appearance", "Export"] {
+        harness.get_by_label(name).click();
+        harness.run_steps(1);
+    }
+    harness.get_by_label("Generate 1 orbital(s)").click();
+    harness.run_steps(2);
+    harness.get_by_label("2  CH3   C1, H3, H4, H5").click();
+    harness.remove_cursor();
+    harness.run_steps(4);
+    assert!(has_content(&screenshot(&mut harness, "every-window")));
+}

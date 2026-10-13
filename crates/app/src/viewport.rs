@@ -117,7 +117,7 @@ impl App {
         // Left-click always does something useful: in Measure
         // mode it extends the pending pick, otherwise it selects
         // whatever's under the cursor — an atom if one's there,
-        // a bond if not — for Visualization's hide/style actions.
+        // a bond if not — for the Molecule window's selection actions.
         // No separate "Atoms/Bonds/Off" mode needed for that
         // anymore, since a click can only ever mean one thing at
         // a time regardless.

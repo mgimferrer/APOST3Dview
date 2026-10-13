@@ -1,13 +1,10 @@
-//! One module per floating tool window.
-
-
+//! One module per floating tool window, toggled from the toolbar.
 
 mod about;
-mod analysis;
 mod apost;
-mod render;
-mod structures;
+mod appearance;
+mod coordinates;
+mod export;
+mod measure;
+mod molecule;
 mod surfaces;
-mod style;
-mod visualization;
-mod xyz;

@@ -27,7 +27,7 @@
 
 use bytemuck::{Pod, Zeroable};
 
-/// Live-tunable depth-of-field parameters, driven by the Style panel.
+/// Live-tunable depth-of-field parameters, driven by the Appearance window.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DofSettings {
     /// Half-width of the perfectly-sharp zone around the focal plane, as a

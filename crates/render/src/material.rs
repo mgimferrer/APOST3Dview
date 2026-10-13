@@ -43,7 +43,7 @@ pub struct Material {
     /// (see `sphere.wgsl`'s `finalize_color`) — 1.0 is neutral. This is the
     /// one user-facing knob for the whole tone-mapping pipeline; everything
     /// else (the ACES-style rolloff curve itself, the sRGB/linear
-    /// conversion) is fixed, not exposed, to keep the Style panel from
+    /// conversion) is fixed, not exposed, to keep the Appearance window from
     /// growing controls nobody needs to touch day to day.
     pub exposure: f32,
 }

@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use apost3dview_core::{CoordinateFormat, LengthUnit};
+use apost3dview_core::{element_data, CoordinateFormat, LengthUnit};
 use apost3dview_render::{AoSettings, DofSettings, GlyphAtlas, IsosurfaceMaterial, Material, OrbitCamera, ViewportResources};
-use egui::Color32;
+use egui::{Color32, RichText};
 use glam::Vec2;
 
 use crate::export::RenderExportState;
@@ -61,7 +61,7 @@ pub(crate) fn load_texture(ctx: &egui::Context, name: &str, png_bytes: &[u8]) ->
 pub struct App {
     pub(crate) camera: OrbitCamera,
     /// Continuous rotation, toggled with the Space bar or the
-    /// Visualization window. Pauses while the user is rotating by hand.
+    /// status bar. Pauses while the user is rotating by hand.
     pub(crate) auto_spin: bool,
     /// Radians per second.
     pub(crate) auto_spin_speed: f32,
@@ -84,19 +84,18 @@ pub struct App {
     pub(crate) pending_files: Vec<PathBuf>,
     pub(crate) render_state: egui_wgpu::RenderState,
 
-    // Each tool panel is an independent floating window, toggled from the
-    // top toolbar — this is the scalable structure: adding a new panel
-    // later is one more bool + one more `show_*_window` function, no
-    // restructuring of the others.
-    pub(crate) show_style: bool,
-    pub(crate) show_xyz: bool,
-    pub(crate) show_visualization: bool,
-    pub(crate) show_analysis: bool,
-    pub(crate) show_structures: bool,
-    pub(crate) show_about: bool,
-    pub(crate) show_render: bool,
-    pub(crate) show_apost: bool,
+    // Each tool is a floating window toggled from the toolbar (Coordinates
+    // from the Molecule window), grouped by task: what the molecule looks
+    // like, its surfaces, measuring, APOST-3D results, the look of the
+    // scene, exporting.
+    pub(crate) show_molecule: bool,
     pub(crate) show_surfaces: bool,
+    pub(crate) show_measure: bool,
+    pub(crate) show_apost: bool,
+    pub(crate) show_appearance: bool,
+    pub(crate) show_export: bool,
+    pub(crate) show_coordinates: bool,
+    pub(crate) show_about: bool,
 
     pub(crate) coordinate_unit: LengthUnit,
     pub(crate) coordinate_format: CoordinateFormat,
@@ -106,7 +105,7 @@ pub struct App {
     pub(crate) render_export: RenderExportState,
     pub(crate) orbital_generation: OrbitalGenerationState,
     /// Updated every viewport repaint from the actual on-screen rect —
-    /// the Render window reads this (rather than recomputing it itself,
+    /// the Export window reads this (rather than recomputing it itself,
     /// since it doesn't have direct access to the viewport rect) so the
     /// DPI preset can derive its height from the current on-screen view.
     pub(crate) last_aspect_ratio: f32,
@@ -117,7 +116,7 @@ pub struct App {
     pub(crate) isosurface_material: IsosurfaceMaterial,
     /// Ambient occlusion — a single shared toggle/settings pair driving
     /// both the live view and export (see `ao_render_material` and
-    /// `ViewportResources::run_ao_passes`), so tuning the Style-window
+    /// `ViewportResources::run_ao_passes`), so tuning the Appearance-window
     /// sliders shows the result live instead of only after a render.
     pub(crate) ao_enabled: bool,
     pub(crate) ao_settings: AoSettings,
@@ -150,7 +149,7 @@ pub struct App {
     pub(crate) surface_defaults: SurfaceSettings,
 
     /// Names of every saved Custom style preset on disk (see
-    /// `presets_dir`), cached so the Style window doesn't re-read the
+    /// `presets_dir`), cached so the Appearance window doesn't re-read the
     /// directory every frame — refreshed after a save or delete.
     pub(crate) style_presets: Vec<String>,
     /// Text field buffer for naming a new Custom preset before saving.
@@ -190,15 +189,14 @@ impl App {
             splash: options.splash,
             pending_files: options.files,
             render_state,
-            show_style: false,
-            show_xyz: false,
-            show_visualization: false,
-            show_analysis: false,
-            show_structures: true,
-            show_about: false,
-            show_render: false,
-            show_apost: false,
+            show_molecule: true,
             show_surfaces: false,
+            show_measure: false,
+            show_apost: false,
+            show_appearance: false,
+            show_export: false,
+            show_coordinates: false,
+            show_about: false,
             coordinate_unit: LengthUnit::Angstrom,
             coordinate_format: CoordinateFormat::AtomicNumberTable,
             measurement_style: MeasurementStyle::default(),
@@ -279,6 +277,17 @@ impl App {
         self.toasts.iter().map(|t| t.text.clone()).collect()
     }
 
+    /// Names of the open structures, in list order — for tests.
+    pub fn structure_labels(&self) -> Vec<String> {
+        self.structures.iter().map(|s| s.label.clone()).collect()
+    }
+
+    /// The active structure's surfaces, with whether each is shown — for
+    /// tests.
+    pub fn surface_labels(&self) -> Vec<(String, bool)> {
+        self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.surfaces.iter().map(|x| (x.label.clone(), x.visible)).collect()).unwrap_or_default()
+    }
+
     /// The active structure's selected atoms (0-based, in click order) —
     /// for tests.
     pub fn selected_atoms(&self) -> Vec<usize> {
@@ -321,7 +330,7 @@ impl App {
         self.rebuild_isosurface();
     }
 
-    /// The material to actually render with — identical to the Style
+    /// The material to actually render with — identical to the Appearance
     /// panel's own `material` unless ambient occlusion is on, in which
     /// case it's dampened (reduced reflectance and light intensity, raised
     /// ambient floor). AO reads as a much stronger, more "sculpted" effect
@@ -337,7 +346,7 @@ impl App {
     /// isosurface sitting right next to them once *that* got a properly
     /// defined GGX highlight (2026-08-29 hands-on pass). Shared by the
     /// live view and export so what you see while tuning the AO sliders
-    /// is what you actually get — `self.material` itself (the Style
+    /// is what you actually get — `self.material` itself (the Appearance
     /// panel's own live value) is never touched.
     pub(crate) fn ao_render_material(&self) -> Material {
         if !self.ao_enabled {
@@ -386,6 +395,60 @@ impl App {
         ui.ctx().request_repaint_after(Duration::from_millis(50));
     }
 
+    /// Closes structure `index`. The next one (or the previous, when it was
+    /// the last) becomes active if the closed one was.
+    pub(crate) fn close_structure(&mut self, index: usize) {
+        if index >= self.structures.len() {
+            return;
+        }
+        self.structures.remove(index);
+        match self.active_structure {
+            Some(active) if active == index => {
+                self.active_structure = None;
+                if !self.structures.is_empty() {
+                    self.set_active(index.min(self.structures.len() - 1));
+                }
+            }
+            Some(active) if active > index => self.active_structure = Some(active - 1),
+            _ => {}
+        }
+    }
+
+    /// The bar along the bottom: what is open and selected, how to move
+    /// around, and auto-spin — always in view, so none of it has to be
+    /// looked up in a window.
+    fn show_status_bar(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::bottom("status_bar").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) {
+                    let n = structure.molecule.atomic_numbers.len();
+                    ui.label(RichText::new(&structure.label).strong());
+                    ui.label(RichText::new(format!("{n} atom{}", if n == 1 { "" } else { "s" })).weak());
+                    let selected = structure.selected_atoms.len() + structure.selected_bonds.len();
+                    if selected > 0 {
+                        ui.separator();
+                        let names: Vec<String> =
+                            structure.selected_atoms.iter().map(|&i| format!("{}{}", element_data(structure.molecule.atomic_numbers[i]).symbol, i + 1)).collect();
+                        let mut text = format!("Selected: {}", if names.len() > 6 { format!("{} atoms", names.len()) } else { names.join(", ") });
+                        if !structure.selected_bonds.is_empty() {
+                            text.push_str(&format!(" + {} bond(s)", structure.selected_bonds.len()));
+                        }
+                        ui.label(text);
+                        ui.label(RichText::new("(Esc clears)").weak());
+                    }
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add(egui::DragValue::new(&mut self.auto_spin_speed).range(0.05..=3.0).speed(0.01).max_decimals(2).suffix(" rad/s"))
+                        .on_hover_text("Auto-spin speed");
+                    ui.toggle_value(&mut self.auto_spin, "Spin (Space)")
+                        .on_hover_text("Turn continuously, in the direction of the last arrow key(s) pressed");
+                    ui.separator();
+                    ui.label(RichText::new("Drag: rotate  \u{b7}  Shift+drag: pan  \u{b7}  Scroll/pinch: zoom  \u{b7}  Click: select").small().weak());
+                });
+            });
+        });
+    }
+
     pub(crate) fn show_toolbar(&mut self, ui: &mut egui::Ui) {
         let mut open_request: Option<Option<FileKind>> = None;
         egui::Panel::top("toolbar").show(ui, |ui| {
@@ -405,33 +468,23 @@ impl App {
                     }
                 });
                 ui.separator();
-                if ui.selectable_label(self.show_structures, "Structures").clicked() {
-                    self.show_structures = !self.show_structures;
+                for (open, name) in [
+                    (&mut self.show_molecule, "Molecule"),
+                    (&mut self.show_surfaces, "Surfaces"),
+                    (&mut self.show_measure, "Measure"),
+                    (&mut self.show_apost, "APOST-3D"),
+                    (&mut self.show_appearance, "Appearance"),
+                    (&mut self.show_export, "Export"),
+                ] {
+                    if ui.selectable_label(*open, name).clicked() {
+                        *open = !*open;
+                    }
                 }
-                if ui.selectable_label(self.show_style, "Style").clicked() {
-                    self.show_style = !self.show_style;
-                }
-                if ui.selectable_label(self.show_xyz, "XYZ").clicked() {
-                    self.show_xyz = !self.show_xyz;
-                }
-                if ui.selectable_label(self.show_visualization, "Visualization").clicked() {
-                    self.show_visualization = !self.show_visualization;
-                }
-                if ui.selectable_label(self.show_surfaces, "Surfaces").clicked() {
-                    self.show_surfaces = !self.show_surfaces;
-                }
-                if ui.selectable_label(self.show_analysis, "Analysis").clicked() {
-                    self.show_analysis = !self.show_analysis;
-                }
-                if ui.selectable_label(self.show_apost, "APOST-3D").clicked() {
-                    self.show_apost = !self.show_apost;
-                }
-                if ui.selectable_label(self.show_render, "Render").clicked() {
-                    self.show_render = !self.show_render;
-                }
-                if ui.selectable_label(self.show_about, "About").clicked() {
-                    self.show_about = !self.show_about;
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.selectable_label(self.show_about, "About").clicked() {
+                        self.show_about = !self.show_about;
+                    }
+                });
             });
         });
         if let Some(kind) = open_request {
@@ -524,14 +577,14 @@ impl eframe::App for App {
         self.update_surfaces(&ctx);
 
         self.show_toolbar(ui);
-        self.show_structures_window(&ctx);
-        self.show_style_window(&ctx);
-        self.show_xyz_window(&ctx);
-        self.show_visualization_window(&ctx);
+        self.show_status_bar(ui);
+        self.show_molecule_window(&ctx);
         self.show_surfaces_window(&ctx);
-        self.show_analysis_window(&ctx);
+        self.show_measure_window(&ctx);
         self.show_apost_window(&ctx);
-        self.show_render_window(&ctx);
+        self.show_appearance_window(&ctx);
+        self.show_export_window(&ctx);
+        self.show_coordinates_window(&ctx);
         self.show_about_window(&ctx);
 
         egui::CentralPanel::default()

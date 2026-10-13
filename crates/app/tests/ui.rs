@@ -16,14 +16,14 @@ use common::{app_with, fixtures_dir, repo_dir, scratch_dir, toasts};
 fn starts_with_an_open_menu_and_no_structures() {
     let harness = app_with(Vec::new());
     harness.get_by_label("Open");
-    harness.get_by_label_contains("No structures loaded yet");
+    harness.get_by_label_contains("Nothing open yet");
     assert!(toasts(&harness).is_empty());
 }
 
 #[test]
 fn a_fchk_without_results_opens_quietly() {
     let harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk")]);
-    harness.get_by_label("H2O-631G.fchk");
+    assert_eq!(harness.state().structure_labels(), vec!["H2O-631G.fchk"]);
     assert!(toasts(&harness).is_empty(), "no warning for a .fchk without results: {:?}", toasts(&harness));
 }
 
@@ -55,7 +55,7 @@ fn a_fchk_picks_up_its_results_and_shows_the_run() {
 fn a_stopped_run_shows_its_stop_message() {
     let Some(dir) = fixtures_dir() else { return };
     let harness = app_with(vec![dir.join("H2O-TPSS.apost.json")]);
-    harness.get_by_label("H2O-TPSS.fchk");
+    assert_eq!(harness.state().structure_labels(), vec!["H2O-TPSS.fchk"]);
     harness.get_by_label("APOST-3D stopped before the end of this run");
     harness.get_by_label("META-GGA FUNCTIONALS NOT YET SUPPORTED");
 }
@@ -70,7 +70,7 @@ fn results_without_their_fchk_show_the_stored_geometry_with_a_warning() {
     assert!(toasts(&harness).iter().any(|m| m.starts_with("No .fchk found for H2O-Dimer-RHF.apost.json")), "{:?}", toasts(&harness));
     harness.get_by_label("No .fchk found next to the results file");
     // The structure is listed under the results file's name.
-    assert_eq!(harness.query_all_by_label("H2O-Dimer-RHF.apost.json").count(), 2);
+    assert_eq!(harness.state().structure_labels(), vec!["H2O-Dimer-RHF.apost.json"]);
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn opening_results_for_an_open_fchk_attaches_to_it() {
     // Opened together: the .fchk first (it finds its results itself), then
     // the results file, which must not open the .fchk a second time.
     let harness = app_with(vec![dir.join("CH3F.fchk"), dir.join("CH3F.apost.json")]);
-    assert_eq!(harness.query_all_by_label("CH3F.fchk").count(), 1);
+    assert_eq!(harness.state().structure_labels(), vec!["CH3F.fchk"]);
     harness.get_by_label("CH3F.apost.json");
 }
 
@@ -145,10 +145,12 @@ fn cubes_of_one_molecule_become_surfaces_of_one_structure() {
     harness.get_by_label("Surfaces").click();
     harness.run_steps(3);
     harness.get_by_label("Surfaces (2)");
-    // One structure, named after the first cube, which is the one shown:
-    // in the Structures list, the surface list, and as the edited surface.
-    assert_eq!(harness.query_all_by_label("H2O-ccpVDZ-HOMO.cube").count(), 3);
-    harness.get_by_label("H2O-ccpVDZ-LUMO.cube");
+    // One structure, named after the first cube, which is the one shown.
+    assert_eq!(harness.state().structure_labels(), vec!["H2O-ccpVDZ-HOMO.cube"]);
+    assert_eq!(
+        harness.state().surface_labels(),
+        vec![("H2O-ccpVDZ-HOMO.cube".to_string(), true), ("H2O-ccpVDZ-LUMO.cube".to_string(), false)]
+    );
 }
 
 #[test]
@@ -157,9 +159,8 @@ fn cubes_attach_to_the_fchk_they_belong_to() {
     harness.get_by_label("Surfaces").click();
     harness.run_steps(3);
     harness.get_by_label("Surfaces (1)");
-    // In the surface list, and as the edited surface.
-    assert_eq!(harness.query_all_by_label("H2O-ccpVDZ-HOMO.cube").count(), 2);
-    assert_eq!(harness.query_all_by_label("H2O-ccpVDZ.fchk").count(), 1);
+    assert_eq!(harness.state().structure_labels(), vec!["H2O-ccpVDZ.fchk"]);
+    assert_eq!(harness.state().surface_labels(), vec![("H2O-ccpVDZ-HOMO.cube".to_string(), true)]);
 }
 
 #[test]
@@ -172,9 +173,35 @@ fn generated_orbitals_are_surfaces_of_the_same_structure() {
     harness.get_by_label("Generate 2 orbital(s)").click();
     harness.run_steps(3);
     harness.get_by_label("Surfaces (2)");
-    // The first is shown alone and edited (its name twice), the other listed.
-    assert_eq!(harness.query_all_by_label("HOMO").count(), 2);
-    assert_eq!(harness.query_all_by_label("LUMO").count(), 1);
-    assert_eq!(harness.query_all_by_label("H2O-631G.fchk").count(), 1, "no new structures");
+    // Surfaces of the same structure, the first shown alone.
+    assert_eq!(harness.state().structure_labels(), vec!["H2O-631G.fchk"]);
+    assert_eq!(harness.state().surface_labels(), vec![("HOMO".to_string(), true), ("LUMO".to_string(), false)]);
     assert!(toasts(&harness).iter().any(|m| m == "2 orbitals generated"));
+}
+
+#[test]
+fn structures_can_be_closed() {
+    let mut harness = app_with(vec![testdata("H2O-631G.fchk"), testdata("H2O-ccpVDZ.fchk")]);
+    harness.get_all_by_label("\u{d7}").next().unwrap().click();
+    harness.run_steps(2);
+    assert_eq!(harness.state().structure_labels(), vec!["H2O-ccpVDZ.fchk"]);
+    harness.get_by_label("\u{d7}").click();
+    harness.run_steps(2);
+    assert!(harness.state().structure_labels().is_empty());
+    harness.get_by_label_contains("Nothing open yet");
+}
+
+/// A selection made anywhere (here: a fragment in the APOST-3D window) is
+/// acted on from the Molecule window, which sends a measurement to the
+/// Measure window.
+#[test]
+fn a_selection_can_be_measured_from_the_molecule_window() {
+    let Some(dir) = fixtures_dir() else { return };
+    let mut harness = app_with(vec![dir.join("CH3F.fchk")]);
+    harness.get_by_label("2  CH3   C1, H3, H4, H5").click();
+    harness.run_steps(2);
+    harness.get_by_label("Selected: C1, H3, H4, H5");
+    harness.get_by_label("Add measurement").click();
+    harness.run_steps(3);
+    harness.get_by_label_contains("C1-H3-H4-H5: ");
 }

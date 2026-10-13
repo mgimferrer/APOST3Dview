@@ -170,7 +170,7 @@ pub fn build_bond_highlight_instances(molecule: &Molecule, selected_bonds: &[usi
     instances
 }
 
-/// Analysis-panel measurement lines (distance/angle/dihedral) — thin
+/// Measure-window lines (distance/angle/dihedral) — thin
 /// dashed segments in a user-chosen color, drawn via the same cylinder
 /// pipeline as everything else (dashing/thinning is already tied to the
 /// `dashed` flag there). Not molecular bonds, so not stored on

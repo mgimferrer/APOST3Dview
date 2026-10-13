@@ -1055,7 +1055,7 @@ impl ViewportResources {
         self.bond_highlight_instances = Some((bond_buffer, bond_data.len() as u32));
     }
 
-    /// Rebuilds the Analysis-panel measurement-line buffer. `segments` are
+    /// Rebuilds the Measure-window line buffer. `segments` are
     /// atom-index pairs (see `MeasurementKind::segments`), flattened across
     /// every committed measurement by the caller.
     pub fn update_measurements(&mut self, device: &wgpu::Device, molecule: &Molecule, segments: &[(usize, usize)], color: [f32; 3]) {
@@ -1152,7 +1152,7 @@ impl ViewportResources {
             }
         }
 
-        // Analysis-panel measurement lines — opaque and depth-tested like
+        // Measure-window lines — opaque and depth-tested like
         // real bonds (via the same pipeline, reusing its dashed-thin-line
         // path), so they correctly interleave with the molecule.
         if let Some((buffer, count)) = &self.measurement_instances {

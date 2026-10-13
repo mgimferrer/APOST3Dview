@@ -19,7 +19,7 @@ pub(crate) struct Measurement {
 }
 
 /// Shared across every measurement/structure — tune once, applies
-/// everywhere, same reasoning as Style/Material.
+/// everywhere, same reasoning as the Appearance settings.
 pub(crate) struct MeasurementStyle {
     pub(crate) font_size: f32,
     pub(crate) decimal_places: usize,
@@ -43,7 +43,7 @@ impl Default for MeasurementStyle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AtomLabelMode {
     None,
-    /// 1-based index, matching the XYZ window's atom numbering.
+    /// 1-based index, matching the Coordinates window's atom numbering.
     Number,
     /// Element symbol only — H, C, Bi, ...
     Type,
@@ -72,7 +72,7 @@ impl Default for AtomLabelStyle {
 }
 
 /// One opened structure — its own geometry and its own hide/selection/
-/// bond-style state. Deliberately does NOT own a Style/Material — that
+/// bond-style state. Deliberately does NOT own the Appearance settings (material, AO, ...) — that
 /// stays a single value shared across every structure, so tuning it once
 /// applies everywhere instead of needing to be redone per file.
 pub(crate) struct LoadedStructure {

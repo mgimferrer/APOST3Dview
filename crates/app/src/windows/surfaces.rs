@@ -23,7 +23,7 @@ impl App {
         let mut open = self.show_surfaces;
         egui::Window::new("Surfaces")
             .open(&mut open)
-            .default_pos([16.0, 380.0])
+            .default_pos([16.0, 330.0])
             .default_width(300.0)
             .show(ctx, |ui| {
                 let Some(active) = self.active_structure else {
@@ -90,7 +90,7 @@ impl App {
             }
         });
 
-        let list_height = if is_unrestricted { 120.0 } else { 160.0 };
+        let list_height = if is_unrestricted { 90.0 } else { 120.0 };
         // Destructuring through the `&mut LoadedStructure`
         // borrows `wavefunction`/`selected_alpha_mos`/
         // `selected_beta_mos` as separate, disjoint fields —

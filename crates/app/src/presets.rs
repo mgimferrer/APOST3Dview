@@ -1,4 +1,4 @@
-//! Saved Custom style presets (Style window).
+//! Saved looks of your own (Appearance window).
 
 use std::path::PathBuf;
 

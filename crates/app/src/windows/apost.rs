@@ -251,7 +251,7 @@ impl App {
         let mut fragment_action = None;
         egui::Window::new("APOST-3D")
             .open(&mut open)
-            .default_pos([ctx.content_rect().right() - 400.0, 60.0])
+            .default_pos([ctx.content_rect().right() - 410.0, 50.0])
             .default_width(360.0)
             .show(ctx, |ui| {
                 let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else {

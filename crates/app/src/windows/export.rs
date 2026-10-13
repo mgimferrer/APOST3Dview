@@ -1,14 +1,14 @@
-//! Render window (PNG/GIF export).
+//! Export window: the current view as a PNG image or a turning GIF.
 
 use crate::app::App;
 use crate::export::{FIGURE_WIDTH_DOUBLE_COLUMN_IN, FIGURE_WIDTH_SINGLE_COLUMN_IN, RenderPreset};
 
 impl App {
-    pub(crate) fn show_render_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_render;
-        egui::Window::new("Render")
+    pub(crate) fn show_export_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_export;
+        egui::Window::new("Export")
             .open(&mut open)
-            .default_pos([320.0, 460.0])
+            .default_pos([650.0, 50.0])
             .default_width(280.0)
             .show(ctx, |ui| {
                 if self.active_structure.is_none() {
@@ -66,7 +66,7 @@ impl App {
                 ui.checkbox(&mut self.render_export.transparent_background, "Transparent background");
                 if self.ao_enabled {
                     ui.label(
-                        egui::RichText::new("Ambient occlusion is on (Style window) — this export uses far more samples than the live preview.")
+                        egui::RichText::new("Ambient occlusion is on (Appearance window): this export uses far more samples than the live view.")
                             .small()
                             .weak(),
                     );
@@ -100,7 +100,7 @@ impl App {
                 let gif_settings = self.gif_export_settings();
                 ui.label(
                     egui::RichText::new(format!(
-                        "One full turn from the current view, {} frames, {} x {} px, looping seamlessly. Turns in the auto-spin direction (the last arrow key(s) pressed), around the center of the view, so leave some margin around the molecule. Uses the Style background color.",
+                        "One full turn from the current view, {} frames, {} x {} px, looping seamlessly. Turns in the auto-spin direction (the last arrow key(s) pressed), around the center of the view, so leave some margin around the molecule. Uses the Appearance background color.",
                         self.gif_frame_count(),
                         gif_settings.width,
                         gif_settings.height
@@ -113,6 +113,6 @@ impl App {
                     self.export_render_gif();
                 }
             });
-        self.show_render = open;
+        self.show_export = open;
     }
 }

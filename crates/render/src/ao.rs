@@ -45,7 +45,7 @@ pub struct AoUniforms {
 
 /// Tunables — kept separate from `AoUniforms` (the raw GPU layout) so call
 /// sites don't need to know about padding/the kernel. Live-adjustable via
-/// Style window sliders; shared by the live view and export so what you
+/// Appearance window sliders; shared by the live view and export so what you
 /// tune is what you get in the exported PNG too. `PartialEq` is used by
 /// the live view's settle-quality logic (see `App`) — dragging a slider
 /// has to be able to trigger a recompute the exact same way moving the
