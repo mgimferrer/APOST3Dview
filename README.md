@@ -30,6 +30,7 @@ What's already here, usable today:
 - **Physically-based rendering**: Cook-Torrance/GGX lighting, screen-space ambient occlusion, depth of field, and linear-light tone mapping, with Default and Publication (figure-ready, orientation-independent lighting) style presets, plus your own saved Custom looks.
 - **Measurements**: distance, angle, and dihedral from a normal atom selection, with draggable, fully customizable labels.
 - **Export**: publication PNGs at a chosen DPI and figure size, and looping animated GIFs of the rotating molecule for presentations.
+- **Sessions**: save everything you set up (files, hidden atoms, bonds, measurements, surfaces and how they're drawn, the camera, the look) as a small `.a3dview` file, and reopen it later to get exactly the same picture. By default a session is also saved next to every exported image, so each figure keeps the setup that made it.
 
 ## Installation
 
@@ -95,7 +96,8 @@ The binary is then at `target/release/apost3dview` (`.exe` on Windows). For acti
 5. **Measure** lists distances, angles and dihedrals (select 2, 3 or 4 atoms, then Add).
 6. **APOST-3D** shows the results of an APOST-3D run (see [What it does](#what-it-does)).
 7. **Appearance** sets the look of the scene: Default or Publication, the background, ambient occlusion and depth of field; the fine-tuning sliders are under Advanced. Once you like a look, save it under a name: it's written as a plain TOML file under `presets/` at the root of this repository (not tracked by git), easy to find, back up, or hand to someone else, and appears as its own button next to Default and Publication.
-8. **Export** saves the current view as a PNG at a given DPI and physical figure size (or a custom resolution), or a looping animated GIF of one full turn of the molecule, with your choice of width, duration and frame rate. The GIF works directly in PowerPoint, Keynote and Google Slides.
+8. **Export** saves the current view as a PNG at a given DPI and physical figure size (or a custom resolution), or a looping animated GIF of one full turn of the molecule, with your choice of width, duration and frame rate. The GIF works directly in PowerPoint, Keynote and Google Slides. With "Also save the session" ticked (the default), `figure.a3dview` is written next to `figure.png`.
+9. **Save** (Cmd+S, or Ctrl+S) saves the whole setup as a session (`.a3dview`). Open it again like any other file. A session points to your files rather than copying them, with paths relative to the session, so keep it in the same folder as the files (moving the whole folder is fine). Orbitals generated in the app are recalculated when the session opens. If a file is missing, or has changed since the session was saved, APOST3Dview opens the rest and tells you what it couldn't restore.
 
 `TESTS-VISUALIZER/` in this repository has real committed `.fchk`/`.cube`/`.molden` test files (H2O and BiCl3 at several basis sets, an open-shell triplet, and a real APOST-3D bismuth complex), good for opening something right away.
 
