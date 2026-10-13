@@ -60,3 +60,37 @@ fn fragment_colors_switch_off_and_back_on() {
     assert!(differing(&colored, &element_colors) > 10_000);
     assert_eq!(differing(&colored, &colored_again), 0);
 }
+
+/// Surface settings take effect without an "Update" click, and switching
+/// between surfaces shows each alone.
+#[test]
+fn surfaces_update_by_themselves() {
+    use egui_kittest::kittest::Queryable;
+    let path = |name: &str| repo_dir().join("TESTS-VISUALIZER").join(name);
+    let mut harness = app_with(vec![path("H2O-ccpVDZ-HOMO.cube"), path("H2O-ccpVDZ-LUMO.cube")]);
+    harness.get_by_label("Surfaces").click();
+    harness.remove_cursor();
+    harness.run_steps(4);
+    let homo = screenshot(&mut harness, "surface-homo");
+
+    harness.get_by_label("Both signs (+/-)").click();
+    harness.remove_cursor();
+    harness.run_steps(4);
+    let one_sign = screenshot(&mut harness, "surface-homo-one-sign");
+
+    harness.get_by_label("Both signs (+/-)").click();
+    harness.get_by_label("2x").click();
+    harness.remove_cursor();
+    harness.run_steps(4);
+    let refined = screenshot(&mut harness, "surface-homo-refined");
+
+    harness.get_by_label("H2O-ccpVDZ-LUMO.cube").click();
+    harness.remove_cursor();
+    harness.run_steps(4);
+    let lumo = screenshot(&mut harness, "surface-lumo");
+
+    let differing = |a: &image::RgbaImage, b: &image::RgbaImage| a.pixels().zip(b.pixels()).filter(|(p, q)| p != q).count();
+    assert!(differing(&homo, &one_sign) > 5_000, "turning off the negative lobe changes the picture");
+    assert!(differing(&homo, &refined) > 500, "2x refinement re-extracts");
+    assert!(differing(&refined, &lumo) > 5_000, "clicking another surface shows it instead");
+}

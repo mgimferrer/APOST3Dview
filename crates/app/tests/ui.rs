@@ -134,3 +134,47 @@ fn a_run_without_fragments_says_so() {
     harness.get_by_label("Fragments (0)");
     harness.get_by_label("This run defines no fragments.");
 }
+
+fn testdata(name: &str) -> std::path::PathBuf {
+    repo_dir().join("TESTS-VISUALIZER").join(name)
+}
+
+#[test]
+fn cubes_of_one_molecule_become_surfaces_of_one_structure() {
+    let mut harness = app_with(vec![testdata("H2O-ccpVDZ-HOMO.cube"), testdata("H2O-ccpVDZ-LUMO.cube")]);
+    harness.get_by_label("Surfaces").click();
+    harness.run_steps(3);
+    harness.get_by_label("Surfaces (2)");
+    // One structure, named after the first cube, which is the one shown:
+    // in the Structures list, the surface list, and as the edited surface.
+    assert_eq!(harness.query_all_by_label("H2O-ccpVDZ-HOMO.cube").count(), 3);
+    harness.get_by_label("H2O-ccpVDZ-LUMO.cube");
+}
+
+#[test]
+fn cubes_attach_to_the_fchk_they_belong_to() {
+    let mut harness = app_with(vec![testdata("H2O-ccpVDZ.fchk"), testdata("H2O-ccpVDZ-HOMO.cube")]);
+    harness.get_by_label("Surfaces").click();
+    harness.run_steps(3);
+    harness.get_by_label("Surfaces (1)");
+    // In the surface list, and as the edited surface.
+    assert_eq!(harness.query_all_by_label("H2O-ccpVDZ-HOMO.cube").count(), 2);
+    assert_eq!(harness.query_all_by_label("H2O-ccpVDZ.fchk").count(), 1);
+}
+
+#[test]
+fn generated_orbitals_are_surfaces_of_the_same_structure() {
+    let mut harness = app_with(vec![testdata("H2O-631G.fchk")]);
+    harness.get_by_label("Surfaces").click();
+    harness.run_steps(2);
+    harness.get_by_label("HOMO/LUMO").click();
+    harness.run_steps(2);
+    harness.get_by_label("Generate 2 orbital(s)").click();
+    harness.run_steps(3);
+    harness.get_by_label("Surfaces (2)");
+    // The first is shown alone and edited (its name twice), the other listed.
+    assert_eq!(harness.query_all_by_label("HOMO").count(), 2);
+    assert_eq!(harness.query_all_by_label("LUMO").count(), 1);
+    assert_eq!(harness.query_all_by_label("H2O-631G.fchk").count(), 1, "no new structures");
+    assert!(toasts(&harness).iter().any(|m| m == "2 orbitals generated"));
+}

@@ -80,7 +80,6 @@ impl App {
                 return;
             }
         };
-        self.reset_active_isosurface_to_default();
         self.material = preset.material;
         self.ao_settings = preset.ao_settings;
         self.dof_settings = preset.dof_settings;

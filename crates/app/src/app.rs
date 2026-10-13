@@ -11,7 +11,7 @@ use glam::Vec2;
 
 use crate::export::RenderExportState;
 use crate::files::FileKind;
-use crate::isosurfaces::KeptIsosurface;
+use crate::isosurfaces::SurfaceSettings;
 use crate::orbitals::OrbitalGenerationState;
 use crate::presets::list_style_presets;
 use crate::state::{AtomLabelMode, AtomLabelStyle, LoadedStructure, MeasurementStyle};
@@ -96,6 +96,7 @@ pub struct App {
     pub(crate) show_about: bool,
     pub(crate) show_render: bool,
     pub(crate) show_apost: bool,
+    pub(crate) show_surfaces: bool,
 
     pub(crate) coordinate_unit: LengthUnit,
     pub(crate) coordinate_format: CoordinateFormat,
@@ -143,13 +144,10 @@ pub struct App {
     /// both are on — see `ViewportResources::run_live_dof_pass`).
     pub(crate) dof_enabled: bool,
     pub(crate) dof_settings: DofSettings,
-    /// Snapshots taken by the Isosurfaces "Keep surface" button — frozen
-    /// geometry *and* color/opacity as they were at that moment, rendered
-    /// every frame regardless of which structure is currently active, so
-    /// several `.cube` files sharing one geometry (the common case:
-    /// several orbitals of one molecule) can be composed into one image.
-    /// "Clean" empties this back out.
-    pub(crate) kept_isosurfaces: Vec<KeptIsosurface>,
+    /// How newly opened or generated surfaces are drawn: the settings of
+    /// the surface last edited, so a batch of orbitals comes out like the
+    /// one just tuned.
+    pub(crate) surface_defaults: SurfaceSettings,
 
     /// Names of every saved Custom style preset on disk (see
     /// `presets_dir`), cached so the Style window doesn't re-read the
@@ -200,6 +198,7 @@ impl App {
             show_about: false,
             show_render: false,
             show_apost: false,
+            show_surfaces: false,
             coordinate_unit: LengthUnit::Angstrom,
             coordinate_format: CoordinateFormat::AtomicNumberTable,
             measurement_style: MeasurementStyle::default(),
@@ -216,7 +215,7 @@ impl App {
             ao_settled: false,
             dof_enabled: true,
             dof_settings: DofSettings::default(),
-            kept_isosurfaces: Vec::new(),
+            surface_defaults: SurfaceSettings::default(),
             style_presets: list_style_presets(),
             new_preset_name: String::new(),
             toasts: Vec::new(),
@@ -299,12 +298,10 @@ impl App {
     /// (this is the main reason .xyz support exists: comparing unrelated
     /// structures side by side) — *unless* the structure being switched
     /// away from and the one being switched to share the same geometry
-    /// (the common case for `.cube` files: several orbitals of one
-    /// molecule), in which case reframing on every switch would be an
-    /// annoying reset of a view you just set up. If the newly active
-    /// structure is a `.cube` one that's never had its isosurface
-    /// extracted yet, that happens now too — a one-time cost, not
-    /// something that repeats on every subsequent switch back to it.
+    /// (the same molecule opened from two files), in which case reframing
+    /// on every switch would be an annoying reset of a view you just set
+    /// up. Surfaces not extracted yet are extracted on the next frame (see
+    /// `update_surfaces`).
     pub(crate) fn set_active(&mut self, index: usize) {
         let should_reframe = match (self.active_structure.and_then(|p| self.structures.get(p)), self.structures.get(index)) {
             (Some(previous), Some(next)) => !molecules_share_geometry(&previous.molecule, &next.molecule),
@@ -321,13 +318,7 @@ impl App {
         self.rebuild_geometry();
         self.rebuild_highlights();
         self.rebuild_measurements();
-
-        let needs_initial_extraction = self.structures.get(index).and_then(|s| s.isosurface.as_ref()).is_some_and(|iso| !iso.extracted);
-        if needs_initial_extraction {
-            self.extract_active_isosurface();
-        } else {
-            self.rebuild_isosurface();
-        }
+        self.rebuild_isosurface();
     }
 
     /// The material to actually render with — identical to the Style
@@ -425,6 +416,9 @@ impl App {
                 }
                 if ui.selectable_label(self.show_visualization, "Visualization").clicked() {
                     self.show_visualization = !self.show_visualization;
+                }
+                if ui.selectable_label(self.show_surfaces, "Surfaces").clicked() {
+                    self.show_surfaces = !self.show_surfaces;
                 }
                 if ui.selectable_label(self.show_analysis, "Analysis").clicked() {
                     self.show_analysis = !self.show_analysis;
@@ -527,12 +521,14 @@ impl eframe::App for App {
             self.open_dialog(None);
         }
         self.handle_dropped_files(&ctx);
+        self.update_surfaces(&ctx);
 
         self.show_toolbar(ui);
         self.show_structures_window(&ctx);
         self.show_style_window(&ctx);
         self.show_xyz_window(&ctx);
         self.show_visualization_window(&ctx);
+        self.show_surfaces_window(&ctx);
         self.show_analysis_window(&ctx);
         self.show_apost_window(&ctx);
         self.show_render_window(&ctx);

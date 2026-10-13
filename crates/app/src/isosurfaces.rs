@@ -1,42 +1,14 @@
-//! Isosurface state, extraction and composition.
+//! Isosurfaces as layers of a structure: every `.cube` opened for a
+//! molecule and every orbital generated from its wavefunction is one
+//! `Surface` in that structure's list, shown or hidden on its own, so
+//! several are composed into one picture just by showing them together.
 
-use apost3dview_core::{extract_isosurface, refine_grid};
-use apost3dview_render::{push_isosurface_vertices, IsosurfaceMaterial, IsosurfaceVertex, ViewportResources};
+use apost3dview_core::{extract_isosurface, refine_grid, IsosurfaceMesh, ScalarGrid};
+use apost3dview_render::{push_isosurface_vertices, IsosurfaceVertex, ViewportResources};
 use egui::Color32;
 
 use crate::app::App;
 use crate::util::color32_to_rgb;
-
-/// Per-structure isosurface state — only present for structures opened
-/// from a `.cube` file. Isovalue/refinement/both-signs changes don't
-/// re-extract automatically (marching tetrahedra over a refined grid is a
-/// real cost, seconds in a debug build) — only an explicit "Update
-/// surface" click (or the one-time automatic extraction the first time a
-/// cube structure becomes active) does, tracked via `extracted`.
-pub(crate) struct IsosurfaceState {
-    pub(crate) grid: apost3dview_core::ScalarGrid,
-    pub(crate) show: bool,
-    pub(crate) isovalue: f32,
-    /// 1x/2x/3x — see `apost3dview_core::refine_grid`.
-    pub(crate) refinement: usize,
-    pub(crate) both_signs: bool,
-    pub(crate) positive_color: Color32,
-    pub(crate) negative_color: Color32,
-    /// Always applied directly — no separate "Transparent" toggle (there
-    /// used to be one, gating a fully-opaque override that was also the
-    /// default, which made the toggle+slider pair pure redundant
-    /// complexity: 1.0 here already means the same "fully opaque" thing).
-    /// Defaults fully opaque — Martí's explicit preference after trying
-    /// the translucent look live (2026-08-29): with two competing lobes
-    /// this size, one at less than 1.0 doesn't read as an appealing
-    /// translucent field so much as a washed-out, lower-contrast version
-    /// of the opaque look. Free to lower for anyone who does want to see
-    /// through it.
-    pub(crate) opacity: f32,
-    pub(crate) cached_positive: Option<apost3dview_core::IsosurfaceMesh>,
-    pub(crate) cached_negative: Option<apost3dview_core::IsosurfaceMesh>,
-    pub(crate) extracted: bool,
-}
 
 /// Isovalue is a fixed constant rather than derived from each grid's own
 /// data (an earlier approach: 25% of the grid's max |value|) — Martí's
@@ -45,73 +17,165 @@ pub(crate) struct IsosurfaceState {
 pub(crate) const DEFAULT_ISOSURFACE_ISOVALUE: f32 = 0.075;
 /// Fully opaque by default — tried translucent (0.5, then 0.75) first,
 /// but a real hands-on check (2026-08-29) came back preferring solid
-/// lobes; the opacity slider (Visualization panel) is still there for
-/// anyone who wants to see through them.
+/// lobes; the opacity slider is still there for anyone who wants to see
+/// through them.
 pub(crate) const DEFAULT_ISOSURFACE_OPACITY: f32 = 1.0;
 
-impl IsosurfaceState {
-    pub(crate) fn new(grid: apost3dview_core::ScalarGrid) -> Self {
+/// How a surface is drawn: everything about it except its data.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) struct SurfaceSettings {
+    pub(crate) isovalue: f32,
+    /// 1x/2x/3x — see `apost3dview_core::refine_grid`.
+    pub(crate) refinement: usize,
+    /// Show the negative lobe (at -isovalue) too.
+    pub(crate) both_signs: bool,
+    pub(crate) positive_color: Color32,
+    pub(crate) negative_color: Color32,
+    /// 1.0 = opaque (the default), lower = translucent.
+    pub(crate) opacity: f32,
+}
+
+impl Default for SurfaceSettings {
+    fn default() -> Self {
         Self {
-            grid,
-            show: true,
             isovalue: DEFAULT_ISOSURFACE_ISOVALUE,
             refinement: 1,
             both_signs: true,
             positive_color: Color32::from_rgb(60, 90, 230),
             negative_color: Color32::from_rgb(220, 70, 60),
             opacity: DEFAULT_ISOSURFACE_OPACITY,
-            cached_positive: None,
-            cached_negative: None,
-            extracted: false,
         }
-    }
-
-    /// Resets every tunable appearance setting back to the defaults —
-    /// the Isosurfaces panel's "Default" button, mirroring Style's. Only
-    /// touches settings, not the grid or any already-extracted mesh (the
-    /// caller re-extracts afterward so the shown surface matches the
-    /// isovalue that just reset).
-    pub(crate) fn reset_to_default(&mut self) {
-        self.show = true;
-        self.isovalue = DEFAULT_ISOSURFACE_ISOVALUE;
-        self.refinement = 1;
-        self.both_signs = true;
-        self.positive_color = Color32::from_rgb(60, 90, 230);
-        self.negative_color = Color32::from_rgb(220, 70, 60);
-        self.opacity = DEFAULT_ISOSURFACE_OPACITY;
     }
 }
 
-/// A frozen isosurface snapshot taken by "Keep surface" — see
-/// `App::kept_isosurfaces`.
-pub(crate) struct KeptIsosurface {
-    pub(crate) vertices: Vec<IsosurfaceVertex>,
+/// The settings that change the extracted mesh itself (the others only
+/// change how an existing mesh is colored).
+#[derive(Clone, Copy, PartialEq)]
+struct ExtractionKey {
+    isovalue: f32,
+    refinement: usize,
+    both_signs: bool,
+}
+
+pub(crate) struct Surface {
+    /// "H2O-HOMO.cube", "HOMO", "MO 12 (beta)", ...
+    pub(crate) label: String,
+    pub(crate) grid: ScalarGrid,
+    pub(crate) visible: bool,
+    pub(crate) settings: SurfaceSettings,
+    positive: Option<IsosurfaceMesh>,
+    negative: Option<IsosurfaceMesh>,
+    /// What `positive`/`negative` were extracted with; `None` before the
+    /// first extraction.
+    extracted_with: Option<ExtractionKey>,
+}
+
+impl Surface {
+    pub(crate) fn new(label: String, grid: ScalarGrid, settings: SurfaceSettings) -> Self {
+        Self { label, grid, visible: false, settings, positive: None, negative: None, extracted_with: None }
+    }
+
+    fn extraction_key(&self) -> ExtractionKey {
+        ExtractionKey { isovalue: self.settings.isovalue, refinement: self.settings.refinement, both_signs: self.settings.both_signs }
+    }
+
+    /// Shown, but its mesh doesn't match its current settings yet.
+    fn needs_extraction(&self) -> bool {
+        self.visible && self.extracted_with != Some(self.extraction_key())
+    }
+
+    /// Re-runs Surface Nets at the current isovalue/refinement/both-signs.
+    /// The real cost here (tens of ms in a release build, more on a
+    /// refined grid), so it only runs for visible surfaces whose settings
+    /// changed — see `App::update_surfaces`.
+    fn extract(&mut self) {
+        let key = self.extraction_key();
+        let refined;
+        let grid = if key.refinement > 1 {
+            refined = refine_grid(&self.grid, key.refinement);
+            &refined
+        } else {
+            &self.grid
+        };
+        self.positive = Some(extract_isosurface(grid, key.isovalue));
+        self.negative = key.both_signs.then(|| extract_isosurface(&grid.negated(), key.isovalue));
+        self.extracted_with = Some(key);
+    }
+
+    fn push_vertices(&self, vertices: &mut Vec<IsosurfaceVertex>) {
+        let s = &self.settings;
+        if let Some(mesh) = &self.positive {
+            push_isosurface_vertices(vertices, mesh, color32_to_rgb(s.positive_color), s.opacity);
+        }
+        if s.both_signs {
+            if let Some(mesh) = &self.negative {
+                push_isosurface_vertices(vertices, mesh, color32_to_rgb(s.negative_color), s.opacity);
+            }
+        }
+    }
 }
 
 impl App {
-    /// Combines the active structure's live isosurface (if it has one,
-    /// shown, and already extracted) with every "kept" snapshot into one
-    /// vertex buffer and uploads it — cheap (just concatenating already-
-    /// computed vertex data), safe to call every time anything isosurface-
-    /// related changes, unlike the actual extraction.
+    /// Adds surfaces to a structure and, when `show` is set, shows the
+    /// first of them alone — what opening a `.cube` or generating orbitals
+    /// leads to (several cubes opened at once show the first). A surface
+    /// with the same label as an existing one replaces it (generating an
+    /// orbital again at another accuracy updates it), keeping how it is
+    /// drawn.
+    pub(crate) fn add_surfaces(&mut self, structure_index: usize, new_surfaces: Vec<Surface>, show: bool) {
+        let Some(structure) = self.structures.get_mut(structure_index) else { return };
+        let mut first = None;
+        for mut surface in new_surfaces {
+            let index = match structure.surfaces.iter().position(|s| s.label == surface.label) {
+                Some(index) => {
+                    surface.settings = structure.surfaces[index].settings;
+                    structure.surfaces[index] = surface;
+                    index
+                }
+                None => {
+                    structure.surfaces.push(surface);
+                    structure.surfaces.len() - 1
+                }
+            };
+            first.get_or_insert(index);
+        }
+        if let Some(index) = first.filter(|_| show) {
+            structure.show_surface_alone(index);
+        }
+        if self.active_structure == Some(structure_index) {
+            self.rebuild_isosurface();
+        }
+    }
+
+    /// Extracts every shown surface of the active structure whose settings
+    /// changed, then re-uploads. Called once per frame, so a change shows
+    /// up by itself, without an "Update" button; while a value is being
+    /// dragged (the isovalue field, a slider) extraction waits for the
+    /// release, so it runs once per edit rather than on every frame of it.
+    pub(crate) fn update_surfaces(&mut self, ctx: &egui::Context) {
+        if ctx.dragged_id().is_some() {
+            return;
+        }
+        let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
+        let mut changed = false;
+        for surface in structure.surfaces.iter_mut().filter(|s| s.needs_extraction()) {
+            surface.extract();
+            changed = true;
+        }
+        if changed {
+            self.rebuild_isosurface();
+        }
+    }
+
+    /// Combines the active structure's shown, already-extracted surfaces
+    /// into one vertex buffer and uploads it — cheap (concatenating
+    /// computed vertex data), safe to call whenever anything about how the
+    /// surfaces look changes, unlike the extraction itself.
     pub(crate) fn rebuild_isosurface(&self) {
         let mut vertices: Vec<IsosurfaceVertex> = Vec::new();
-        for kept in &self.kept_isosurfaces {
-            vertices.extend_from_slice(&kept.vertices);
-        }
-        if let Some(active) = self.active_structure {
-            if let Some(iso) = self.structures.get(active).and_then(|s| s.isosurface.as_ref()) {
-                if iso.show {
-                    let opacity = iso.opacity;
-                    if let Some(mesh) = &iso.cached_positive {
-                        push_isosurface_vertices(&mut vertices, mesh, color32_to_rgb(iso.positive_color), opacity);
-                    }
-                    if iso.both_signs {
-                        if let Some(mesh) = &iso.cached_negative {
-                            push_isosurface_vertices(&mut vertices, mesh, color32_to_rgb(iso.negative_color), opacity);
-                        }
-                    }
-                }
+        if let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) {
+            for surface in structure.surfaces.iter().filter(|s| s.visible) {
+                surface.push_vertices(&mut vertices);
             }
         }
         let mut renderer = self.render_state.renderer.write();
@@ -119,97 +183,5 @@ impl App {
             resources.update_isosurface(&self.render_state.device, &vertices);
             resources.update_isosurface_material(&self.render_state.queue, &self.ao_render_isosurface_material());
         }
-    }
-
-    /// Re-runs marching tetrahedra for the active structure's isosurface
-    /// at its current isovalue/refinement/both-signs settings — the real
-    /// cost (a refined grid can take seconds in a debug build), so this
-    /// only runs on an explicit "Update surface" click or the one-time
-    /// automatic extraction the first time a `.cube` structure becomes
-    /// active (see `set_active`), never continuously while adjusting a
-    /// slider.
-    pub(crate) fn extract_active_isosurface(&mut self) {
-        let Some(active) = self.active_structure else { return };
-        let Some(structure) = self.structures.get_mut(active) else { return };
-        let Some(iso) = &mut structure.isosurface else { return };
-
-        let isovalue = iso.isovalue;
-        let refinement = iso.refinement;
-        let both_signs = iso.both_signs;
-
-        let refined_grid;
-        let grid_ref = if refinement > 1 {
-            refined_grid = refine_grid(&iso.grid, refinement);
-            &refined_grid
-        } else {
-            &iso.grid
-        };
-
-        let positive = extract_isosurface(grid_ref, isovalue);
-        let negative = if both_signs { Some(extract_isosurface(&grid_ref.negated(), isovalue)) } else { None };
-
-        iso.cached_positive = Some(positive);
-        iso.cached_negative = negative;
-        iso.extracted = true;
-
-        self.rebuild_isosurface();
-    }
-
-    /// Resets the active structure's isosurface settings (isovalue,
-    /// refinement, colors, opacity, ...) *and* the shared isosurface
-    /// material (ambient/diffuse/specular/shininess) back to the defaults,
-    /// then re-extracts immediately — the "Default" button in the
-    /// Isosurfaces panel, mirroring Style's "Default" for the atom/bond
-    /// material.
-    pub(crate) fn reset_active_isosurface_to_default(&mut self) {
-        self.isosurface_material = IsosurfaceMaterial::default();
-        let Some(active) = self.active_structure else { return };
-        let Some(structure) = self.structures.get_mut(active) else { return };
-        let Some(iso) = &mut structure.isosurface else { return };
-        iso.reset_to_default();
-        self.extract_active_isosurface();
-    }
-
-    /// Freezes the active structure's current isosurface (geometry *and*
-    /// its color/opacity at this exact moment) into `kept_isosurfaces`,
-    /// so it stays visible even after switching to a different structure.
-    /// The natural way to compose several `.cube` files sharing one
-    /// geometry (several orbitals of one molecule) into a single image.
-    pub(crate) fn keep_active_isosurface(&mut self) {
-        let Some(active) = self.active_structure else { return };
-        let Some(iso) = self.structures.get(active).and_then(|s| s.isosurface.as_ref()) else { return };
-        if !iso.show {
-            self.show_warning("Isosurface is hidden — nothing to keep");
-            return;
-        }
-        let mut vertices = Vec::new();
-        let opacity = iso.opacity;
-        if let Some(mesh) = &iso.cached_positive {
-            push_isosurface_vertices(&mut vertices, mesh, color32_to_rgb(iso.positive_color), opacity);
-        }
-        if iso.both_signs {
-            if let Some(mesh) = &iso.cached_negative {
-                push_isosurface_vertices(&mut vertices, mesh, color32_to_rgb(iso.negative_color), opacity);
-            }
-        }
-        if vertices.is_empty() {
-            self.show_warning("Nothing extracted yet — click Update surface first");
-            return;
-        }
-        self.kept_isosurfaces.push(KeptIsosurface { vertices });
-        self.show_status("Isosurface kept");
-    }
-
-    /// Removes every kept isosurface *and* hides the active structure's
-    /// own live one — a full reset back to no isosurfaces shown at all.
-    pub(crate) fn clean_isosurfaces(&mut self) {
-        self.kept_isosurfaces.clear();
-        if let Some(active) = self.active_structure {
-            if let Some(iso) = self.structures.get_mut(active).and_then(|s| s.isosurface.as_mut()) {
-                iso.show = false;
-            }
-        }
-        self.rebuild_isosurface();
-        self.show_status("Cleared all isosurfaces");
     }
 }

@@ -7,7 +7,7 @@ use apost3dview_core::{MeasurementKind, Molecule, Wavefunction};
 use apost3dview_render::BondVisualStyle;
 use egui::Color32;
 
-use crate::isosurfaces::IsosurfaceState;
+use crate::isosurfaces::Surface;
 use crate::results::ApostAttachment;
 
 /// A committed distance/angle/dihedral, with a screen-space label position
@@ -88,8 +88,12 @@ pub(crate) struct LoadedStructure {
     pub(crate) selected_atoms: Vec<usize>,
     pub(crate) selected_bonds: Vec<usize>,
     pub(crate) measurements: Vec<Measurement>,
-    /// `Some` only for structures opened from a `.cube` file.
-    pub(crate) isosurface: Option<IsosurfaceState>,
+    /// Isosurfaces drawn on this molecule: `.cube` files opened for it and
+    /// orbitals generated from its wavefunction, each shown or hidden on
+    /// its own.
+    pub(crate) surfaces: Vec<Surface>,
+    /// The surface the Surfaces window's settings edit.
+    pub(crate) selected_surface: Option<usize>,
     /// `Some` only for structures opened from a `.fchk` — the basis set +
     /// MO coefficients, parsed once up front so the "Generate orbitals"
     /// section can evaluate any MO on demand without re-parsing the file.
@@ -119,11 +123,21 @@ impl LoadedStructure {
             selected_atoms: Vec::new(),
             selected_bonds: Vec::new(),
             measurements: Vec::new(),
-            isosurface: None,
+            surfaces: Vec::new(),
+            selected_surface: None,
             wavefunction: None,
             selected_alpha_mos: HashSet::new(),
             selected_beta_mos: HashSet::new(),
             apost: None,
         }
+    }
+
+    /// Shows surface `index` and hides the others; it becomes the one the
+    /// Surfaces window edits.
+    pub(crate) fn show_surface_alone(&mut self, index: usize) {
+        for (i, surface) in self.surfaces.iter_mut().enumerate() {
+            surface.visible = i == index;
+        }
+        self.selected_surface = Some(index);
     }
 }

@@ -5,8 +5,7 @@ use std::collections::HashSet;
 use apost3dview_core::{generate_mo_grids, MolecularOrbitals};
 
 use crate::app::App;
-use crate::isosurfaces::{DEFAULT_ISOSURFACE_ISOVALUE, IsosurfaceState};
-use crate::state::LoadedStructure;
+use crate::isosurfaces::Surface;
 
 /// One spin channel's tick-box list in the "Generate orbitals" section —
 /// factored out since alpha and beta need identical rendering, just
@@ -78,11 +77,6 @@ pub(crate) struct OrbitalGenerationState {
     /// button in the MO picker.
     pub(crate) range_start: usize,
     pub(crate) range_end: usize,
-    /// Applied to every orbital's `IsosurfaceState` at generation time —
-    /// set once up front rather than per-orbital after the fact, since
-    /// changing it one-by-one across e.g. 20 freshly generated structures
-    /// would be tedious.
-    pub(crate) isovalue: f32,
 }
 
 impl Default for OrbitalGenerationState {
@@ -93,7 +87,6 @@ impl Default for OrbitalGenerationState {
             padding_bohr: ORBITAL_GRID_PADDING_BOHR,
             range_start: 1,
             range_end: 1,
-            isovalue: DEFAULT_ISOSURFACE_ISOVALUE,
         }
     }
 }
@@ -110,14 +103,10 @@ impl OrbitalGenerationState {
 }
 
 impl App {
-    /// Generates a new structure (sharing the active structure's geometry)
-    /// for each ticked MO in the active structure's "Generate orbitals"
-    /// picker — the same shape of result as opening one `.cube` file per
-    /// orbital (see `open_cube`), computed directly from the `.fchk`
-    /// wavefunction instead of needing an external `cubegen`/Multiwfn/
-    /// APOST-3D step first. `set_active`'s shared-geometry camera freeze
-    /// applies here too, since every generated structure shares the
-    /// source structure's own molecule.
+    /// Evaluates every ticked MO of the active structure's wavefunction on
+    /// a grid and adds each as a surface of that structure ("HOMO",
+    /// "MO 12 (beta)", ...) — the same result as opening one `.cube` file
+    /// per orbital, without an external `cubegen`/Multiwfn/APOST-3D step.
     pub(crate) fn generate_selected_orbitals(&mut self) {
         let Some(active) = self.active_structure else { return };
         let Some(structure) = self.structures.get(active) else { return };
@@ -128,8 +117,6 @@ impl App {
         }
 
         let spacing = self.orbital_generation.resolve_spacing_bohr();
-        let base_label = structure.label.clone();
-        let molecule = structure.molecule.clone();
         let is_unrestricted = wfn.beta.is_some();
 
         // One entry per spin channel that has anything selected — for a
@@ -163,37 +150,22 @@ impl App {
                 } else if mo_number == lumo {
                     "LUMO".to_string()
                 } else {
-                    format!("MO{mo_number}")
+                    format!("MO {mo_number}")
                 };
                 requests.push((*orbitals, mo_index));
-                labels.push(format!("{base_label} — {tag}{spin_suffix}"));
+                labels.push(format!("{tag}{spin_suffix}"));
             }
         }
 
-        let mut generated = Vec::new();
-        let mut failures = Vec::new();
-        match generate_mo_grids(&wfn.basis, &requests, spacing, self.orbital_generation.padding_bohr) {
-            Ok(grids) => {
-                for (grid, label) in grids.into_iter().zip(labels) {
-                    let mut new_structure = LoadedStructure::new(label, molecule.clone(), None);
-                    let mut iso = IsosurfaceState::new(grid);
-                    iso.isovalue = self.orbital_generation.isovalue;
-                    new_structure.isosurface = Some(iso);
-                    generated.push(new_structure);
-                }
+        let surfaces = match generate_mo_grids(&wfn.basis, &requests, spacing, self.orbital_generation.padding_bohr) {
+            Ok(grids) => grids.into_iter().zip(labels).map(|(grid, label)| Surface::new(label, grid, self.surface_defaults)).collect(),
+            Err(err) => {
+                self.show_warning(format!("Orbitals could not be generated: {err}"));
+                return;
             }
-            Err(err) => failures.push(err),
-        }
-
-        let first_new_index = if generated.is_empty() { None } else { Some(self.structures.len()) };
-        self.structures.extend(generated);
-        if let Some(index) = first_new_index {
-            self.set_active(index);
-        }
-        if !failures.is_empty() {
-            self.show_warning(format!("Some orbitals failed to generate: {}", failures.join("; ")));
-        } else if first_new_index.is_some() {
-            self.show_status("Orbitals generated");
-        }
+        };
+        let count = requests.len();
+        self.add_surfaces(active, surfaces, true);
+        self.show_status(format!("{count} orbital{} generated", if count == 1 { "" } else { "s" }));
     }
 }

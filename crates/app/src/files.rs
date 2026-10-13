@@ -11,9 +11,10 @@ use apost3dview_core::{
 };
 
 use crate::app::App;
-use crate::isosurfaces::IsosurfaceState;
+use crate::isosurfaces::Surface;
 use crate::results::ApostAttachment;
 use crate::state::LoadedStructure;
+use crate::util::molecules_share_geometry;
 
 /// Every kind of file APOST3Dview opens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +101,9 @@ impl App {
     /// first one opened becomes the active structure.
     pub fn open_paths(&mut self, paths: Vec<PathBuf>) {
         let mut first_new_index = None;
+        // Structures that already got a surface from this batch: further
+        // cubes for them are added without changing what is shown.
+        let mut given_surface: Vec<usize> = Vec::new();
         for path in paths {
             let label = file_label(&path);
             let opened = match FileKind::of_path(&path) {
@@ -115,7 +119,11 @@ impl App {
                     }
                 }
                 Some(FileKind::Xyz) => self.open_xyz(&path),
-                Some(FileKind::Cube) => self.open_cube(&path),
+                Some(FileKind::Cube) => {
+                    let opened = self.open_cube(&path, &given_surface);
+                    given_surface.extend(opened);
+                    opened
+                }
                 Some(FileKind::ApostResults) => self.open_results(&path),
                 None => {
                     self.show_warning(format!("{label}: not a supported file type"));
@@ -202,22 +210,26 @@ impl App {
         }
     }
 
-    /// A `.cube` file becomes its own structure with both a molecule
-    /// (parsed from the cube's own atom section) and an isosurface (see
-    /// `IsosurfaceState`); `set_active` handles the shared-geometry
-    /// camera-freeze and the one-time initial extraction.
-    fn open_cube(&mut self, path: &Path) -> Option<usize> {
-        match parse_cube(path) {
-            Ok(cube_file) => {
-                let mut structure = LoadedStructure::new(file_label(path), cube_file.molecule, Some(path.to_path_buf()));
-                structure.isosurface = Some(IsosurfaceState::new(cube_file.grid));
-                Some(self.push_structure(structure))
-            }
+    /// A `.cube` file becomes a surface of the open structure with the
+    /// same geometry (the active one first), so several orbitals of one
+    /// molecule, or a cube and the `.fchk` it came from, end up together;
+    /// otherwise it opens as a new structure with the cube's own molecule.
+    fn open_cube(&mut self, path: &Path, already_showing: &[usize]) -> Option<usize> {
+        let cube_file = match parse_cube(path) {
+            Ok(cube_file) => cube_file,
             Err(err) => {
                 self.show_warning(format!("Could not load {}: {err}", file_label(path)));
-                None
+                return None;
             }
-        }
+        };
+        let candidates = self.active_structure.into_iter().chain(0..self.structures.len());
+        let index = match candidates.into_iter().find(|&i| molecules_share_geometry(&self.structures[i].molecule, &cube_file.molecule)) {
+            Some(index) => index,
+            None => self.push_structure(LoadedStructure::new(file_label(path), cube_file.molecule, Some(path.to_path_buf()))),
+        };
+        let surface = Surface::new(file_label(path), cube_file.grid, self.surface_defaults);
+        self.add_surfaces(index, vec![surface], !already_showing.contains(&index));
+        Some(index)
     }
 
     /// An APOST-3D results file opened directly. Its `.fchk` (named in the

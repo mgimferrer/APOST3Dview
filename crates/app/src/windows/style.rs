@@ -1,6 +1,6 @@
 //! Style window.
 
-use apost3dview_render::{AoSettings, DofSettings, Material};
+use apost3dview_render::{AoSettings, DofSettings, IsosurfaceMaterial, Material};
 use egui::{Color32, Slider};
 
 use crate::app::App;
@@ -19,13 +19,14 @@ impl App {
                         self.material = Material::default();
                         self.ao_settings = AoSettings::default();
                         self.dof_settings = DofSettings::default();
-                        self.reset_active_isosurface_to_default();
+                        self.isosurface_material = IsosurfaceMaterial::default();
+                        self.rebuild_isosurface();
                     }
                     if ui.button("Publication").clicked() {
                         self.material = Material::publication();
                         self.ao_settings = AoSettings::default();
                         self.dof_settings = DofSettings::default();
-                        self.reset_active_isosurface_to_default();
+                        self.isosurface_material = IsosurfaceMaterial::default();
                         // Same reasoning as `Material::publication`'s own
                         // reflectance cut — the isosurface sits under the
                         // same dead-on light and would otherwise be the
