@@ -89,6 +89,8 @@ struct InstanceInput {
     // 0.0 = solid, 1.0 = dashed (transition-state bond)
     @location(5) dashed: f32,
     @location(6) color: vec3<f32>,
+    // Multiplies the bond radius (bond-order-driven display).
+    @location(7) radius_scale: f32,
 };
 
 struct VertexOutput {
@@ -116,7 +118,8 @@ fn vs_main(in: VertexInput, instance: InstanceInput) -> VertexOutput {
     // Transition-state bonds render much thinner than a real bond — reads
     // as a dashed line rather than a stick, matching the CYLview/textbook
     // convention for a forming/breaking bond.
-    let radius = select(scene.style.y, scene.style.y * 0.3, instance.dashed > 0.5);
+    let base_radius = scene.style.y * instance.radius_scale;
+    let radius = select(base_radius, base_radius * 0.3, instance.dashed > 0.5);
     let world_position = instance.center
         + tangent * in.position.x * radius
         + axis * in.position.y * instance.length

@@ -2,7 +2,7 @@
 //! the export-side label builder.
 
 use apost3dview_core::{element_data, measure};
-use apost3dview_render::{glyph_scale_for_font_size, glyph_scale_for_world_size, layout_label, GlyphAtlas, GlyphInstance, OrbitCamera};
+use apost3dview_render::{glyph_scale_for_font_size, glyph_scale_for_world_size, layout_label, GlyphAtlas, GlyphInstance, Halo, OrbitCamera};
 use glam::Vec3;
 
 use crate::app::App;
@@ -27,7 +27,7 @@ pub(crate) const EDGE_BIAS_ATOM_LABEL: f32 = 0.30;
 /// Lays out `text` as 3D glyph instances anchored at `anchor`, appending to
 /// `instances`.
 pub(crate) fn push_label(instances: &mut Vec<GlyphInstance>, atlas: &GlyphAtlas, text: &str, anchor: Vec3, scale: f32, color: [f32; 3], edge_bias: f32) {
-    instances.extend(layout_label(atlas, text, anchor, scale, color, edge_bias));
+    instances.extend(layout_label(atlas, text, anchor, scale, color, edge_bias, Halo::NONE));
 }
 
 impl App {

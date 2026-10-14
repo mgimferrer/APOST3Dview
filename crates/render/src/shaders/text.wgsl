@@ -24,6 +24,8 @@ struct InstanceInput {
     @location(4) uv_max: vec2<f32>,
     @location(5) color: vec3<f32>,
     @location(6) edge_bias: f32,
+    @location(7) halo_color: vec3<f32>,
+    @location(8) halo_width: f32,
 };
 
 struct VertexOutput {
@@ -31,6 +33,8 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
     @location(1) color: vec3<f32>,
     @location(2) edge_bias: f32,
+    @location(3) halo_color: vec3<f32>,
+    @location(4) halo_width: f32,
 };
 
 // Camera-facing quad, same procedural-corner trick as the atom impostors —
@@ -57,6 +61,8 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32, instance: InstanceInput) ->
     out.uv = mix(instance.uv_min, instance.uv_max, UVS[vertex_index]);
     out.color = instance.color;
     out.edge_bias = instance.edge_bias;
+    out.halo_color = instance.halo_color;
+    out.halo_width = instance.halo_width;
     return out;
 }
 
@@ -79,5 +85,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let sdf = textureSample(glyph_texture, glyph_sampler, in.uv).r;
     let aa = max(fwidth(sdf), 0.0001);
     let coverage = smoothstep(in.edge_bias - aa, in.edge_bias + aa, sdf);
-    return vec4<f32>(in.color, coverage);
+    // The halo is the same field thresholded further out: text color
+    // inside the glyph, halo color in the band around it.
+    let halo_edge = in.edge_bias - in.halo_width;
+    let halo_coverage = smoothstep(halo_edge - aa, halo_edge + aa, sdf);
+    let color = mix(in.halo_color, in.color, coverage);
+    return vec4<f32>(color, max(coverage, halo_coverage));
 }

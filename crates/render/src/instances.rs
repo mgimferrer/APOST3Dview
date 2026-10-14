@@ -42,7 +42,9 @@ pub struct BondInstance {
     /// 0.0 = solid (Single), 1.0 = dashed (TransitionState).
     pub dashed: f32,
     pub color: [f32; 3],
-    pub _padding: f32,
+    /// Multiplies the bond radius (1.0 = the style's bond radius): bonds
+    /// drawn thicker or thinner by a value such as the bond order.
+    pub radius_scale: f32,
 }
 
 /// An atom's display color: its entry in `atom_colors` when given (e.g.
@@ -115,7 +117,7 @@ pub fn build_bond_instances(
                 axis: axis.to_array(),
                 dashed,
                 color,
-                _padding: 0.0,
+                radius_scale: 1.0,
             });
         }
     }
@@ -164,7 +166,7 @@ pub fn build_bond_highlight_instances(molecule: &Molecule, selected_bonds: &[usi
             axis: axis.to_array(),
             dashed: 0.0,
             color: HIGHLIGHT_COLOR,
-            _padding: 0.0,
+            radius_scale: 1.0,
         });
     }
     instances
@@ -189,7 +191,7 @@ pub fn build_measurement_instances(molecule: &Molecule, segments: &[(usize, usiz
             }
             let axis = segment / length;
             let center = (start + end) * 0.5;
-            Some(BondInstance { center: center.to_array(), length, axis: axis.to_array(), dashed: 1.0, color, _padding: 0.0 })
+            Some(BondInstance { center: center.to_array(), length, axis: axis.to_array(), dashed: 1.0, color, radius_scale: 1.0 })
         })
         .collect()
 }

@@ -40,6 +40,10 @@ fn bond_color_attribute() -> wgpu::VertexAttribute {
     wgpu::VertexAttribute { offset: 32, shader_location: 6, format: wgpu::VertexFormat::Float32x3 }
 }
 
+fn bond_radius_scale_attribute() -> wgpu::VertexAttribute {
+    wgpu::VertexAttribute { offset: 44, shader_location: 7, format: wgpu::VertexFormat::Float32 }
+}
+
 /// Owns the GPU resources for the 3D viewport (pipelines, buffers). Lives
 /// in egui-wgpu's `CallbackResources` so it shares the device/queue eframe
 /// already created, rather than opening a second one.
@@ -258,7 +262,7 @@ impl ViewportResources {
         let bond_attrs = bond_instance_attributes();
         let bond_color_attr = bond_color_attribute();
         let bond_instance_attrs =
-            [bond_attrs[0], bond_attrs[1], bond_attrs[2], bond_attrs[3], bond_color_attr];
+            [bond_attrs[0], bond_attrs[1], bond_attrs[2], bond_attrs[3], bond_color_attr, bond_radius_scale_attribute()];
         let bond_instance_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<BondInstance>() as u64,
             step_mode: wgpu::VertexStepMode::Instance,
@@ -492,6 +496,8 @@ impl ViewportResources {
                 wgpu::VertexAttribute { offset: 40, shader_location: 4, format: wgpu::VertexFormat::Float32x2 },
                 wgpu::VertexAttribute { offset: 48, shader_location: 5, format: wgpu::VertexFormat::Float32x3 },
                 wgpu::VertexAttribute { offset: 60, shader_location: 6, format: wgpu::VertexFormat::Float32 },
+                wgpu::VertexAttribute { offset: 64, shader_location: 7, format: wgpu::VertexFormat::Float32x3 },
+                wgpu::VertexAttribute { offset: 76, shader_location: 8, format: wgpu::VertexFormat::Float32 },
             ],
         };
         // Alpha-to-coverage, not blending: each MSAA sample is dithered
@@ -1027,6 +1033,24 @@ impl ViewportResources {
 
         self.atom_instances = Some((atom_buffer, atom_data.len() as u32));
         self.bond_instances = Some((bond_buffer, bond_data.len() as u32));
+    }
+
+    /// Uploads atom and bond instances built by the caller — for displays
+    /// that change bonds beyond hide/style (thickness by bond order, extra
+    /// links between atoms that perception did not connect).
+    pub fn update_geometry_instances(&mut self, device: &wgpu::Device, atoms: &[AtomInstance], bonds: &[BondInstance]) {
+        let atom_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("atom_instance_buffer"),
+            contents: bytemuck::cast_slice(atoms),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let bond_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("bond_instance_buffer"),
+            contents: bytemuck::cast_slice(bonds),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        self.atom_instances = Some((atom_buffer, atoms.len() as u32));
+        self.bond_instances = Some((bond_buffer, bonds.len() as u32));
     }
 
     /// Rebuilds the small overlay buffers for the current selection.

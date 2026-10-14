@@ -28,6 +28,22 @@ pub struct GlyphInstance {
     /// copy's edge lands on a different sub-pixel, and their overlap adds
     /// dithering noise rather than a clean thicker stroke).
     pub edge_bias: f32,
+    /// A colored outline around the glyph, so text stays readable over
+    /// atoms or surfaces of any color: its color, and its width in the
+    /// same distance-field units as `edge_bias` (0 = no outline).
+    pub halo_color: [f32; 3],
+    pub halo_width: f32,
+}
+
+/// Outline drawn around a label's glyphs (see `GlyphInstance::halo_width`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Halo {
+    pub color: [f32; 3],
+    pub width: f32,
+}
+
+impl Halo {
+    pub const NONE: Halo = Halo { color: [1.0, 1.0, 1.0], width: 0.0 };
 }
 
 /// Lays out `text` centered on `anchor`, both horizontally and vertically
@@ -39,7 +55,15 @@ pub struct GlyphInstance {
 /// per-pixel world scale (which depends on distance from the camera, for
 /// perspective-correct constant apparent size) into this one factor.
 /// `edge_bias` sets the stroke weight — see `GlyphInstance::edge_bias`.
-pub fn layout_label(atlas: &GlyphAtlas, text: &str, anchor: Vec3, world_size_per_raster_px: f32, color: [f32; 3], edge_bias: f32) -> Vec<GlyphInstance> {
+pub fn layout_label(
+    atlas: &GlyphAtlas,
+    text: &str,
+    anchor: Vec3,
+    world_size_per_raster_px: f32,
+    color: [f32; 3],
+    edge_bias: f32,
+    halo: Halo,
+) -> Vec<GlyphInstance> {
     let chars: Vec<char> = text.chars().collect();
     let total_advance: f32 = chars.iter().map(|&ch| atlas.get(ch).advance).sum::<f32>() * world_size_per_raster_px;
 
@@ -63,6 +87,8 @@ pub fn layout_label(atlas: &GlyphAtlas, text: &str, anchor: Vec3, world_size_per
                 uv_max: info.uv_max,
                 color,
                 edge_bias,
+                halo_color: halo.color,
+                halo_width: halo.width,
             });
         }
 

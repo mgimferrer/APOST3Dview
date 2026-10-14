@@ -14,12 +14,12 @@ use std::collections::HashMap;
 
 use wgpu::util::DeviceExt;
 
-/// Every character atom/measurement labels can actually produce: ASCII
-/// printable range, plus the angstrom and degree signs.
+/// Every character labels can produce: ASCII printable range, the
+/// angstrom and degree signs, a true minus sign for signed values, and
+/// Greek alpha/beta for spin channels.
 fn character_set() -> Vec<char> {
     let mut chars: Vec<char> = (0x20u8..=0x7Eu8).map(|b| b as char).collect();
-    chars.push('Å');
-    chars.push('°');
+    chars.extend(['Å', '°', '\u{2212}', 'α', 'β', '·']);
     chars
 }
 
