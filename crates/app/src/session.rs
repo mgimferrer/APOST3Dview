@@ -513,7 +513,7 @@ impl App {
                     None => Err("no wavefunction".to_string()),
                     Some(wfn) => orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), None),
                 },
-                Some(analysis) => match self.structures[index].orbital_sets.iter().position(|s| &s.set.analysis == analysis) {
+                Some(analysis) => match self.structures[index].orbital_sets.iter().position(|s| &s.set.key() == analysis) {
                     None => Err(format!("its {analysis} orbital file was not found")),
                     Some(position) if !self.load_orbital_set(index, position) => Err(format!("its {analysis} orbital file could not be used")),
                     Some(position) => {

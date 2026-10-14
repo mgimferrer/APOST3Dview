@@ -200,14 +200,22 @@ fn orbital_fixtures_dir() -> Option<PathBuf> {
 fn orbital_sets_map_onto_their_files() {
     use apost3dview_core::{check_orbital_file, check_orbital_file_id, orbital_file_run_id, parse_fchk_wavefunction, OrbitalDetail};
     let Some(dir) = orbital_fixtures_dir() else { return };
-    let mut cases = 0;
+    let (mut cases, mut preortho_cases) = (0, 0);
     for json in std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.to_string_lossy().ends_with(".apost.json")) {
         let name = json.file_name().unwrap().to_string_lossy().into_owned();
         let results = load_apost_results(&json).unwrap();
         assert!(results.index_problems.is_empty(), "{name}: {:?}", results.index_problems);
         let main = parse_fchk_summary(&wavefunction_path_for(&json, &results).unwrap()).unwrap();
         let sets = results.orbital_sets();
-        assert_eq!(sets.len(), 1, "{name}");
+        // One set per analysis, plus the OSLOs before orthogonalization
+        // when the run wrote them (0.9), labeled like the final ones.
+        let preortho = sets.iter().filter(|s| s.preortho).count();
+        assert_eq!(sets.len(), 1 + preortho, "{name}");
+        if let [last, before] = &sets[..] {
+            assert!(before.preortho && before.analysis == "oslo" && before.file.ends_with("-OSLOs-preortho.fchk"), "{name}: {}", before.file);
+            assert_eq!((&last.alpha, &last.beta, &last.file_id), (&before.alpha, &before.beta, &before.file_id), "{name}");
+            preortho_cases += 1;
+        }
         for set in &sets {
             let file = dir.join(&set.file);
             check_orbital_file(&main, &parse_fchk_summary(&file).unwrap()).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -241,7 +249,7 @@ fn orbital_sets_map_onto_their_files() {
         }
         cases += 1;
     }
-    assert_eq!(cases, 9);
+    assert_eq!((cases, preortho_cases), (9, 2));
 
     let set = |job: &str| load(&dir, job).orbital_sets().remove(0);
     // OSLO, restricted, the C-C bond shared by both CH3 fragments.

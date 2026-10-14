@@ -446,6 +446,10 @@ impl ApostResults {
 pub struct OrbitalSet {
     /// "eos", "geos" or "oslo".
     pub analysis: String,
+    /// The OSLOs before orthogonalization (`orbital_file_preortho`, since
+    /// 0.9): the orbitals the FOLI values were computed for, in the same
+    /// order and with the same labels as the final OSLOs.
+    pub preortho: bool,
     /// The `.fchk` file, a bare name in the results file's folder.
     pub file: String,
     /// The run id the file must carry on its first line (since 0.8).
@@ -489,14 +493,22 @@ pub enum OrbitalDetail {
 }
 
 impl OrbitalSet {
-    /// A readable name: "EOS EFOs", "GEOS EFOs", "OSLOs".
+    /// A readable name: "EOS EFOs", "GEOS EFOs", "OSLOs", "OSLOs (before
+    /// orthogonalization)".
     pub fn title(&self) -> &'static str {
-        match self.analysis.as_str() {
-            "eos" => "EOS EFOs",
-            "geos" => "GEOS EFOs",
-            "oslo" => "OSLOs",
+        match (self.analysis.as_str(), self.preortho) {
+            ("eos", _) => "EOS EFOs",
+            ("geos", _) => "GEOS EFOs",
+            ("oslo", false) => "OSLOs",
+            ("oslo", true) => "OSLOs (before orthogonalization)",
             _ => "Analysis orbitals",
         }
+    }
+
+    /// What identifies the set in sessions: "eos", "geos", "oslo",
+    /// "oslo-preortho".
+    pub fn key(&self) -> String {
+        if self.preortho { format!("{}-preortho", self.analysis) } else { self.analysis.clone() }
     }
 }
 
@@ -512,7 +524,7 @@ impl ApostResults {
             let Some(block) = self.raw.pointer(&base) else { continue };
             let Some(file) = block.get("orbital_file").and_then(Value::as_str) else { continue };
             let file_id = block.get("orbital_file_id").and_then(Value::as_str).map(str::to_string);
-            let mut set = OrbitalSet { analysis: analysis.to_string(), file: file.to_string(), file_id, alpha: Vec::new(), beta: Vec::new(), beta_note: None };
+            let mut set = OrbitalSet { analysis: analysis.to_string(), preortho: false, file: file.to_string(), file_id, alpha: Vec::new(), beta: Vec::new(), beta_note: None };
             let beta = block.get("beta");
             if beta.and_then(|b| b.get("same_as_alpha")).and_then(Value::as_bool) == Some(true) {
                 set.beta_note = Some("The \u{3b2} orbitals are the same as the \u{3b1} ones.".to_string());
@@ -554,7 +566,14 @@ impl ApostResults {
                     labels[index - 1] = Some(OrbitalLabel { fragments, shares, detail });
                 }
             }
-            sets.push(set);
+            // The same OSLOs before orthogonalization, labeled alike.
+            if let Some(preortho) = block.get("orbital_file_preortho").and_then(Value::as_str) {
+                let before = OrbitalSet { preortho: true, file: preortho.to_string(), ..set.clone() };
+                sets.push(set);
+                sets.push(before);
+            } else {
+                sets.push(set);
+            }
         }
         sets
     }

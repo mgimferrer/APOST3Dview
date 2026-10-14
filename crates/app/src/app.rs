@@ -311,6 +311,15 @@ impl App {
         self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.surfaces.iter().map(|x| (x.label.clone(), x.visible)).collect()).unwrap_or_default()
     }
 
+    /// Ticks exactly these orbitals (0-based) of the active structure's
+    /// current analysis set — for tests.
+    pub fn select_set_orbitals(&mut self, alpha: &[usize], beta: &[usize]) {
+        let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
+        let Some(set) = structure.active_orbital_set.checked_sub(1).and_then(|i| structure.orbital_sets.get_mut(i)) else { return };
+        set.selected_alpha = alpha.iter().copied().collect();
+        set.selected_beta = beta.iter().copied().collect();
+    }
+
     /// Whether surface `index` of the active structure is drawn in its
     /// fragment colors (rather than the positive/negative ones) — for tests.
     pub fn surface_colored_by_fragment(&self, index: usize) -> bool {

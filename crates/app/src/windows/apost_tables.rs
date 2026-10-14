@@ -130,7 +130,7 @@ impl App {
             });
             let Ok(Quantity::Table(table)) = results.quantity(chosen) else { return };
             let channel = table_channel(chosen, &table);
-            let set: Option<&LoadedOrbitalSet> = channel.and_then(|(analysis, _)| structure.orbital_sets.iter().find(|s| s.set.analysis == analysis));
+            let set: Option<&LoadedOrbitalSet> = channel.and_then(|(analysis, _)| structure.orbital_sets.iter().find(|s| s.set.analysis == analysis && !s.set.preortho));
             let by_orbital = table.rows == "orbital";
             let names: Vec<String> = (0..table.n_rows)
                 .map(|row| {

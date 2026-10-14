@@ -68,13 +68,24 @@ impl LoadedOrbitalSet {
         }
     }
 
+    /// Before orthogonalization: the OSLO's name with "before orth.", so
+    /// its surface is told apart from (and doesn't replace) the final one.
+    fn orbital_name_preortho(&self, beta: bool, index: usize) -> String {
+        let channel = self.channel_name(beta);
+        if channel.is_empty() { format!("OSLO {} before orth.", index + 1) } else { format!("OSLO {} {channel} before orth.", index + 1) }
+    }
+
     pub(crate) fn labels(&self, beta: bool) -> &[Option<OrbitalLabel>] {
         if beta { &self.set.beta } else { &self.set.alpha }
     }
 
-    /// "EFO 3 α", "OSLO 9", "EFO 2 unpaired".
+    /// "EFO 3 α", "OSLO 9", "EFO 2 unpaired", "OSLO 9 before orth.".
     pub(crate) fn orbital_name(&self, beta: bool, index: usize) -> String {
-        let kind = if self.set.analysis == "oslo" { "OSLO" } else { "EFO" };
+        let kind = match (self.set.analysis.as_str(), self.set.preortho) {
+            ("oslo", false) => "OSLO",
+            ("oslo", true) => return self.orbital_name_preortho(beta, index),
+            _ => "EFO",
+        };
         let channel = self.channel_name(beta);
         if channel.is_empty() { format!("{kind} {}", index + 1) } else { format!("{kind} {} {channel}", index + 1) }
     }

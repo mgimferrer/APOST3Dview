@@ -163,7 +163,7 @@ pub(crate) fn orbital_surfaces(
         .into_iter()
         .zip(choices)
         .map(|(grid, &choice)| {
-            let set = context.map(|c| c.set.set.analysis.clone());
+            let set = context.map(|c| c.set.set.key());
             let source = SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set };
             let label = match context {
                 Some(c) => App::set_orbital_label(c.set, choice.beta, choice.mo_index, c.results, c.molecule),
@@ -261,16 +261,18 @@ impl App {
             }
         };
         let count = surfaces.len();
+        // "1 OSLO generated", "9 OSLOs (before orthogonalization) generated".
         let title = set.set.title();
+        let noun = if count == 1 { title.replacen("Os", "O", 1) } else { title.to_string() };
         self.add_surfaces(active, surfaces, true);
-        self.show_status(format!("{count} {} generated", if count == 1 { title.trim_end_matches('s').to_string() } else { title.to_string() }));
+        self.show_status(format!("{count} {noun} generated"));
     }
 
     /// Draws one orbital of an analysis set (from a table row): the set
     /// becomes the current one, the orbital is generated and shown.
     pub(crate) fn draw_set_orbital(&mut self, analysis: &str, beta: bool, mo_index: usize) {
         let Some(active) = self.active_structure else { return };
-        let Some(position) = self.structures[active].orbital_sets.iter().position(|s| s.set.analysis == analysis) else {
+        let Some(position) = self.structures[active].orbital_sets.iter().position(|s| s.set.analysis == analysis && !s.set.preortho) else {
             self.show_warning("The orbital file of this analysis was not found next to the results.");
             return;
         };

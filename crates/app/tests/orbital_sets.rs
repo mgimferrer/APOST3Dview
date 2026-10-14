@@ -56,6 +56,44 @@ fn oslos_are_generated_with_their_fragments() {
 }
 
 #[test]
+fn oslos_before_orthogonalization_are_a_set_of_their_own() {
+    let Some(dir) = orbital_fixtures() else { return };
+    let scratch = scratch_dir("orbital-set-preortho");
+    let session = scratch.join("preortho.a3dview");
+    {
+        let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.fchk")]);
+        harness.get_by_label("Surfaces").click();
+        harness.run_steps(2);
+        // The final C-C OSLO, then the same one before orthogonalization:
+        // both stay, told apart by name.
+        harness.get_by_label("Tables (1)").click();
+        harness.run_steps(2);
+        harness.get_all_by_label("Draw").nth(8).unwrap().click_accesskit();
+        harness.run_steps(3);
+        choose_orbitals(&mut harness, "OSLOs (before orthogonalization)");
+        harness.get_by_label_contains("OSLOs (before orthogonalization) (9)");
+        harness.get_by_label_contains("OSLO 3 before orth.  1 CH3");
+        let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
+        assert_eq!(labels, vec!["OSLO 9 \u{b7} 1 CH3 + 2 CH3"]);
+        // Tick OSLO 9 (the list shows the first eight without scrolling).
+        harness.state_mut().select_set_orbitals(&[8], &[]);
+        harness.run_steps(2);
+        harness.get_by_label("Generate 1 orbital(s)").click();
+        harness.run_steps(3);
+        let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
+        assert_eq!(labels, vec!["OSLO 9 \u{b7} 1 CH3 + 2 CH3", "OSLO 9 before orth. \u{b7} 1 CH3 + 2 CH3"]);
+        assert!(toasts(&harness).iter().any(|m| m == "1 OSLO (before orthogonalization) generated"), "{:?}", toasts(&harness));
+        screenshot(&mut harness, "orbital-set-preortho");
+        harness.state_mut().save_session_to(&session).unwrap();
+    }
+    let text = std::fs::read_to_string(&session).unwrap();
+    assert!(text.contains("orbital_set = \"oslo-preortho\""), "{text}");
+    let harness = app_with(vec![session]);
+    let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
+    assert_eq!(labels, vec!["OSLO 9 \u{b7} 1 CH3 + 2 CH3", "OSLO 9 before orth. \u{b7} 1 CH3 + 2 CH3"]);
+}
+
+#[test]
 fn a_table_row_draws_its_orbital() {
     let Some(dir) = orbital_fixtures() else { return };
     let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.fchk")]);
