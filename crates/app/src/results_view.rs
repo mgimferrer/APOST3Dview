@@ -313,8 +313,10 @@ pub(crate) fn label_position(anchor: LabelAnchor, results: &ApostResults, molecu
 
 /// The quantities a file offers for the selector, grouped: fragment values,
 /// fragment pairs, atom values, atom pairs (fragments first: they are what
-/// fragment analyses are about).
-pub(crate) fn grouped_entries(results: &ApostResults) -> Vec<(&'static str, Vec<&IndexEntry>)> {
+/// fragment analyses are about). Values in another atomic definition than
+/// the run's own, printed only for comparison, are left out unless
+/// `include_comparison`.
+pub(crate) fn grouped_entries(results: &ApostResults, include_comparison: bool) -> Vec<(&'static str, Vec<&IndexEntry>)> {
     [
         ("Fragment values", QuantityKind::FragmentVector),
         ("Between fragments", QuantityKind::FragmentMatrix),
@@ -322,7 +324,7 @@ pub(crate) fn grouped_entries(results: &ApostResults) -> Vec<(&'static str, Vec<
         ("Between atoms", QuantityKind::AtomMatrix),
     ]
     .into_iter()
-    .map(|(group, kind)| (group, results.entries(kind).collect::<Vec<_>>()))
+    .map(|(group, kind)| (group, results.entries(kind).filter(|e| include_comparison || !e.is_comparison()).collect::<Vec<_>>()))
     .filter(|(_, entries)| !entries.is_empty())
     .collect()
 }

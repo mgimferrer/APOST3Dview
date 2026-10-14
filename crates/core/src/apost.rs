@@ -107,6 +107,23 @@ pub struct IndexEntry {
     pub unit: Option<String>,
     /// Decimals the text output prints: a default for tables.
     pub decimals: Option<usize>,
+    /// "comparison" for values printed only to compare with the run's own
+    /// atomic definition (requested from APOST-3D; see `is_comparison`).
+    #[serde(default)]
+    pub role: Option<String>,
+}
+
+impl IndexEntry {
+    /// Values APOST-3D prints for comparison with another atomic
+    /// definition than the run's own (the Mulliken populations of a TFVC
+    /// run): marked `role: "comparison"`, or, in files from before that
+    /// mark, recognized by a `mulliken` part in the id.
+    pub fn is_comparison(&self) -> bool {
+        match self.role.as_deref() {
+            Some(role) => role == "comparison",
+            None => self.id.split('.').any(|part| part == "mulliken"),
+        }
+    }
 }
 
 /// An atom x atom or fragment x fragment matrix: full square values and
@@ -652,6 +669,25 @@ mod tests {
         assert_eq!(r.index.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["populations.atoms.charges"]);
         assert_eq!(r.index_problems.len(), 2);
         assert!(parse_apost_results(DIMER).unwrap().index.is_empty(), "0.1/0.2 files have no index");
+    }
+
+    #[test]
+    fn comparison_values_are_recognized() {
+        let entry = |id: &str, role: Option<&str>| IndexEntry {
+            id: id.into(),
+            analysis: None,
+            spin: None,
+            path: String::new(),
+            kind: QuantityKind::AtomVector,
+            title: String::new(),
+            unit: None,
+            decimals: None,
+            role: role.map(Into::into),
+        };
+        assert!(entry("populations.mulliken.atoms.charges", None).is_comparison());
+        assert!(!entry("populations.atoms.charges", None).is_comparison());
+        assert!(entry("populations.atoms.charges", Some("comparison")).is_comparison(), "the mark wins");
+        assert!(!entry("populations.mulliken.atoms.charges", Some("main")).is_comparison());
     }
 
     #[test]

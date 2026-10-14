@@ -159,6 +159,9 @@ pub struct App {
     /// Fixed color ranges chosen by the user, by quantity id, shared by
     /// every structure so figures of different systems compare.
     pub(crate) color_ranges: std::collections::BTreeMap<String, apost3dview_render::ColorScale>,
+    /// List, in the Show menu, the values APOST-3D prints only for
+    /// comparison (Mulliken's, in a run with another atomic definition).
+    pub(crate) list_comparison_values: bool,
     /// What the results display was last built for (see
     /// `update_results_display`).
     pub(crate) results_signature: String,
@@ -229,6 +232,7 @@ impl App {
             new_preset_name: String::new(),
             toasts: Vec::new(),
             color_ranges: Default::default(),
+            list_comparison_values: false,
             results_signature: String::new(),
             session_path: None,
             shown_title: String::new(),

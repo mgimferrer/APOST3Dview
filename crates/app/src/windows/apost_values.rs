@@ -45,6 +45,7 @@ impl App {
     /// "On the molecule": the one choice of what to draw, and how.
     pub(crate) fn show_results_controls(&mut self, ui: &mut egui::Ui) {
         let Some(active) = self.active_structure else { return };
+        let list_comparison = &mut self.list_comparison_values;
         let structure = &mut self.structures[active];
         let molecule = structure.molecule.clone();
         let Some(attachment) = structure.apost.as_mut() else { return };
@@ -60,7 +61,7 @@ impl App {
                 if !results.fragments().is_empty() {
                     ui.selectable_value(&mut view.shown, Shown::Fragments, "Fragments");
                 }
-                for (group, entries) in grouped_entries(results) {
+                for (group, entries) in grouped_entries(results, *list_comparison) {
                     ui.separator();
                     ui.label(RichText::new(group).small().weak());
                     for entry in entries {
@@ -70,6 +71,10 @@ impl App {
                             view.focus = 0;
                         }
                     }
+                }
+                if results.index.iter().any(|e| e.is_comparison()) {
+                    ui.separator();
+                    ui.checkbox(list_comparison, "Also list Mulliken values (for comparison)");
                 }
             });
             ui.checkbox(&mut view.visible, "").on_hover_text("Show or hide on the molecule, keeping the choice");
