@@ -14,7 +14,12 @@
 //! - Atom and fragment numbers are 1-based in the file. They are kept that
 //!   way in `Fragment::atoms`; helpers that return atom indices for the
 //!   viewer (`fragment_of_atom`, `FragmentCoverage`) return 0-based ones.
-//! - `analyses` is kept as raw JSON until the schema defines its blocks.
+//! - Values are reached through the `index` (since 0.3): one entry per
+//!   quantity that can be shown on atoms, atom pairs, fragments or
+//!   fragment pairs, with a JSON Pointer to it. The viewer offers what the
+//!   index lists, without code per analysis; `analyses` itself stays raw
+//!   JSON. Fragment values are read from the file, never summed from
+//!   atoms (several later quantities are not sums).
 
 use std::path::{Path, PathBuf};
 
@@ -49,7 +54,102 @@ pub struct ApostResults {
     pub molecule: Option<MoleculeBlock>,
     pub fragments: Option<Vec<Fragment>>,
     pub analyses: Option<serde_json::Map<String, Value>>,
+    /// Every quantity that can be shown (since 0.3), in file order. Only
+    /// entries whose values were found with the expected shape are kept;
+    /// the others are described in `index_problems`.
+    #[serde(default)]
+    pub index: Vec<IndexEntry>,
     pub run: Option<RunInfo>,
+    #[serde(skip)]
+    pub index_problems: Vec<String>,
+    /// The whole file, for following the index's JSON Pointers.
+    #[serde(skip)]
+    raw: Value,
+}
+
+/// What an index entry holds, and over what.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuantityKind {
+    AtomVector,
+    AtomMatrix,
+    FragmentVector,
+    FragmentMatrix,
+    /// A kind this viewer doesn't know yet (e.g. a future `table`).
+    #[serde(other)]
+    Other,
+}
+
+impl QuantityKind {
+    pub fn is_matrix(self) -> bool {
+        matches!(self, QuantityKind::AtomMatrix | QuantityKind::FragmentMatrix)
+    }
+
+    pub fn on_fragments(self) -> bool {
+        matches!(self, QuantityKind::FragmentVector | QuantityKind::FragmentMatrix)
+    }
+}
+
+/// One displayable quantity (`index` entry).
+#[derive(Debug, Clone, Deserialize)]
+pub struct IndexEntry {
+    /// Stable name ("populations.atoms.charges"), to remember a choice
+    /// across files and sessions.
+    pub id: String,
+    pub analysis: Option<String>,
+    /// "alpha", "beta", "total", or `None` when not given per spin.
+    pub spin: Option<String>,
+    /// JSON Pointer to the values (to the matrix object for a matrix).
+    pub path: String,
+    pub kind: QuantityKind,
+    /// For a menu, with the atomic definition: "Atomic charges (TFVC)".
+    pub title: String,
+    pub unit: Option<String>,
+    /// Decimals the text output prints: a default for tables.
+    pub decimals: Option<usize>,
+}
+
+/// An atom x atom or fragment x fragment matrix: full square values and
+/// what they mean (the same layout means different things in different
+/// analyses, so the descriptions are shown with it).
+#[derive(Debug, Clone, Deserialize)]
+pub struct MatrixObject {
+    pub values: Vec<Vec<Option<f64>>>,
+    #[serde(default)]
+    pub symmetric: bool,
+    /// "localization index", "atomic term <S^2>_A", ...
+    pub diagonal: Option<String>,
+    /// "bond order", "delocalization index", ...
+    pub off_diagonal: Option<String>,
+    pub total: Option<f64>,
+    /// "diagonal and one triangle" or "all elements".
+    pub total_rule: Option<String>,
+}
+
+impl MatrixObject {
+    pub fn get(&self, i: usize, j: usize) -> Option<f64> {
+        self.values.get(i)?.get(j).copied().flatten()
+    }
+
+    /// The total recomputed from the values following `total_rule`, to
+    /// check the reading against the file's own `total`.
+    pub fn total_by_rule(&self) -> Option<f64> {
+        let n = self.values.len();
+        let all = |i: usize, j: usize| self.get(i, j).unwrap_or(0.0);
+        match self.total_rule.as_deref()? {
+            "all elements" => Some((0..n).flat_map(|i| (0..n).map(move |j| (i, j))).map(|(i, j)| all(i, j)).sum()),
+            "diagonal and one triangle" => Some((0..n).flat_map(|i| (i..n).map(move |j| (i, j))).map(|(i, j)| all(i, j)).sum()),
+            _ => None,
+        }
+    }
+}
+
+/// The values an index entry points to.
+#[derive(Debug, Clone)]
+pub enum Quantity {
+    /// One value per atom or per fragment (`None`: not available).
+    Vector(Vec<Option<f64>>),
+    Matrix(MatrixObject),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -144,6 +244,35 @@ impl ApostResults {
         self.analyses.as_ref().map(|a| a.keys().map(String::as_str).collect()).unwrap_or_default()
     }
 
+    /// The values of an index entry, checked to have one entry per atom
+    /// (or fragment), or to be a square matrix of that size.
+    pub fn quantity(&self, entry: &IndexEntry) -> Result<Quantity, String> {
+        let n = match entry.kind {
+            QuantityKind::AtomVector | QuantityKind::AtomMatrix => self.molecule.as_ref().map(|m| m.n_atoms).ok_or("the file has no molecule")?,
+            QuantityKind::FragmentVector | QuantityKind::FragmentMatrix => self.fragments().len(),
+            QuantityKind::Other => return Err(format!("{}: kind not supported by this APOST3Dview", entry.id)),
+        };
+        let value = self.raw.pointer(&entry.path).ok_or_else(|| format!("{}: nothing at {}", entry.id, entry.path))?;
+        if entry.kind.is_matrix() {
+            let matrix: MatrixObject = serde_json::from_value(value.clone()).map_err(|e| format!("{}: not a matrix object ({e})", entry.id))?;
+            if matrix.values.len() != n || matrix.values.iter().any(|row| row.len() != n) {
+                return Err(format!("{}: expected a {n} x {n} matrix", entry.id));
+            }
+            Ok(Quantity::Matrix(matrix))
+        } else {
+            let values: Vec<Option<f64>> = serde_json::from_value(value.clone()).map_err(|e| format!("{}: not a list of numbers ({e})", entry.id))?;
+            if values.len() != n {
+                return Err(format!("{}: expected {n} values, found {}", entry.id, values.len()));
+            }
+            Ok(Quantity::Vector(values))
+        }
+    }
+
+    /// Index entries of one kind, in file order.
+    pub fn entries(&self, kind: QuantityKind) -> impl Iterator<Item = &IndexEntry> {
+        self.index.iter().filter(move |e| e.kind == kind)
+    }
+
     /// The molecule as the viewer's own `Molecule` (angstrom, perceived
     /// bonds), for when the results file is opened without its `.fchk`.
     pub fn molecule(&self) -> Option<Molecule> {
@@ -206,8 +335,20 @@ pub fn parse_apost_results(text: &str) -> Result<ApostResults, String> {
         }
         None => return Err(format!("unreadable schema_version \"{version}\"")),
     }
-    let results: ApostResults = serde_json::from_value(value).map_err(|err| format!("unexpected content ({err})"))?;
+    let mut results: ApostResults = serde_json::from_value(value.clone()).map_err(|err| format!("unexpected content ({err})"))?;
+    results.raw = value;
     results.validate()?;
+    // Keep only the quantities that can actually be shown; a broken entry
+    // is reported, not fatal for the rest of the file.
+    let (mut kept, mut problems) = (Vec::new(), Vec::new());
+    for entry in std::mem::take(&mut results.index) {
+        match results.quantity(&entry) {
+            Ok(_) => kept.push(entry),
+            Err(err) => problems.push(err),
+        }
+    }
+    results.index = kept;
+    results.index_problems = problems;
     Ok(results)
 }
 
@@ -492,6 +633,25 @@ mod tests {
         assert_eq!(fragment_coverage(5, &fragments), FragmentCoverage { unassigned: vec![2, 4], shared: vec![1] });
         assert_eq!(fragment_of_atom(5, &fragments), vec![Some(0), Some(0), None, Some(1), None]);
         assert_eq!(fragment_coverage(6, dimer().fragments()), FragmentCoverage::default());
+    }
+
+    #[test]
+    fn index_entries_with_the_wrong_shape_are_set_aside() {
+        let text = edited(|v| {
+            v["schema_version"] = "0.3".into();
+            v["analyses"]["populations"] = serde_json::json!({"atoms": {"charges": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6], "short": [1.0]}});
+            v["index"] = serde_json::json!([
+                {"id": "populations.atoms.charges", "analysis": "populations", "spin": null, "path": "/analyses/populations/atoms/charges",
+                 "kind": "atom_vector", "title": "Atomic charges (TFVC)", "unit": null, "decimals": 6},
+                {"id": "populations.atoms.short", "analysis": "populations", "spin": null, "path": "/analyses/populations/atoms/short",
+                 "kind": "atom_vector", "title": "Short", "unit": null, "decimals": 6},
+                {"id": "x.y", "analysis": "x", "spin": null, "path": "/analyses/x/y", "kind": "table", "title": "A table", "unit": null, "decimals": 6}
+            ]);
+        });
+        let r = parse_apost_results(&text).unwrap();
+        assert_eq!(r.index.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["populations.atoms.charges"]);
+        assert_eq!(r.index_problems.len(), 2);
+        assert!(parse_apost_results(DIMER).unwrap().index.is_empty(), "0.1/0.2 files have no index");
     }
 
     #[test]

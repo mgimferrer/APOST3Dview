@@ -19,7 +19,8 @@ pub mod xyz;
 
 pub use apost::{
     check_against_fchk, find_results_for, fragment_coverage, fragment_of_atom, is_results_file, load_apost_results, parse_apost_results,
-    report_path_for, results_path_for, wavefunction_path_for, ApostResults, Fragment, FragmentCoverage,
+    report_path_for, results_path_for, wavefunction_path_for, ApostResults, Fragment, FragmentCoverage, IndexEntry, MatrixObject, Quantity,
+    QuantityKind,
 };
 pub use coordinates::{format_coordinates, CoordinateFormat};
 pub use cube::{parse_cube, CubeFile, ScalarGrid};
