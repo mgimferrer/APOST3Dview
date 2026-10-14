@@ -1,6 +1,6 @@
 //! Analysis orbitals (M6): the EFOs of EOS and GEOS and the OSLOs of OSLO,
 //! read from the orbital file APOST-3D writes next to its results, labeled
-//! from the tables and colored by fragment; the key numbers and tables of
+//! from the tables, in the usual blue/red (by fragment on request); the key numbers and tables of
 //! the APOST-3D window; sessions that keep such orbitals.
 
 mod common;
@@ -49,7 +49,9 @@ fn oslos_are_generated_with_their_fragments() {
     assert_eq!(labels[0], "OSLO 1 \u{b7} 1 CH3");
     assert_eq!(labels[8], "OSLO 9 \u{b7} 1 CH3 + 2 CH3");
     assert!(toasts(&harness).iter().any(|m| m == "9 OSLOs generated"), "{:?}", toasts(&harness));
+    // The usual positive/negative colors; fragment colors on request.
     harness.get_by_label("Color by fragment");
+    assert!(!harness.state().surface_colored_by_fragment(0));
     screenshot(&mut harness, "orbital-set-oslos");
 }
 

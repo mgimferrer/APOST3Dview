@@ -38,7 +38,8 @@ pub(crate) struct SurfaceSettings {
     /// 1.0 = opaque (the default), lower = translucent.
     pub(crate) opacity: f32,
     /// For an analysis orbital (EFO, OSLO): colored by its fragment(s)
-    /// instead of the positive/negative colors.
+    /// instead of the positive/negative colors. Off by default: orbitals
+    /// keep the usual blue/red signs.
     pub(crate) by_fragment: bool,
 }
 
@@ -51,7 +52,7 @@ impl Default for SurfaceSettings {
             positive_color: Color32::from_rgb(60, 90, 230),
             negative_color: Color32::from_rgb(220, 70, 60),
             opacity: DEFAULT_ISOSURFACE_OPACITY,
-            by_fragment: true,
+            by_fragment: false,
         }
     }
 }

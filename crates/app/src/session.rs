@@ -151,15 +151,11 @@ struct SurfaceState {
     positive_color: [u8; 4],
     negative_color: [u8; 4],
     opacity: f32,
-    /// Analysis orbitals colored by fragment (default on).
-    #[serde(default = "default_true")]
+    /// Analysis orbitals colored by fragment (default off).
+    #[serde(default)]
     by_fragment: bool,
     #[serde(flatten)]
     origin: SurfaceOrigin,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn color_to_array(color: Color32) -> [u8; 4] {

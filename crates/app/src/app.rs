@@ -311,6 +311,15 @@ impl App {
         self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.surfaces.iter().map(|x| (x.label.clone(), x.visible)).collect()).unwrap_or_default()
     }
 
+    /// Whether surface `index` of the active structure is drawn in its
+    /// fragment colors (rather than the positive/negative ones) — for tests.
+    pub fn surface_colored_by_fragment(&self, index: usize) -> bool {
+        self.active_structure
+            .and_then(|i| self.structures.get(i))
+            .and_then(|s| s.surfaces.get(index))
+            .is_some_and(|x| x.settings.by_fragment && x.fragment_tint.is_some())
+    }
+
     /// The active structure's selected atoms (0-based, in click order) —
     /// for tests.
     pub fn selected_atoms(&self) -> Vec<usize> {

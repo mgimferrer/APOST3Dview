@@ -74,7 +74,7 @@ impl App {
                     }
                 })
                 .response
-                .on_hover_text("SCF orbitals come from the open file; the others are APOST-3D's analysis orbitals, labeled with their fragments and colored by fragment.");
+                .on_hover_text("SCF orbitals come from the open file; the others are APOST-3D's analysis orbitals, labeled with their fragments.");
         });
         if structure.wavefunction.is_none() && structure.active_orbital_set == 0 {
             structure.active_orbital_set = 1;
@@ -347,7 +347,7 @@ impl App {
         });
         if surface.fragment_tint.is_some() {
             ui.checkbox(&mut s.by_fragment, "Color by fragment")
-                .on_hover_text("Color the orbital with its fragment's color (blended for an orbital shared between fragments); off uses the colors below");
+                .on_hover_text("Color the orbital with its fragment's color from the APOST-3D window (blended for an orbital shared between fragments) instead of the positive/negative colors below");
         }
         ui.horizontal(|ui| {
             ui.label("Positive:");
