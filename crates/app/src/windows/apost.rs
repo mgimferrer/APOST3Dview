@@ -77,6 +77,11 @@ fn show_run_summary(ui: &mut egui::Ui, attachment: &ApostAttachment, results: &A
             ui.label(readable_date(date));
             ui.end_row();
         }
+        if let Some(id) = run.and_then(|r| r.id.as_deref()) {
+            ui.label("Run id");
+            ui.label(id).on_hover_text("Also on the first line of the orbital files this run wrote, to match them with these results");
+            ui.end_row();
+        }
 
         ui.label("Wavefunction");
         let method = wavefunction.and_then(|w| w.method.clone());

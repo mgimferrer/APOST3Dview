@@ -12,17 +12,16 @@ use crate::app::App;
 use crate::orbital_sets::{fragment_name, LoadedOrbitalSet};
 use crate::results::fragment_color;
 
-/// The orbital set and channel (beta) whose orbitals a table describes,
-/// from where it sits in the file (brief 04's mapping).
-fn table_channel(entry: &IndexEntry) -> Option<(&str, bool)> {
-    let path = entry.path.strip_prefix("/analyses/")?;
-    let (analysis, rest) = path.split_once('/')?;
-    let beta = match (analysis, rest) {
-        ("eos", "alpha/efos") | ("geos", "paired/efos") | ("geos", "negative_efos") | ("oslo", "total/oslos") | ("oslo", "alpha/oslos") => false,
-        ("eos", "beta/efos") | ("geos", "unpaired/efos") | ("oslo", "beta/oslos") => true,
-        _ => return None,
-    };
-    Some((analysis, beta))
+/// The orbital set (by analysis) and channel (beta) whose orbitals a
+/// table describes: its `fchk_orbitals` block, in the analysis it sits in.
+/// `None` for a table with no orbital file (EFFAO's, frontier tables).
+fn table_channel<'a>(entry: &'a IndexEntry, table: &TableObject) -> Option<(&'a str, bool)> {
+    let analysis = entry.path.strip_prefix("/analyses/")?.split('/').next()?;
+    match table.fchk_orbitals.as_deref()? {
+        "alpha" => Some((analysis, false)),
+        "beta" => Some((analysis, true)),
+        _ => None,
+    }
 }
 
 fn number_text(value: f64, column: &TableColumn) -> String {
@@ -116,7 +115,8 @@ impl App {
         }
         // By default the first table of orbitals (the EFOs or OSLOs), the
         // one with something to draw.
-        let default = entries.iter().find(|e| table_channel(e).is_some()).copied().unwrap_or(entries[0]);
+        let drawable = |e: &IndexEntry| matches!(results.quantity(e), Ok(Quantity::Table(t)) if table_channel(e, &t).is_some());
+        let default = entries.iter().find(|e| drawable(e)).copied().unwrap_or(entries[0]);
         let chosen = self.apost_table.as_ref().and_then(|id| entries.iter().find(|e| &e.id == id)).copied().unwrap_or(default);
         let mut choice = chosen.id.clone();
         let mut draw = None;
@@ -129,7 +129,7 @@ impl App {
                 });
             });
             let Ok(Quantity::Table(table)) = results.quantity(chosen) else { return };
-            let channel = table_channel(chosen);
+            let channel = table_channel(chosen, &table);
             let set: Option<&LoadedOrbitalSet> = channel.and_then(|(analysis, _)| structure.orbital_sets.iter().find(|s| s.set.analysis == analysis));
             let by_orbital = table.rows == "orbital";
             let names: Vec<String> = (0..table.n_rows)

@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use apost3dview_core::{check_orbital_file, hill_formula, parse_fchk_summary, parse_fchk_wavefunction, ApostResults, Molecule, OrbitalDetail, OrbitalLabel, OrbitalSet, Wavefunction};
+use apost3dview_core::{check_orbital_file, check_orbital_file_id, orbital_file_run_id, hill_formula, parse_fchk_summary, parse_fchk_wavefunction, ApostResults, Molecule, OrbitalDetail, OrbitalLabel, OrbitalSet, Wavefunction};
 use egui::{Color32, RichText};
 use glam::Vec3;
 
@@ -49,6 +49,8 @@ impl LoadedOrbitalSet {
             let main = parse_fchk_summary(main_fchk).map_err(|e| e.to_string())?;
             let own = parse_fchk_summary(&self.path).map_err(|e| e.to_string())?;
             check_orbital_file(&main, &own).map_err(|reason| format!("{name} does not belong to the open .fchk: {reason}"))?;
+            let found = orbital_file_run_id(&self.path).map_err(|e| format!("{name} could not be read: {e}"))?;
+            check_orbital_file_id(self.set.file_id.as_deref(), found.as_deref()).map_err(|reason| format!("{name} does not belong to these results: {reason}. Run APOST-3D again to write it anew."))?;
             parse_fchk_wavefunction(&self.path).map_err(|e| format!("{name} could not be read: {e}"))
         })();
         self.wavefunction = Some(result);

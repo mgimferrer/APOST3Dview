@@ -147,6 +147,10 @@ pub struct TableObject {
     /// One list per column, under its key; a cell is a number, a list of
     /// numbers (OSLO's fragments and shares), or null.
     pub data: serde_json::Map<String, Value>,
+    /// For a table of orbitals written to a `.fchk` file (since 0.8):
+    /// "alpha" or "beta", the block its `fchk_column` values refer to.
+    #[serde(default)]
+    pub fchk_orbitals: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -318,6 +322,9 @@ pub struct RunInfo {
     /// When the run started, ISO 8601 with time zone
     /// ("2026-10-13T14:05:31+02:00"). Since 0.2.
     pub date: Option<String>,
+    /// The run id, the start time and 4 hex digits (since 0.8); also on
+    /// the first line of every orbital `.fchk` file of the run.
+    pub id: Option<String>,
     pub threads: Option<u32>,
     /// "normal" or "stopped".
     pub status: Option<String>,
@@ -441,6 +448,8 @@ pub struct OrbitalSet {
     pub analysis: String,
     /// The `.fchk` file, a bare name in the results file's folder.
     pub file: String,
+    /// The run id the file must carry on its first line (since 0.8).
+    pub file_id: Option<String>,
     /// Per alpha orbital of the file (index = `.fchk` column - 1): its
     /// label, or `None` for an empty orbital (no row in the tables).
     pub alpha: Vec<Option<OrbitalLabel>>,
@@ -497,51 +506,52 @@ impl ApostResults {
     /// paired EFOs (then the negative ones) as alpha and unpaired as beta,
     /// OSLO total or alpha OSLOs as alpha and beta OSLOs as beta.
     pub fn orbital_sets(&self) -> Vec<OrbitalSet> {
-        let table = |pointer: &str| -> Option<TableObject> { serde_json::from_value(self.raw.pointer(pointer)?.clone()).ok() };
         let mut sets = Vec::new();
         for analysis in ["eos", "geos", "oslo"] {
             let base = format!("/analyses/{analysis}");
-            let Some(file) = self.raw.pointer(&format!("{base}/orbital_file")).and_then(Value::as_str) else { continue };
-            let mut set = OrbitalSet { analysis: analysis.to_string(), file: file.to_string(), alpha: Vec::new(), beta: Vec::new(), beta_note: None };
-            let beta = self.raw.pointer(&format!("{base}/beta"));
+            let Some(block) = self.raw.pointer(&base) else { continue };
+            let Some(file) = block.get("orbital_file").and_then(Value::as_str) else { continue };
+            let file_id = block.get("orbital_file_id").and_then(Value::as_str).map(str::to_string);
+            let mut set = OrbitalSet { analysis: analysis.to_string(), file: file.to_string(), file_id, alpha: Vec::new(), beta: Vec::new(), beta_note: None };
+            let beta = block.get("beta");
             if beta.and_then(|b| b.get("same_as_alpha")).and_then(Value::as_bool) == Some(true) {
                 set.beta_note = Some("The \u{3b2} orbitals are the same as the \u{3b1} ones.".to_string());
             } else if beta.and_then(|b| b.get("no_electrons")).and_then(Value::as_bool) == Some(true) {
                 set.beta_note = Some("No \u{3b2} electrons.".to_string());
             }
-            let (alpha_tables, beta_tables): (Vec<(&str, bool)>, Vec<(&str, bool)>) = match analysis {
-                "eos" => (vec![("alpha/efos", false)], vec![("beta/efos", false)]),
-                "geos" => (vec![("paired/efos", false), ("negative_efos", true)], vec![("unpaired/efos", false)]),
-                _ => (vec![("total/oslos", false), ("alpha/oslos", false)], vec![("beta/oslos", false)]),
-            };
-            for (labels, tables) in [(&mut set.alpha, alpha_tables), (&mut set.beta, beta_tables)] {
-                for (path, negative) in tables {
-                    let Some(t) = table(&format!("{base}/{path}")) else { continue };
-                    for row in 0..t.n_rows {
-                        let Some(column) = t.number("fchk_column", row) else { continue };
-                        let index = column as usize;
-                        if index == 0 {
-                            continue;
-                        }
-                        let fragments: Vec<u32> = t.numbers(if t.has_column("fragments") { "fragments" } else { "fragment" }, row).unwrap_or_default().iter().map(|f| *f as u32).collect();
-                        let shares = t.numbers("shares", row).unwrap_or_else(|| vec![1.0; fragments.len()]);
-                        let detail = if analysis == "oslo" {
-                            OrbitalDetail::Oslo { iteration: t.number("iteration", row), foli: t.number("foli", row) }
-                        } else {
-                            OrbitalDetail::Efo {
-                                net: t.number("net", row),
-                                gross: t.number("gross", row),
-                                fit_percent: t.number("fit_percent", row),
-                                electrons: t.number("electrons", row),
-                                negative,
-                                recovered_percent: t.number("recovered_percent", row),
-                            }
-                        };
-                        if labels.len() < index {
-                            labels.resize(index, None);
-                        }
-                        labels[index - 1] = Some(OrbitalLabel { fragments, shares, detail });
+            // Every table of orbitals in the block that says which block
+            // of the orbital file it describes (`fchk_orbitals`).
+            for (path, t) in orbital_tables(block, "") {
+                let labels = match t.fchk_orbitals.as_deref() {
+                    Some("alpha") => &mut set.alpha,
+                    Some("beta") => &mut set.beta,
+                    _ => continue,
+                };
+                let negative = path.ends_with("negative_efos");
+                for row in 0..t.n_rows {
+                    let Some(column) = t.number("fchk_column", row) else { continue };
+                    let index = column as usize;
+                    if index == 0 {
+                        continue;
                     }
+                    let fragments: Vec<u32> = t.numbers("fragments", row).unwrap_or_default().iter().map(|f| *f as u32).collect();
+                    let shares = t.numbers("shares", row).unwrap_or_else(|| vec![1.0; fragments.len()]);
+                    let detail = if analysis == "oslo" {
+                        OrbitalDetail::Oslo { iteration: t.number("iteration", row), foli: t.number("foli", row) }
+                    } else {
+                        OrbitalDetail::Efo {
+                            net: t.number("net", row),
+                            gross: t.number("gross", row),
+                            fit_percent: t.number("fit_percent", row),
+                            electrons: t.number("electrons", row),
+                            negative,
+                            recovered_percent: t.number("recovered_percent", row),
+                        }
+                    };
+                    if labels.len() < index {
+                        labels.resize(index, None);
+                    }
+                    labels[index - 1] = Some(OrbitalLabel { fragments, shares, detail });
                 }
             }
             sets.push(set);
@@ -706,6 +716,35 @@ pub fn check_orbital_file(main: &FchkSummary, orbitals: &FchkSummary) -> Result<
         return Err(format!("it has {:?} basis functions, the open .fchk {:?}", orbitals.n_basis_functions, main.n_basis_functions));
     }
     Ok(())
+}
+
+/// The tables of orbitals under `value` with their path, in file order.
+fn orbital_tables(value: &Value, path: &str) -> Vec<(String, TableObject)> {
+    let Some(object) = value.as_object() else { return Vec::new() };
+    if object.get("rows").and_then(Value::as_str) == Some("orbital") {
+        return serde_json::from_value(value.clone()).map(|t| vec![(path.to_string(), t)]).unwrap_or_default();
+    }
+    object.iter().flat_map(|(key, child)| orbital_tables(child, &format!("{path}/{key}"))).collect()
+}
+
+/// The run id on the first line of an orbital `.fchk` file
+/// ("APOST-3D OSLOs, run <id>").
+pub fn orbital_file_run_id(path: &Path) -> std::io::Result<Option<String>> {
+    use std::io::BufRead;
+    let mut line = String::new();
+    std::io::BufReader::new(std::fs::File::open(path)?).read_line(&mut line)?;
+    Ok(line.trim_end().rsplit_once(", run ").map(|(_, id)| id.trim().to_string()))
+}
+
+/// Refuses an orbital file left from another run of the same molecule:
+/// its first line must carry the run id the results expect.
+pub fn check_orbital_file_id(expected: Option<&str>, found: Option<&str>) -> Result<(), String> {
+    match (expected, found) {
+        (None, _) => Ok(()),
+        (Some(e), Some(f)) if e == f => Ok(()),
+        (Some(e), Some(f)) => Err(format!("it was written by another APOST-3D run (run {f}, the results are from run {e})")),
+        (Some(_), None) => Err("it carries no APOST-3D run id on its first line, so it can't be matched with these results".to_string()),
+    }
 }
 
 /// Atoms (0-based) that belong to no fragment, or to more than one.

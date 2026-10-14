@@ -19,7 +19,7 @@ pub mod wavefunction;
 pub mod xyz;
 
 pub use apost::{
-    check_against_fchk, check_orbital_file, find_results_for, fragment_coverage, fragment_of_atom, is_results_file, load_apost_results, parse_apost_results,
+    check_against_fchk, check_orbital_file, check_orbital_file_id, orbital_file_run_id, find_results_for, fragment_coverage, fragment_of_atom, is_results_file, load_apost_results, parse_apost_results,
     report_path_for, results_path_for, wavefunction_path_for, ApostResults, Fragment, FragmentCoverage, IndexEntry, MatrixObject, OrbitalDetail, OrbitalLabel, OrbitalSet,
     Quantity, QuantityKind, TableCell, TableColumn, TableObject,
 };

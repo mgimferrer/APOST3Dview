@@ -137,6 +137,37 @@ fn an_orbital_file_of_another_molecule_is_refused() {
 }
 
 #[test]
+fn an_orbital_file_of_another_run_is_refused() {
+    let Some(dir) = orbital_fixtures() else { return };
+    let scratch = scratch_dir("orbital-set-stale");
+    for name in ["C2H6-OSLO-2CH3.fchk", "C2H6-OSLO-2CH3.apost.json"] {
+        std::fs::copy(dir.join(name), scratch.join(name)).unwrap();
+    }
+    // The same orbitals, as if left by an earlier run: another run id.
+    let text = std::fs::read_to_string(dir.join("C2H6-OSLO-2CH3-OSLOs.fchk")).unwrap();
+    let (first, rest) = text.split_once('\n').unwrap();
+    let stale = format!("{}, run 2026-01-01T00:00:00+01:00/abcd\n{rest}", first.rsplit_once(", run ").unwrap().0);
+    std::fs::write(scratch.join("C2H6-OSLO-2CH3-OSLOs.fchk"), stale).unwrap();
+    let mut harness = app_with(vec![scratch.join("C2H6-OSLO-2CH3.fchk")]);
+    harness.get_by_label("Tables (1)").click();
+    harness.run_steps(2);
+    harness.get_all_by_label("Draw").next().unwrap().click_accesskit();
+    harness.run_steps(3);
+    assert!(harness.state().surface_labels().is_empty());
+    assert!(toasts(&harness).iter().any(|m| m.contains("another APOST-3D run")), "{:?}", toasts(&harness));
+}
+
+#[test]
+fn effao_tables_are_listed_but_not_drawable() {
+    let Some(dir) = common::fixtures_dir() else { return };
+    let mut harness = app_with(vec![dir.join("CH3F-EFFAO-U.fchk")]);
+    harness.get_by_label("Tables (2)").click();
+    harness.run_steps(2);
+    harness.get_by_label("No orbital file for these orbitals.");
+    assert_eq!(harness.query_all_by_label("Draw").count(), 0);
+}
+
+#[test]
 fn sessions_keep_analysis_orbitals() {
     let Some(dir) = orbital_fixtures() else { return };
     let scratch = scratch_dir("orbital-set-session");

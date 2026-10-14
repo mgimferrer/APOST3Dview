@@ -198,7 +198,7 @@ fn orbital_fixtures_dir() -> Option<PathBuf> {
 /// the file belongs to the main .fchk, and brief 04's particular cases.
 #[test]
 fn orbital_sets_map_onto_their_files() {
-    use apost3dview_core::{check_orbital_file, parse_fchk_wavefunction, OrbitalDetail};
+    use apost3dview_core::{check_orbital_file, check_orbital_file_id, orbital_file_run_id, parse_fchk_wavefunction, OrbitalDetail};
     let Some(dir) = orbital_fixtures_dir() else { return };
     let mut cases = 0;
     for json in std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.to_string_lossy().ends_with(".apost.json")) {
@@ -211,6 +211,13 @@ fn orbital_sets_map_onto_their_files() {
         for set in &sets {
             let file = dir.join(&set.file);
             check_orbital_file(&main, &parse_fchk_summary(&file).unwrap()).unwrap_or_else(|e| panic!("{name}: {e}"));
+            // The file carries the run id the results expect (0.8).
+            let run_id = results.run.as_ref().and_then(|r| r.id.clone());
+            assert!(run_id.is_some(), "{name}: no run.id");
+            assert_eq!(set.file_id, run_id, "{name}: orbital_file_id is not run.id");
+            let found = orbital_file_run_id(&file).unwrap();
+            check_orbital_file_id(set.file_id.as_deref(), found.as_deref()).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert!(check_orbital_file_id(set.file_id.as_deref(), Some("2026-01-01T00:00:00+00:00/0000")).is_err());
             let wfn = parse_fchk_wavefunction(&file).unwrap();
             assert!(set.alpha.len() <= wfn.alpha.num_orbitals(), "{name}: alpha labels past the file");
             assert!(set.alpha.iter().flatten().count() > 0, "{name}: no alpha labels");
@@ -256,4 +263,39 @@ fn orbital_sets_map_onto_their_files() {
     // OSLO, unrestricted, 7 fragments: 55 + 54 orbitals.
     let iron = set("FeCN5NO3--UBLYP-t2");
     assert_eq!((iron.alpha.iter().flatten().count(), iron.beta.iter().flatten().count()), (55, 54));
+}
+
+/// Schema 0.8: every orbital table gives `fragments` and `shares` lists
+/// (no single `fragment` column); `fchk_orbitals` exactly where there is a
+/// `fchk_column`; EFFAO tables have neither.
+#[test]
+fn orbital_tables_share_one_form() {
+    use apost3dview_core::{Quantity, QuantityKind};
+    let dirs: Vec<PathBuf> = [fixtures_dir(), orbital_fixtures_dir()].into_iter().flatten().collect();
+    let (mut tables, mut effao) = (0, 0);
+    for dir in dirs {
+        for json in std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.to_string_lossy().ends_with(".apost.json")) {
+            let name = json.file_name().unwrap().to_string_lossy().into_owned();
+            let results = load_apost_results(&json).unwrap();
+            for entry in results.entries(QuantityKind::Table) {
+                let Ok(Quantity::Table(table)) = results.quantity(entry) else { panic!("{name}: {}", entry.id) };
+                if table.rows != "orbital" {
+                    continue;
+                }
+                tables += 1;
+                assert!(table.has_column("fragments") && table.has_column("shares") && !table.has_column("fragment"), "{name}: {}", entry.id);
+                for row in 0..table.n_rows {
+                    let (fragments, shares) = (table.numbers("fragments", row).unwrap(), table.numbers("shares", row).unwrap());
+                    assert_eq!(fragments.len(), shares.len(), "{name}: {} row {row}", entry.id);
+                    assert!((shares.iter().sum::<f64>() - 1.0).abs() < 1e-6, "{name}: {} row {row} shares {shares:?}", entry.id);
+                }
+                assert_eq!(table.has_column("fchk_column"), table.fchk_orbitals.is_some(), "{name}: {}", entry.id);
+                if entry.analysis.as_deref() == Some("effao") {
+                    effao += 1;
+                    assert!(table.fchk_orbitals.is_none(), "{name}: {}", entry.id);
+                }
+            }
+        }
+    }
+    assert!(tables > 0 && effao > 0, "{tables} orbital tables, {effao} EFFAO");
 }
