@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use apost3dview_core::{parse_cube, Bond, LengthUnit, MeasurementKind};
-use apost3dview_render::{AoSettings, BondVisualStyle, DofSettings, IsosurfaceMaterial, Material};
+use apost3dview_render::{AoSettings, BondVisualStyle, ColorScale, DofSettings, IsosurfaceMaterial, Material};
 use egui::Color32;
 use glam::{Quat, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::app::App;
 use crate::isosurfaces::{Surface, SurfaceSettings, SurfaceSource};
 use crate::orbitals::{orbital_surfaces, OrbitalChoice};
+use crate::results_view::ResultsView;
 use crate::state::{AtomLabelMode, Measurement};
 use crate::util::find_bond_between;
 
@@ -46,6 +47,9 @@ struct SessionFile {
     active_structure: Option<usize>,
     view: ViewState,
     appearance: AppearanceState,
+    /// Fixed color ranges, by quantity id (empty: all automatic).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    color_ranges: BTreeMap<String, ColorScale>,
     #[serde(default)]
     structures: Vec<StructureState>,
 }
@@ -90,8 +94,9 @@ struct StructureState {
     file_absolute: String,
     /// The atoms the settings below refer to, to notice a changed file.
     atomic_numbers: Vec<u32>,
+    /// What the APOST-3D results show on the molecule.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    fragment_colors: Option<bool>,
+    results_view: Option<ResultsView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     selected_surface: Option<usize>,
     #[serde(default)]
@@ -234,7 +239,7 @@ impl App {
                     file: relative_path(base, path),
                     file_absolute: path.to_string_lossy().into_owned(),
                     atomic_numbers: molecule.atomic_numbers.clone(),
-                    fragment_colors: structure.apost.as_ref().filter(|a| a.results.is_ok()).map(|a| a.fragment_colors),
+                    results_view: structure.apost.as_ref().and_then(|a| a.view.clone()),
                     selected_surface: structure.selected_surface,
                     hidden_atoms,
                     added_bonds: (structure.perceived_bonds..molecule.bonds.len()).map(|i| atom_pair(molecule, i)).collect(),
@@ -280,6 +285,7 @@ impl App {
                 dof_settings: self.dof_settings,
                 surface_material: self.isosurface_material,
             },
+            color_ranges: self.color_ranges.clone(),
             structures,
         }
     }
@@ -348,6 +354,7 @@ impl App {
         self.structures.clear();
         self.active_structure = None;
         self.apply_appearance(&session.appearance);
+        self.color_ranges = session.color_ranges.clone();
 
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         let mut problems: Vec<String> = Vec::new();
@@ -420,8 +427,10 @@ impl App {
         let structure = &mut self.structures[index];
         structure.surfaces = surfaces;
         structure.selected_surface = state.selected_surface.filter(|&i| i < structure.surfaces.len());
-        if let (Some(on), Some(attachment)) = (state.fragment_colors, structure.apost.as_mut()) {
-            attachment.fragment_colors = on;
+        if let (Some(view), Some(attachment)) = (&state.results_view, structure.apost.as_mut()) {
+            if attachment.results.is_ok() {
+                attachment.view = Some(view.clone());
+            }
         }
         if !same_atoms {
             return;

@@ -33,6 +33,9 @@ pub struct GlyphInstance {
     /// same distance-field units as `edge_bias` (0 = no outline).
     pub halo_color: [f32; 3],
     pub halo_width: f32,
+    /// 1.0: drawn over everything instead of depth-tested (value labels).
+    /// Not a shader input; `ViewportResources::update_labels` sorts on it.
+    pub on_top: f32,
 }
 
 /// Outline drawn around a label's glyphs (see `GlyphInstance::halo_width`).
@@ -89,6 +92,7 @@ pub fn layout_label(
                 edge_bias,
                 halo_color: halo.color,
                 halo_width: halo.width,
+                on_top: 0.0,
             });
         }
 

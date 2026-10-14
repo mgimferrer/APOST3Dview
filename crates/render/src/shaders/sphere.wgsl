@@ -425,3 +425,39 @@ fn fs_gbuffer(in: VertexOutput) -> GBufferOutput {
     out.depth = clip.z / clip.w;
     return out;
 }
+
+// Atom halos: a translucent sphere around an atom, colored by the atom's
+// value — the single-atom version of a fragment envelope, with the same
+// look as `envelope.wgsl` (soft wrapped lighting, opacity rising toward
+// the silhouette so the atom inside keeps its color). Exact and round like
+// the atoms themselves; drawn without writing depth, after the opaque
+// scene, farthest first.
+const HALO_STRENGTH: f32 = 0.55;
+const HALO_CENTER_OPACITY: f32 = 0.26;
+const HALO_EDGE_POWER: f32 = 2.2;
+
+@fragment
+fn fs_halo(in: VertexOutput) -> FragmentOutput {
+    let ray_origin = scene.camera_eye.xyz;
+    let ray_dir = normalize(in.world_position - ray_origin);
+    let hit = intersect_sphere(ray_origin, ray_dir, in.center, in.radius);
+    if (hit.w < 0.5) {
+        discard;
+    }
+    let n = normalize(hit.xyz - in.center);
+    let v = -ray_dir;
+    let n_dot_v = max(dot(n, v), 0.0);
+    let l = normalize(scene.light_dir.xyz);
+    let wrap = clamp((dot(n, l) + 0.6) / 1.6, 0.0, 1.0);
+    let h = normalize(v + l);
+    let sheen = pow(max(dot(n, h), 0.0), 40.0) * 0.12;
+    let lit = srgb_to_linear(in.color) * (0.55 + 0.55 * wrap) + vec3<f32>(sheen);
+    let edge = pow(clamp(1.0 - n_dot_v, 0.0, 1.0), HALO_EDGE_POWER);
+    let alpha = HALO_STRENGTH * mix(HALO_CENTER_OPACITY, 1.0, edge);
+
+    let clip = scene.view_proj * vec4<f32>(hit.xyz, 1.0);
+    var out: FragmentOutput;
+    out.color = vec4<f32>(finalize_color(lit), alpha);
+    out.depth = clip.z / clip.w;
+    return out;
+}

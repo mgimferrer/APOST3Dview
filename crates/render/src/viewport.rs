@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Mutex;
 
 use wgpu::util::DeviceExt;
 
@@ -47,6 +48,15 @@ fn bond_radius_scale_attribute() -> wgpu::VertexAttribute {
 /// Owns the GPU resources for the 3D viewport (pipelines, buffers). Lives
 /// in egui-wgpu's `CallbackResources` so it shares the device/queue eframe
 /// already created, rather than opening a second one.
+/// One envelope's slice of the envelope vertex buffer, with its center,
+/// so envelopes can be drawn farthest from the camera first.
+#[derive(Debug, Clone, Copy)]
+pub struct EnvelopeRange {
+    pub first_vertex: u32,
+    pub vertex_count: u32,
+    pub center: [f32; 3],
+}
+
 pub struct ViewportResources {
     target_format: wgpu::TextureFormat,
     uniform_buffer: wgpu::Buffer,
@@ -55,6 +65,12 @@ pub struct ViewportResources {
     atom_pipeline: wgpu::RenderPipeline,
     cylinder_pipeline: wgpu::RenderPipeline,
     atom_highlight_pipeline: wgpu::RenderPipeline,
+    /// Translucent value halos around atoms (`fs_halo`), and their
+    /// instances: kept on the CPU too, to re-sort farthest first whenever
+    /// the camera moves.
+    atom_halo_pipeline: wgpu::RenderPipeline,
+    halo_instances: Option<(wgpu::Buffer, u32)>,
+    halo_cpu: Mutex<Vec<AtomInstance>>,
     cylinder_highlight_pipeline: wgpu::RenderPipeline,
 
     cylinder_vertex_buffer: wgpu::Buffer,
@@ -68,6 +84,16 @@ pub struct ViewportResources {
     glyph_bind_group: wgpu::BindGroup,
     text_pipeline: wgpu::RenderPipeline,
     text_instances: Option<(wgpu::Buffer, u32)>,
+    /// Labels drawn over everything (values that must stay readable),
+    /// from glyphs with `on_top` set.
+    text_overlay_pipeline: wgpu::RenderPipeline,
+    text_overlay_pipeline_single: wgpu::RenderPipeline,
+    overlay_text_instances: Option<(wgpu::Buffer, u32)>,
+    envelope_pipeline: wgpu::RenderPipeline,
+    envelope_vertices: Option<wgpu::Buffer>,
+    envelope_ranges: Vec<EnvelopeRange>,
+    /// Camera position of the last `write_uniforms`, to order envelopes.
+    envelope_eye: Mutex<[f32; 3]>,
 
     atom_instances: Option<(wgpu::Buffer, u32)>,
     bond_instances: Option<(wgpu::Buffer, u32)>,
@@ -308,6 +334,18 @@ impl ViewportResources {
             Some(wgpu::BlendState::ALPHA_BLENDING),
             highlight_depth.clone(),
         );
+        let atom_halo_pipeline = make_atom_pipeline(
+            "atom_halo_pipeline",
+            "fs_halo",
+            Some(wgpu::BlendState::ALPHA_BLENDING),
+            Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+        );
 
         let make_cylinder_pipeline = |label: &str, entry_point: &'static str, blend, depth_stencil: Option<wgpu::DepthStencilState>| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -510,7 +548,7 @@ impl ViewportResources {
             vertex: wgpu::VertexState {
                 module: &text_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Some(glyph_instance_layout)],
+                buffers: &[Some(glyph_instance_layout.clone())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -524,8 +562,69 @@ impl ViewportResources {
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: opaque_depth,
+            depth_stencil: opaque_depth.clone(),
             multisample: text_multisample,
+            multiview_mask: None,
+            cache: None,
+        });
+        // The same glyphs drawn regardless of depth, for value labels that
+        // must stay readable even when an atom is in front of their anchor.
+        let text_overlay_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("text_overlay_pipeline"),
+            layout: Some(&text_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &text_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(glyph_instance_layout.clone())],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &text_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Always),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: text_multisample,
+            multiview_mask: None,
+            cache: None,
+        });
+        // The same, for a single-sampled target without depth (drawn onto an
+        // export's depth-of-field output): blended instead of
+        // alpha-to-coverage, which needs MSAA.
+        let text_overlay_pipeline_single = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("text_overlay_pipeline_single"),
+            layout: Some(&text_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &text_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(glyph_instance_layout.clone())],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &text_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
             multiview_mask: None,
             cache: None,
         });
@@ -591,6 +690,50 @@ impl ViewportResources {
                 wgpu::VertexAttribute { offset: 44, shader_location: 3, format: wgpu::VertexFormat::Float32 },
             ],
         };
+        // Envelopes (see `envelope.wgsl`): translucent, depth-tested against
+        // the opaque scene but never writing depth, so they neither hide
+        // nor darken what is inside them.
+        let envelope_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("envelope_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/envelope.wgsl").into()),
+        });
+        let envelope_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("envelope_pipeline_layout"),
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
+        });
+        let envelope_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("envelope_pipeline"),
+            layout: Some(&envelope_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &envelope_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(isosurface_vertex_layout.clone())],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &envelope_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample,
+            multiview_mask: None,
+            cache: None,
+        });
+
         let isosurface_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("isosurface_pipeline"),
             layout: Some(&isosurface_pipeline_layout),
@@ -957,6 +1100,9 @@ impl ViewportResources {
             atom_pipeline,
             cylinder_pipeline,
             atom_highlight_pipeline,
+            atom_halo_pipeline,
+            halo_instances: None,
+            halo_cpu: Mutex::new(Vec::new()),
             cylinder_highlight_pipeline,
             cylinder_vertex_buffer,
             cylinder_index_buffer,
@@ -964,6 +1110,13 @@ impl ViewportResources {
             glyph_bind_group,
             text_pipeline,
             text_instances: None,
+            text_overlay_pipeline,
+            text_overlay_pipeline_single,
+            overlay_text_instances: None,
+            envelope_pipeline,
+            envelope_vertices: None,
+            envelope_ranges: Vec::new(),
+            envelope_eye: Mutex::new([0.0; 3]),
             atom_instances: None,
             bond_instances: None,
             atom_highlight_instances: None,
@@ -998,7 +1151,7 @@ impl ViewportResources {
     /// Initial upload when a molecule is opened — everything visible, no
     /// selection, all bonds solid, no measurements.
     pub fn load_molecule(&mut self, device: &wgpu::Device, molecule: &Molecule) {
-        self.update_geometry(device, molecule, &HashSet::new(), &HashSet::new(), &[], None);
+        self.update_geometry(device, molecule, &HashSet::new(), &HashSet::new(), &[], None, None);
         self.update_highlights(device, molecule, &[], &[]);
         self.update_measurements(device, molecule, &[], [0.0, 0.0, 0.0]);
     }
@@ -1016,9 +1169,10 @@ impl ViewportResources {
         hidden_bonds: &HashSet<usize>,
         bond_styles: &[BondVisualStyle],
         atom_colors: Option<&[[f32; 3]]>,
+        bond_scales: Option<&[f32]>,
     ) {
         let atom_data = build_atom_instances(molecule, hidden_atoms, atom_colors);
-        let bond_data = build_bond_instances(molecule, hidden_atoms, hidden_bonds, bond_styles, atom_colors);
+        let bond_data = build_bond_instances(molecule, hidden_atoms, hidden_bonds, bond_styles, atom_colors, bond_scales);
 
         let atom_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("atom_instance_buffer"),
@@ -1100,17 +1254,68 @@ impl ViewportResources {
     /// runs when a repaint happens at all (egui only repaints when
     /// something's interacting), so this doesn't mean constant background
     /// work — just cheap work exactly when there's already a frame to draw.
+    /// Uploads this frame's labels: depth-tested ones, and those marked
+    /// `on_top` (drawn over everything, last).
     pub fn update_labels(&mut self, device: &wgpu::Device, instances: &[GlyphInstance]) {
-        if instances.is_empty() {
-            self.text_instances = None;
+        let upload = |label: &str, glyphs: Vec<GlyphInstance>| {
+            (!glyphs.is_empty()).then(|| {
+                let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(label),
+                    contents: bytemuck::cast_slice(&glyphs),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+                (buffer, glyphs.len() as u32)
+            })
+        };
+        let (on_top, in_scene): (Vec<GlyphInstance>, Vec<GlyphInstance>) = instances.iter().partition(|g| g.on_top > 0.5);
+        self.text_instances = upload("text_instance_buffer", in_scene);
+        self.overlay_text_instances = upload("overlay_text_instance_buffer", on_top);
+    }
+
+    /// Uploads the envelopes (see `envelope.wgsl`): all their triangles in
+    /// one buffer, with one range per envelope.
+    pub fn update_envelopes(&mut self, device: &wgpu::Device, vertices: &[IsosurfaceVertex], ranges: &[EnvelopeRange]) {
+        if vertices.is_empty() {
+            self.envelope_vertices = None;
+            self.envelope_ranges.clear();
             return;
         }
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("text_instance_buffer"),
-            contents: bytemuck::cast_slice(instances),
+        self.envelope_vertices = Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("envelope_vertex_buffer"),
+            contents: bytemuck::cast_slice(vertices),
             usage: wgpu::BufferUsages::VERTEX,
+        }));
+        self.envelope_ranges = ranges.to_vec();
+    }
+
+    /// Uploads the atom halos: one instance per atom, `vdw_radius` such
+    /// that `vdw_radius * atom_scale` is the halo's radius.
+    pub fn update_halos(&mut self, device: &wgpu::Device, halos: &[AtomInstance]) {
+        *self.halo_cpu.lock().unwrap() = halos.to_vec();
+        self.halo_instances = (!halos.is_empty()).then(|| {
+            let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("halo_instance_buffer"),
+                contents: bytemuck::cast_slice(halos),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+            (buffer, halos.len() as u32)
         });
-        self.text_instances = Some((buffer, instances.len() as u32));
+    }
+
+    /// Envelopes farthest from the camera first, so overlapping clouds
+    /// blend in the right order.
+    fn draw_envelopes(&self, render_pass: &mut wgpu::RenderPass<'_>) {
+        let Some(buffer) = &self.envelope_vertices else { return };
+        let eye = *self.envelope_eye.lock().unwrap();
+        let distance = |r: &EnvelopeRange| (0..3).map(|i| (r.center[i] - eye[i]).powi(2)).sum::<f32>();
+        let mut order: Vec<&EnvelopeRange> = self.envelope_ranges.iter().collect();
+        order.sort_by(|a, b| distance(b).total_cmp(&distance(a)));
+        render_pass.set_pipeline(&self.envelope_pipeline);
+        render_pass.set_bind_group(0, &self.bind_group, &[]);
+        render_pass.set_vertex_buffer(0, buffer.slice(..));
+        for range in order {
+            render_pass.draw(range.first_vertex..range.first_vertex + range.vertex_count, 0..1);
+        }
     }
 
     /// Rebuilds the isosurface vertex buffer — called whenever the caller
@@ -1141,6 +1346,15 @@ impl ViewportResources {
     /// upload the scene uniforms itself, same as `ViewportCallback` does.
     pub fn write_uniforms(&self, queue: &wgpu::Queue, uniforms: &SceneUniforms) {
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
+        let e = uniforms.camera_eye;
+        *self.envelope_eye.lock().unwrap() = [e[0], e[1], e[2]];
+        // Halos farthest first, for this camera.
+        if let Some((buffer, _)) = &self.halo_instances {
+            let mut halos = self.halo_cpu.lock().unwrap();
+            let distance = |h: &AtomInstance| (0..3).map(|i| (h.center[i] - e[i]).powi(2)).sum::<f32>();
+            halos.sort_by(|a, b| distance(b).total_cmp(&distance(a)));
+            queue.write_buffer(buffer, 0, bytemuck::cast_slice(&halos));
+        }
     }
 
     /// The actual draw call sequence — shared by the live egui-wgpu
@@ -1218,6 +1432,15 @@ impl ViewportResources {
             }
         }
 
+        // Envelopes and halos over the finished opaque scene and isosurfaces.
+        self.draw_envelopes(render_pass);
+        render_pass.set_bind_group(0, &self.bind_group, &[]);
+        if let Some((buffer, count)) = &self.halo_instances {
+            render_pass.set_pipeline(&self.atom_halo_pipeline);
+            render_pass.set_vertex_buffer(0, buffer.slice(..));
+            render_pass.draw(0..6, 0..*count);
+        }
+
         // Highlight overlays last, alpha-blended on top of the opaque pass.
         if let Some((buffer, count)) = &self.bond_highlight_instances {
             if *count > 0 {
@@ -1236,6 +1459,20 @@ impl ViewportResources {
                 render_pass.draw(0..6, 0..*count);
             }
         }
+    }
+
+    /// Value labels, over everything: drawn after the scene and after
+    /// depth of field (which would otherwise blur them with whatever lies
+    /// behind them), so they are always sharp and never cut by an atom.
+    /// `single_sample` selects the pipeline for a pass without MSAA or
+    /// depth (an export's depth-of-field output).
+    pub fn draw_overlay_labels(&self, render_pass: &mut wgpu::RenderPass<'_>, single_sample: bool) {
+        let Some((buffer, count)) = &self.overlay_text_instances else { return };
+        render_pass.set_pipeline(if single_sample { &self.text_overlay_pipeline_single } else { &self.text_overlay_pipeline });
+        render_pass.set_bind_group(0, &self.bind_group, &[]);
+        render_pass.set_bind_group(1, &self.glyph_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, buffer.slice(..));
+        render_pass.draw(0..6, 0..*count);
     }
 
     /// The ambient-occlusion G-buffer draw sequence — atoms, bonds, and the
@@ -1960,6 +2197,9 @@ impl ViewportResources {
                 multiview_mask: None,
             });
             self.draw_into_pass(&mut render_pass, ao_bind_group.as_ref());
+            if settings.depth_of_field.is_none() {
+                self.draw_overlay_labels(&mut render_pass, false);
+            }
         }
 
         // Depth of field (see `dof.rs`): blur the resolved scene color,
@@ -2065,6 +2305,23 @@ impl ViewportResources {
             composite_pass.set_bind_group(0, &composite_bind_group, &[]);
             composite_pass.draw(0..3, 0..1);
             drop(composite_pass);
+
+            // Value labels, sharp, over the blurred image.
+            let mut label_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("export_overlay_label_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &dof_output_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            self.draw_overlay_labels(&mut label_pass, true);
+            drop(label_pass);
 
             Some(dof_output_texture)
         } else {
@@ -2241,9 +2498,11 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             if let Some(dof_bind_group) = resources.live_dof_bind_group() {
                 resources.blit_dof_output(render_pass, dof_bind_group);
             }
+            resources.draw_overlay_labels(render_pass, false);
             return;
         }
         let ao_bind_group = if self.ambient_occlusion.is_some() { resources.live_ao_bind_group() } else { None };
         resources.draw_into_pass(render_pass, ao_bind_group);
+        resources.draw_overlay_labels(render_pass, false);
     }
 }

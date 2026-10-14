@@ -6,6 +6,7 @@ use egui::{Color32, RichText};
 
 use crate::app::App;
 use crate::results::{fragment_color, ApostAttachment, FRAGMENT_PALETTE, UNASSIGNED_COLOR};
+use crate::results_view::focus_target;
 
 const ERROR_FILL: Color32 = Color32::from_rgb(196, 60, 40);
 const NOTICE_FILL: Color32 = Color32::from_rgb(200, 130, 20);
@@ -175,13 +176,12 @@ enum FragmentAction {
     /// Select the atoms of the fragment at this position in the list;
     /// `add` keeps the current selection (Cmd/Ctrl-click).
     Select { position: usize, add: bool },
-    ToggleColors,
 }
 
 /// The fragments as APOST-3D defined them, which doubles as the user's check
 /// that they were defined as intended: atoms in no fragment, or in two, are
 /// called out.
-fn show_fragments(ui: &mut egui::Ui, attachment: &ApostAttachment, results: &ApostResults, atomic_numbers: &[u32], selected: &[usize]) -> Option<FragmentAction> {
+fn show_fragments(ui: &mut egui::Ui, results: &ApostResults, atomic_numbers: &[u32], selected: &[usize], focus_mode: bool) -> Option<FragmentAction> {
     let fragments = results.fragments();
     let mut action = None;
     egui::CollapsingHeader::new(format!("Fragments ({})", fragments.len())).id_salt("apost_fragments").default_open(true).show(ui, |ui| {
@@ -189,16 +189,8 @@ fn show_fragments(ui: &mut egui::Ui, attachment: &ApostAttachment, results: &Apo
             ui.label(RichText::new("This run defines no fragments.").weak());
             return;
         }
-        let mut colors_on = attachment.fragment_colors;
-        if ui
-            .toggle_value(&mut colors_on, "Color atoms by fragment")
-            .on_hover_text("Switch off for a figure in the usual element colors; switch on again at any time.")
-            .changed()
-        {
-            action = Some(FragmentAction::ToggleColors);
-        }
         if fragments.len() > FRAGMENT_PALETTE.len() {
-            ui.label(RichText::new(format!("More than {} fragments: colors repeat. Click a fragment to see its atoms.", FRAGMENT_PALETTE.len())).small().weak());
+            ui.label(RichText::new(format!("More than {} fragments: colors repeat.", FRAGMENT_PALETTE.len())).small().weak());
         }
 
         let coverage = fragment_coverage(atomic_numbers.len(), fragments);
@@ -224,11 +216,8 @@ fn show_fragments(ui: &mut egui::Ui, attachment: &ApostAttachment, results: &Apo
                 ui.horizontal(|ui| {
                     swatch(ui, fragment_color(position));
                     let text = format!("{}  {formula}   {}", fragment.id, abbreviated(&names, 8));
-                    let response = ui.selectable_label(is_selected, text).on_hover_text(format!(
-                        "Fragment {}: {}\nClick to select its atoms, Cmd/Ctrl-click to add them to the selection.",
-                        fragment.id,
-                        names.join(", ")
-                    ));
+                    let hint = if focus_mode { "Click to see the values from this fragment." } else { "Click to select its atoms, Cmd/Ctrl-click to add them to the selection." };
+                    let response = ui.selectable_label(is_selected, text).on_hover_text(format!("Fragment {}: {}\n{hint}", fragment.id, names.join(", ")));
                     if response.clicked() {
                         let add = ui.input(|i| i.modifiers.command);
                         action = Some(FragmentAction::Select { position, add });
@@ -277,87 +266,114 @@ impl App {
         let mut fragment_action = None;
         egui::Window::new("APOST-3D")
             .open(&mut open)
-            .default_pos([ctx.content_rect().right() - 410.0, 50.0])
-            .default_width(360.0)
+            .default_pos([ctx.content_rect().right() - 430.0, 50.0])
+            .default_width(380.0)
+            .min_width(380.0)
+            // Sized by its content (which changes a lot with what is shown),
+            // up to the screen; beyond that its own scroll area takes over.
+            .auto_sized()
             .show(ctx, |ui| {
-                let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else {
-                    ui.label(RichText::new("Open a structure first.").weak());
-                    return;
-                };
-                let atomic_numbers = structure.molecule.atomic_numbers.clone();
-                let selected_atoms = structure.selected_atoms.clone();
-                let Some(attachment) = structure.apost.as_mut() else {
-                    ui.label(RichText::new("No APOST-3D results for this structure.").weak());
-                    ui.label(
-                        RichText::new(
-                            "Open an APOST-3D results file (.apost.json), or a .fchk with the <job>.apost.json \
-                             APOST-3D wrote next to it.",
-                        )
-                        .small()
-                        .weak(),
-                    );
-                    return;
-                };
-
-                let results = match &attachment.results {
-                    Ok(results) => results,
-                    Err(reason) => {
-                        banner(ui, ERROR_FILL, "Results not loaded", reason);
+                egui::ScrollArea::vertical().id_salt("apost_window").max_height(ctx.content_rect().height() - 140.0).show(ui, |ui| {
+                    if !self.show_apost_header(ui) {
                         return;
                     }
-                };
-
-                if results.stopped() {
-                    let message = results.run.as_ref().and_then(|r| r.stop_message.clone()).unwrap_or_default();
-                    banner(ui, ERROR_FILL, "APOST-3D stopped before the end of this run", &message);
                     ui.add_space(6.0);
-                }
-                if !attachment.has_fchk {
-                    banner(
-                        ui,
-                        NOTICE_FILL,
-                        "No .fchk found next to the results file",
-                        "The geometry shown comes from the results file; orbitals are not available.",
-                    );
-                    ui.add_space(6.0);
-                }
+                    egui::CollapsingHeader::new(RichText::new("On the molecule").strong()).id_salt("apost_on_molecule").default_open(true).show(ui, |ui| {
+                        self.show_results_controls(ui);
+                    });
+                    self.show_results_values(ui);
+                    self.show_selected_pair(ui);
 
-                show_run_summary(ui, attachment, results);
-                ui.add_space(8.0);
-                if results.molecule.is_some() {
-                    fragment_action = show_fragments(ui, attachment, results, &atomic_numbers, &selected_atoms);
-                }
-                show_input_text(ui, results);
-                show_report(ui, attachment);
+                    let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
+                    let atomic_numbers = structure.molecule.atomic_numbers.clone();
+                    let selected_atoms = structure.selected_atoms.clone();
+                    let Some(attachment) = structure.apost.as_mut() else { return };
+                    let Ok(results) = &attachment.results else { return };
+                    let focus_mode = attachment.view.as_ref().and_then(|v| focus_target(results, v)) == Some(true);
+                    if results.molecule.is_some() {
+                        fragment_action = show_fragments(ui, results, &atomic_numbers, &selected_atoms, focus_mode).map(|a| (a, focus_mode));
+                    }
+                    show_input_text(ui, results);
+                    show_report(ui, attachment);
+                });
             });
         self.show_apost = open;
         self.apply_fragment_action(fragment_action);
     }
 
-    fn apply_fragment_action(&mut self, action: Option<FragmentAction>) {
-        let Some(action) = action else { return };
+    /// Banners, then the run in one line, with the details folded away.
+    /// False when there is nothing more to show (no results, or refused).
+    fn show_apost_header(&mut self, ui: &mut egui::Ui) -> bool {
+        let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else {
+            ui.label(RichText::new("Open a structure first.").weak());
+            return false;
+        };
+        let Some(attachment) = structure.apost.as_mut() else {
+            ui.label(RichText::new("No APOST-3D results for this structure.").weak());
+            ui.label(
+                RichText::new("Open an APOST-3D results file (.apost.json), or a .fchk with the <job>.apost.json APOST-3D wrote next to it.")
+                    .small()
+                    .weak(),
+            );
+            return false;
+        };
+        let results = match &attachment.results {
+            Ok(results) => results,
+            Err(reason) => {
+                banner(ui, ERROR_FILL, "Results not loaded", reason);
+                return false;
+            }
+        };
+        if results.stopped() {
+            let message = results.run.as_ref().and_then(|r| r.stop_message.clone()).unwrap_or_default();
+            banner(ui, ERROR_FILL, "APOST-3D stopped before the end of this run", &message);
+            ui.add_space(6.0);
+        }
+        if !attachment.has_fchk {
+            banner(ui, NOTICE_FILL, "No .fchk found next to the results file", "The geometry shown comes from the results file; orbitals are not available.");
+            ui.add_space(6.0);
+        }
+        let mut summary = Vec::new();
+        if let Some(d) = results.input.as_ref().and_then(|i| i.atomic_definition.as_ref()).and_then(|d| d.keyword.clone()) {
+            summary.push(d);
+        }
+        if let Some(w) = &results.wavefunction {
+            summary.push([w.method.clone(), w.formalism.as_deref().map(capitalized)].into_iter().flatten().collect::<Vec<_>>().join(", "));
+        }
+        let n = results.fragments().len();
+        if n > 0 {
+            summary.push(format!("{n} fragment{}", if n == 1 { "" } else { "s" }));
+        }
+        ui.label(RichText::new(summary.join("  \u{b7}  ")).strong());
+        egui::CollapsingHeader::new("Run").id_salt("apost_run").default_open(results.index.is_empty()).show(ui, |ui| show_run_summary(ui, attachment, results));
+        if !results.index_problems.is_empty() {
+            ui.label(RichText::new(format!("{} quantities in the file could not be read: {}", results.index_problems.len(), results.index_problems.join("; "))).small().color(NOTICE_FILL));
+        }
+        true
+    }
+
+    fn apply_fragment_action(&mut self, action: Option<(FragmentAction, bool)>) {
+        let Some((FragmentAction::Select { position, add }, focus_mode)) = action else { return };
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
         let Some(attachment) = structure.apost.as_mut() else { return };
-        match action {
-            FragmentAction::ToggleColors => {
-                attachment.fragment_colors = !attachment.fragment_colors;
-                self.rebuild_geometry();
+        if focus_mode {
+            if let Some(view) = attachment.view.as_mut() {
+                view.focus = position;
             }
-            FragmentAction::Select { position, add } => {
-                let Ok(results) = &attachment.results else { return };
-                let Some(fragment) = results.fragments().get(position) else { return };
-                if !add {
-                    structure.selected_atoms.clear();
-                    structure.selected_bonds.clear();
-                }
-                for atom in fragment.atoms.iter().map(|&a| a - 1) {
-                    if !structure.selected_atoms.contains(&atom) {
-                        structure.selected_atoms.push(atom);
-                    }
-                }
-                self.rebuild_highlights();
+            return;
+        }
+        let Ok(results) = &attachment.results else { return };
+        let Some(fragment) = results.fragments().get(position) else { return };
+        if !add {
+            structure.selected_atoms.clear();
+            structure.selected_bonds.clear();
+        }
+        for atom in fragment.atoms.iter().map(|&a| a - 1) {
+            if !structure.selected_atoms.contains(&atom) {
+                structure.selected_atoms.push(atom);
             }
         }
+        self.rebuild_highlights();
     }
 }
 

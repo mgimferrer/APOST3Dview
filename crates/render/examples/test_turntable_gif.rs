@@ -105,7 +105,7 @@ async fn run() {
     let gif_path = PathBuf::from(&out_dir).join("turntable.gif");
     let file = std::io::BufWriter::new(std::fs::File::create(&gif_path).unwrap());
     let started = std::time::Instant::now();
-    render_turntable_gif(&mut resources, &device, &queue, target_format, &camera, &material, &settings, turntable, |_| Vec::new(), file)
+    render_turntable_gif(&mut resources, &device, &queue, target_format, &camera, &material, &settings, turntable, |_| Vec::new(), |_, _, _| {}, file)
         .expect("turntable export failed");
     let size_kb = std::fs::metadata(&gif_path).unwrap().len() / 1024;
     println!("wrote {} ({size_kb} KB, {frames} frames) in {:.1}s", gif_path.display(), started.elapsed().as_secs_f64());

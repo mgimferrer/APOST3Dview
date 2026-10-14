@@ -82,6 +82,7 @@ impl App {
             push_label(&mut label_instances, &self.glyph_atlas, &text, final_anchor, scale, measurement_color, edge_bias);
         }
 
+        label_instances.extend(self.value_label_instances(camera, target_height_px));
         label_instances
     }
 }

@@ -156,6 +156,12 @@ pub struct App {
     pub(crate) new_preset_name: String,
 
     pub(crate) toasts: Vec<Toast>,
+    /// Fixed color ranges chosen by the user, by quantity id, shared by
+    /// every structure so figures of different systems compare.
+    pub(crate) color_ranges: std::collections::BTreeMap<String, apost3dview_render::ColorScale>,
+    /// What the results display was last built for (see
+    /// `update_results_display`).
+    pub(crate) results_signature: String,
     /// The session file last opened or saved: where Save session writes,
     /// and what the window title names.
     pub(crate) session_path: Option<PathBuf>,
@@ -222,6 +228,8 @@ impl App {
             style_presets: list_style_presets(),
             new_preset_name: String::new(),
             toasts: Vec::new(),
+            color_ranges: Default::default(),
+            results_signature: String::new(),
             session_path: None,
             shown_title: String::new(),
         }
@@ -230,7 +238,7 @@ impl App {
     pub(crate) fn rebuild_geometry(&self) {
         let Some(active) = self.active_structure else { return };
         let Some(structure) = self.structures.get(active) else { return };
-        let atom_colors = structure.apost.as_ref().and_then(|a| a.atom_colors(structure.molecule.atomic_numbers.len()));
+        let bond_scales = self.bond_scales(structure);
         let mut renderer = self.render_state.renderer.write();
         if let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() {
             resources.update_geometry(
@@ -239,7 +247,8 @@ impl App {
                 &structure.hidden_atoms,
                 &structure.hidden_bonds,
                 &structure.bond_styles,
-                atom_colors.as_deref(),
+                None,
+                bond_scales.as_deref(),
             );
         }
     }
@@ -328,7 +337,9 @@ impl App {
         if should_reframe {
             if let Some(structure) = self.structures.get(index) {
                 let (center, radius) = structure.molecule.bounding_sphere();
-                self.camera.frame_bounds(center, radius);
+                // Room for fragment envelopes and the values beside them.
+                let has_fragments = structure.apost.as_ref().and_then(|a| a.results.as_ref().ok()).is_some_and(|r| !r.fragments().is_empty());
+                self.camera.frame_bounds(center, if has_fragments { radius + 2.2 } else { radius });
             }
         }
         self.rebuild_geometry();
@@ -613,6 +624,7 @@ impl eframe::App for App {
         self.update_title(&ctx);
         self.handle_dropped_files(&ctx);
         self.update_surfaces(&ctx);
+        self.update_results_display(&ctx);
 
         self.show_toolbar(ui);
         self.show_status_bar(ui);

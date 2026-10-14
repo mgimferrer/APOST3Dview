@@ -3,6 +3,7 @@
 
 pub mod ao;
 pub mod camera;
+pub mod colormap;
 pub mod consts;
 pub mod dof;
 pub mod export;
@@ -19,6 +20,7 @@ pub mod viewport;
 
 pub use ao::{AoSettings, AO_KERNEL_SIZE, AO_LIVE_SAMPLE_COUNT};
 pub use camera::OrbitCamera;
+pub use colormap::{draw_legend, format_signed, ColorScale, Legend};
 pub use consts::{DEPTH_BUFFER_BITS, DEPTH_FORMAT, MSAA_SAMPLES};
 pub use dof::DofSettings;
 pub use export::{downsample_rgba, ExportSettings};
@@ -30,4 +32,4 @@ pub use material::Material;
 pub use picking::{is_atom_visible, pick_atom, pick_bond, ray_from_ndc};
 pub use turntable::{render_turntable_gif, TurntableSettings};
 pub use uniforms::SceneUniforms;
-pub use viewport::{ViewportCallback, ViewportResources};
+pub use viewport::{EnvelopeRange, ViewportCallback, ViewportResources};

@@ -39,26 +39,36 @@ fn apost3d_results() {
     assert!(has_content(&screenshot(&mut harness, "apost3d-stopped")));
 }
 
-/// The fragment-color toggle changes the picture, and switching it back
-/// restores it exactly.
+/// Fragments are shown by envelopes only: hiding them gives back exactly
+/// the plain molecule, atoms in their element colors, and showing them
+/// again gives the same picture as before.
 #[test]
-fn fragment_colors_switch_off_and_back_on() {
+fn fragment_envelopes_leave_the_atoms_alone() {
     use egui_kittest::kittest::Queryable;
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
-    harness.run_steps(4);
-    let colored = screenshot(&mut harness, "fragments-on");
-    harness.get_by_label("Color atoms by fragment").click();
-    harness.remove_cursor();
-    harness.run_steps(4);
-    let element_colors = screenshot(&mut harness, "fragments-off");
-    harness.get_by_label("Color atoms by fragment").click();
-    harness.remove_cursor();
-    harness.run_steps(4);
-    let colored_again = screenshot(&mut harness, "fragments-on-again");
-    let differing = |a: &image::RgbaImage, b: &image::RgbaImage| a.pixels().zip(b.pixels()).filter(|(p, q)| p != q).count();
-    assert!(differing(&colored, &element_colors) > 10_000);
-    assert_eq!(differing(&colored, &colored_again), 0);
+    let scratch = common::scratch_dir("envelopes-plain");
+    std::fs::copy(dir.join("FeCN5NO3--UBLYP.fchk"), scratch.join("plain.fchk")).unwrap();
+    // The same molecule with and without results, in one app: switching
+    // between structures of the same geometry keeps the camera.
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk"), scratch.join("plain.fchk")]);
+    harness.run_steps(3);
+    let with_envelopes = harness.state_mut().render_image(480, 360).unwrap();
+    harness.get_all_by_label("plain.fchk").next().unwrap().click();
+    harness.run_steps(3);
+    let plain_image = harness.state_mut().render_image(480, 360).unwrap();
+    harness.get_all_by_label("FeCN5NO3--UBLYP.fchk").next().unwrap().click();
+    harness.run_steps(3);
+    assert!(harness.state_mut().show_on_molecule("nothing"));
+    harness.run_steps(3);
+    let hidden = harness.state_mut().render_image(480, 360).unwrap();
+    assert!(harness.state_mut().show_on_molecule("fragments"));
+    harness.run_steps(3);
+    let shown_again = harness.state_mut().render_image(480, 360).unwrap();
+
+    let differing = |a: &[u8], b: &[u8]| a.chunks(4).zip(b.chunks(4)).filter(|(p, q)| p != q).count();
+    assert!(differing(&with_envelopes, &hidden) > 10_000, "envelopes are drawn");
+    assert_eq!(differing(&hidden, &plain_image), 0, "hidden: exactly the molecule without results");
+    assert_eq!(differing(&with_envelopes, &shown_again), 0);
 }
 
 /// Surface settings take effect without an "Update" click, and switching

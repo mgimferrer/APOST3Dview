@@ -77,6 +77,7 @@ pub fn build_bond_instances(
     hidden_bonds: &HashSet<usize>,
     bond_styles: &[BondVisualStyle],
     atom_colors: Option<&[[f32; 3]]>,
+    bond_scales: Option<&[f32]>,
 ) -> Vec<BondInstance> {
     let mut instances = Vec::with_capacity(molecule.bonds.len() * 2);
     for (bond_index, bond) in molecule.bonds.iter().enumerate() {
@@ -117,7 +118,7 @@ pub fn build_bond_instances(
                 axis: axis.to_array(),
                 dashed,
                 color,
-                radius_scale: 1.0,
+                radius_scale: bond_scales.and_then(|s| s.get(bond_index).copied()).unwrap_or(1.0),
             });
         }
     }

@@ -49,6 +49,7 @@ pub fn render_turntable_gif<W: Write + Send + 'static>(
     settings: &ExportSettings,
     turntable: TurntableSettings,
     mut labels_for: impl FnMut(&OrbitCamera) -> Vec<GlyphInstance>,
+    mut finish_frame: impl FnMut(&mut [u8], u32, u32),
     out: W,
 ) -> Result<(), String> {
     let frames = turntable.frames.max(2);
@@ -90,6 +91,8 @@ pub fn render_turntable_gif<W: Write + Send + 'static>(
                 px.swap(0, 2);
             }
         }
+        // Anything drawn onto the finished image (a legend).
+        finish_frame(&mut pixels, settings.width, settings.height);
         let frame = imgref::ImgVec::new(rgb::FromSlice::as_rgba(pixels.as_slice()).to_vec(), width, height);
         if let Err(err) = collector.add_frame_rgba(index, frame, index as f64 / fps) {
             failure = Some(format!("GIF encoding failed: {err}"));

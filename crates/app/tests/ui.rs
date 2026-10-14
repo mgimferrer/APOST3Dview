@@ -43,14 +43,18 @@ fn unsupported_files_are_explained() {
 #[test]
 fn a_fchk_picks_up_its_results_and_shows_the_run() {
     let Some(dir) = fixtures_dir() else { return };
-    let harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
     assert!(toasts(&harness).iter().any(|m| m.contains("APOST-3D results loaded from FeCN5NO3--UBLYP.apost.json")));
+    // The one-line summary; the details fold out under "Run".
+    harness.get_by_label("LOWDIN  \u{b7}  KS-DFT, Unrestricted  \u{b7}  7 fragments");
+    harness.get_by_label("Run").click_accesskit();
+    harness.run_steps(2);
     harness.get_by_label("FeCN5NO3--UBLYP.apost.json");
     harness.get_by_label("Lowdin (LOWDIN), Hilbert space");
     harness.get_by_label("199");
     harness.get_by_label_contains("version 5.0 (20");
     harness.get_by_label_contains(" (UTC");
-    harness.get_by_label_contains("Unrestricted");
+    harness.get_by_label("KS-DFT, Unrestricted");
 }
 
 #[test]
@@ -94,8 +98,10 @@ fn opening_results_for_an_open_fchk_attaches_to_it() {
     let Some(dir) = fixtures_dir() else { return };
     // Opened together: the .fchk first (it finds its results itself), then
     // the results file, which must not open the .fchk a second time.
-    let harness = app_with(vec![dir.join("CH3F.fchk"), dir.join("CH3F.apost.json")]);
+    let mut harness = app_with(vec![dir.join("CH3F.fchk"), dir.join("CH3F.apost.json")]);
     assert_eq!(harness.state().structure_labels(), vec!["CH3F.fchk"]);
+    harness.get_by_label("Run").click_accesskit();
+    harness.run_steps(2);
     harness.get_by_label("CH3F.apost.json");
 }
 
@@ -104,7 +110,6 @@ fn fragments_are_listed_and_select_their_atoms() {
     let Some(dir) = fixtures_dir() else { return };
     let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
     harness.get_by_label("Fragments (7)");
-    harness.get_by_label("Color atoms by fragment");
     harness.get_by_label("1  Fe   Fe1");
     harness.get_by_label("7  NO   N12, O13").click();
     harness.run_steps(2);

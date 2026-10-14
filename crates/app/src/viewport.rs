@@ -143,8 +143,11 @@ impl App {
                 };
 
                 if let Some(index) = atom_hit {
-                    toggle_selected(&mut self.structures[active].selected_atoms, index);
-                    self.rebuild_highlights();
+                    // With a pair quantity shown, a click chooses the focus.
+                    if !self.focus_on_clicked_atom(index) {
+                        toggle_selected(&mut self.structures[active].selected_atoms, index);
+                        self.rebuild_highlights();
+                    }
                 } else if let Some(index) = bond_hit {
                     toggle_selected(&mut self.structures[active].selected_bonds, index);
                     self.rebuild_highlights();
@@ -236,6 +239,7 @@ impl App {
             }
         }
         let any_label_dragged = !label_updates.is_empty();
+        label_instances.extend(self.value_label_instances(&self.camera, rect.height()));
         for (index, offset) in label_updates {
             if let Some(measurement) = self.structures[active].measurements.get_mut(index) {
                 measurement.label_offset = offset;
@@ -289,6 +293,7 @@ impl App {
         };
         ui.painter()
             .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
+        self.paint_legend(ui.painter(), rect);
 
         if camera_dragging || scroll_delta != 0.0 || zoom_factor != 1.0 || keyboard_rotating || auto_spinning || any_label_dragged {
             ui.ctx().request_repaint();

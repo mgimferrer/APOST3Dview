@@ -201,6 +201,8 @@ impl App {
                 px.swap(0, 2);
             }
         }
+        drop(renderer);
+        self.draw_legend_into(&mut pixels, settings.width, settings.height);
         Ok(pixels)
     }
 
@@ -314,6 +316,7 @@ impl App {
                     &settings,
                     turntable,
                     |camera| self.build_export_label_instances(active, camera, settings.height as f32),
+                    |pixels, width, height| self.draw_legend_into(pixels, width, height),
                     file,
                 ),
             }

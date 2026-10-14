@@ -92,7 +92,10 @@ fn per_atom_settings_survive_and_a_moved_folder_still_opens() {
     first.run_steps(2);
     first.get_by_label("Hide selected").click();
     first.run_steps(2);
-    first.get_by_label("Color atoms by fragment").click();
+    // Atomic charges on the molecule, with a fixed color range.
+    assert!(first.state_mut().show_on_molecule("populations.atoms.charges"));
+    first.run_steps(2);
+    first.get_by_label("Fixed").click();
     first.run_steps(3);
     first.state().save_session_to(&dir.join("ch3f.a3dview")).unwrap();
     let before = image(&mut first);
@@ -109,7 +112,8 @@ fn per_atom_settings_survive_and_a_moved_folder_still_opens() {
     second.get_by_label("Measure").click();
     second.run_steps(2);
     second.get_by_label_contains("C1-H3-H4-H5: ");
-    assert!(before == image(&mut second), "hidden atoms, measurement and colors restored");
+    assert_eq!(second.state().legend_title().as_deref(), Some("Atomic charges (TFVC)"));
+    assert!(before == image(&mut second), "hidden atoms, measurement, results view and color range restored");
 }
 
 #[test]
