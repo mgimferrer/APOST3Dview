@@ -19,9 +19,9 @@ pub mod wavefunction;
 pub mod xyz;
 
 pub use apost::{
-    check_against_fchk, find_results_for, fragment_coverage, fragment_of_atom, is_results_file, load_apost_results, parse_apost_results,
-    report_path_for, results_path_for, wavefunction_path_for, ApostResults, Fragment, FragmentCoverage, IndexEntry, MatrixObject, Quantity,
-    QuantityKind,
+    check_against_fchk, check_orbital_file, find_results_for, fragment_coverage, fragment_of_atom, is_results_file, load_apost_results, parse_apost_results,
+    report_path_for, results_path_for, wavefunction_path_for, ApostResults, Fragment, FragmentCoverage, IndexEntry, MatrixObject, OrbitalDetail, OrbitalLabel, OrbitalSet,
+    Quantity, QuantityKind, TableCell, TableColumn, TableObject,
 };
 pub use coordinates::{format_coordinates, CoordinateFormat};
 pub use cube::{parse_cube, CubeFile, ScalarGrid};

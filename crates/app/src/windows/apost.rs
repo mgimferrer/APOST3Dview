@@ -283,6 +283,8 @@ impl App {
                     });
                     self.show_results_values(ui);
                     self.show_selected_pair(ui);
+                    self.show_key_numbers(ui);
+                    self.show_tables(ui);
 
                     let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
                     let atomic_numbers = structure.molecule.atomic_numbers.clone();

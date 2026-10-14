@@ -71,11 +71,15 @@ pub struct ApostResults {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QuantityKind {
+    /// A single number (0.4).
+    Scalar,
     AtomVector,
     AtomMatrix,
     FragmentVector,
     FragmentMatrix,
-    /// A kind this viewer doesn't know yet (e.g. a future `table`).
+    /// Several quantities per fragment or per orbital (0.5).
+    Table,
+    /// A kind this viewer doesn't know yet.
     #[serde(other)]
     Other,
 }
@@ -87,6 +91,11 @@ impl QuantityKind {
 
     pub fn on_fragments(self) -> bool {
         matches!(self, QuantityKind::FragmentVector | QuantityKind::FragmentMatrix)
+    }
+
+    /// Values drawn on the molecule: per atom or fragment, or pairs of them.
+    pub fn on_molecule(self) -> bool {
+        matches!(self, QuantityKind::AtomVector | QuantityKind::AtomMatrix | QuantityKind::FragmentVector | QuantityKind::FragmentMatrix)
     }
 }
 
@@ -105,24 +114,89 @@ pub struct IndexEntry {
     /// For a menu, with the atomic definition: "Atomic charges (TFVC)".
     pub title: String,
     pub unit: Option<String>,
-    /// Decimals the text output prints: a default for tables.
+    /// Decimals the text output prints: a default for display (`None` for
+    /// a table, whose columns give their own).
     pub decimals: Option<usize>,
     /// "comparison" for values printed only to compare with the run's own
-    /// atomic definition (requested from APOST-3D; see `is_comparison`).
+    /// atomic definition (0.4).
     #[serde(default)]
     pub role: Option<String>,
+    /// True when the values can be negative by nature (charges, spin,
+    /// oxidation states, ...): a diverging scale centered on zero (0.4).
+    #[serde(default)]
+    pub signed: Option<bool>,
 }
 
 impl IndexEntry {
     /// Values APOST-3D prints for comparison with another atomic
     /// definition than the run's own (the Mulliken populations of a TFVC
-    /// run): marked `role: "comparison"`, or, in files from before that
-    /// mark, recognized by a `mulliken` part in the id.
+    /// run), marked `role: "comparison"`.
     pub fn is_comparison(&self) -> bool {
-        match self.role.as_deref() {
-            Some(role) => role == "comparison",
-            None => self.id.split('.').any(|part| part == "mulliken"),
+        self.role.as_deref() == Some("comparison")
+    }
+}
+
+/// A table: several quantities per fragment or per orbital, one column
+/// each (0.5).
+#[derive(Debug, Clone, Deserialize)]
+pub struct TableObject {
+    /// "fragment" (row i is fragment i) or "orbital".
+    pub rows: String,
+    pub n_rows: usize,
+    pub columns: Vec<TableColumn>,
+    /// One list per column, under its key; a cell is a number, a list of
+    /// numbers (OSLO's fragments and shares), or null.
+    pub data: serde_json::Map<String, Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TableColumn {
+    pub key: String,
+    pub title: String,
+    pub unit: Option<String>,
+    pub decimals: Option<usize>,
+    #[serde(default)]
+    pub signed: bool,
+}
+
+/// A table cell, see [`TableObject::cell_value`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum TableCell {
+    Number(f64),
+    List(Vec<f64>),
+    Empty,
+}
+
+impl TableObject {
+    fn cell(&self, key: &str, row: usize) -> Option<&Value> {
+        self.data.get(key)?.as_array()?.get(row)
+    }
+
+    /// The number in column `key`, row `row`.
+    pub fn number(&self, key: &str, row: usize) -> Option<f64> {
+        self.cell(key, row)?.as_f64()
+    }
+
+    /// The numbers of a list cell (or a one-number list from a plain cell).
+    pub fn numbers(&self, key: &str, row: usize) -> Option<Vec<f64>> {
+        match self.cell(key, row)? {
+            Value::Array(items) => Some(items.iter().filter_map(Value::as_f64).collect()),
+            Value::Number(n) => n.as_f64().map(|v| vec![v]),
+            _ => None,
         }
+    }
+
+    /// One cell: a number, a list of numbers, or nothing (null or absent).
+    pub fn cell_value(&self, key: &str, row: usize) -> TableCell {
+        match self.cell(key, row) {
+            Some(Value::Number(n)) => n.as_f64().map(TableCell::Number).unwrap_or(TableCell::Empty),
+            Some(Value::Array(items)) => TableCell::List(items.iter().filter_map(Value::as_f64).collect()),
+            _ => TableCell::Empty,
+        }
+    }
+
+    pub fn has_column(&self, key: &str) -> bool {
+        self.columns.iter().any(|c| c.key == key)
     }
 }
 
@@ -164,6 +238,9 @@ impl MatrixObject {
 /// The values an index entry points to.
 #[derive(Debug, Clone)]
 pub enum Quantity {
+    /// A single number (`None`: not available).
+    Scalar(Option<f64>),
+    Table(TableObject),
     /// One value per atom or per fragment (`None`: not available).
     Vector(Vec<Option<f64>>),
     Matrix(MatrixObject),
@@ -203,6 +280,8 @@ pub struct AtomicDefinition {
     pub keyword: Option<String>,
     /// Full name, e.g. "Topological fuzzy Voronoi cells".
     pub name: Option<String>,
+    /// Display name, as in the index titles: "TFVC", "Lowdin", ... (0.4).
+    pub short_name: Option<String>,
     /// "real" (real-space partition) or "hilbert" (Hilbert-space).
     pub space: Option<String>,
     /// True when the input gave no atomic definition and TFVC was used.
@@ -264,12 +343,34 @@ impl ApostResults {
     /// The values of an index entry, checked to have one entry per atom
     /// (or fragment), or to be a square matrix of that size.
     pub fn quantity(&self, entry: &IndexEntry) -> Result<Quantity, String> {
+        let value = self.raw.pointer(&entry.path).ok_or_else(|| format!("{}: nothing at {}", entry.id, entry.path))?;
+        match entry.kind {
+            QuantityKind::Scalar => {
+                return match value {
+                    Value::Null => Ok(Quantity::Scalar(None)),
+                    v => v.as_f64().map(|x| Quantity::Scalar(Some(x))).ok_or_else(|| format!("{}: not a number", entry.id)),
+                };
+            }
+            QuantityKind::Table => {
+                let table: TableObject = serde_json::from_value(value.clone()).map_err(|e| format!("{}: not a table ({e})", entry.id))?;
+                if table.rows == "fragment" && table.n_rows != self.fragments().len() {
+                    return Err(format!("{}: {} rows for {} fragments", entry.id, table.n_rows, self.fragments().len()));
+                }
+                for column in &table.columns {
+                    let length = table.data.get(&column.key).and_then(Value::as_array).map(Vec::len);
+                    if length != Some(table.n_rows) {
+                        return Err(format!("{}: column {} does not hold {} rows", entry.id, column.key, table.n_rows));
+                    }
+                }
+                return Ok(Quantity::Table(table));
+            }
+            _ => {}
+        }
         let n = match entry.kind {
             QuantityKind::AtomVector | QuantityKind::AtomMatrix => self.molecule.as_ref().map(|m| m.n_atoms).ok_or("the file has no molecule")?,
             QuantityKind::FragmentVector | QuantityKind::FragmentMatrix => self.fragments().len(),
-            QuantityKind::Other => return Err(format!("{}: kind not supported by this APOST3Dview", entry.id)),
+            _ => return Err(format!("{}: kind not supported by this APOST3Dview", entry.id)),
         };
-        let value = self.raw.pointer(&entry.path).ok_or_else(|| format!("{}: nothing at {}", entry.id, entry.path))?;
         if entry.kind.is_matrix() {
             let matrix: MatrixObject = serde_json::from_value(value.clone()).map_err(|e| format!("{}: not a matrix object ({e})", entry.id))?;
             if matrix.values.len() != n || matrix.values.iter().any(|row| row.len() != n) {
@@ -329,6 +430,123 @@ impl ApostResults {
             }
         }
         Ok(())
+    }
+}
+
+/// The orbitals one analysis wrote to its own `.fchk` file (EOS, GEOS,
+/// OSLO): the file's name, and what each of its orbitals is.
+#[derive(Debug, Clone)]
+pub struct OrbitalSet {
+    /// "eos", "geos" or "oslo".
+    pub analysis: String,
+    /// The `.fchk` file, a bare name in the results file's folder.
+    pub file: String,
+    /// Per alpha orbital of the file (index = `.fchk` column - 1): its
+    /// label, or `None` for an empty orbital (no row in the tables).
+    pub alpha: Vec<Option<OrbitalLabel>>,
+    pub beta: Vec<Option<OrbitalLabel>>,
+    /// Why there are no beta orbitals, when the file says so: "same as
+    /// alpha" (closed shell) or "no beta electrons".
+    pub beta_note: Option<String>,
+}
+
+/// What an analysis orbital is.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OrbitalLabel {
+    /// The fragment ids it belongs to: one, or several for a shared OSLO.
+    pub fragments: Vec<u32>,
+    /// Each fragment's share (1 for a single fragment).
+    pub shares: Vec<f64>,
+    pub detail: OrbitalDetail,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum OrbitalDetail {
+    /// An effective fragment orbital (EOS, GEOS).
+    Efo {
+        net: Option<f64>,
+        gross: Option<f64>,
+        fit_percent: Option<f64>,
+        /// Electrons the assignment gave it: 1 or 0, 2 or 0 (paired GEOS),
+        /// or a fraction when shared at the frontier.
+        electrons: Option<f64>,
+        /// A GEOS paired EFO with a clearly negative net occupation, left
+        /// out of the assignment.
+        negative: bool,
+        recovered_percent: Option<f64>,
+    },
+    /// An OSLO.
+    Oslo { iteration: Option<f64>, foli: Option<f64> },
+}
+
+impl OrbitalSet {
+    /// A readable name: "EOS EFOs", "GEOS EFOs", "OSLOs".
+    pub fn title(&self) -> &'static str {
+        match self.analysis.as_str() {
+            "eos" => "EOS EFOs",
+            "geos" => "GEOS EFOs",
+            "oslo" => "OSLOs",
+            _ => "Analysis orbitals",
+        }
+    }
+}
+
+impl ApostResults {
+    /// The analysis orbital files this run wrote, with the label of each
+    /// of their orbitals (brief 04's mapping): EOS alpha/beta EFOs, GEOS
+    /// paired EFOs (then the negative ones) as alpha and unpaired as beta,
+    /// OSLO total or alpha OSLOs as alpha and beta OSLOs as beta.
+    pub fn orbital_sets(&self) -> Vec<OrbitalSet> {
+        let table = |pointer: &str| -> Option<TableObject> { serde_json::from_value(self.raw.pointer(pointer)?.clone()).ok() };
+        let mut sets = Vec::new();
+        for analysis in ["eos", "geos", "oslo"] {
+            let base = format!("/analyses/{analysis}");
+            let Some(file) = self.raw.pointer(&format!("{base}/orbital_file")).and_then(Value::as_str) else { continue };
+            let mut set = OrbitalSet { analysis: analysis.to_string(), file: file.to_string(), alpha: Vec::new(), beta: Vec::new(), beta_note: None };
+            let beta = self.raw.pointer(&format!("{base}/beta"));
+            if beta.and_then(|b| b.get("same_as_alpha")).and_then(Value::as_bool) == Some(true) {
+                set.beta_note = Some("The \u{3b2} orbitals are the same as the \u{3b1} ones.".to_string());
+            } else if beta.and_then(|b| b.get("no_electrons")).and_then(Value::as_bool) == Some(true) {
+                set.beta_note = Some("No \u{3b2} electrons.".to_string());
+            }
+            let (alpha_tables, beta_tables): (Vec<(&str, bool)>, Vec<(&str, bool)>) = match analysis {
+                "eos" => (vec![("alpha/efos", false)], vec![("beta/efos", false)]),
+                "geos" => (vec![("paired/efos", false), ("negative_efos", true)], vec![("unpaired/efos", false)]),
+                _ => (vec![("total/oslos", false), ("alpha/oslos", false)], vec![("beta/oslos", false)]),
+            };
+            for (labels, tables) in [(&mut set.alpha, alpha_tables), (&mut set.beta, beta_tables)] {
+                for (path, negative) in tables {
+                    let Some(t) = table(&format!("{base}/{path}")) else { continue };
+                    for row in 0..t.n_rows {
+                        let Some(column) = t.number("fchk_column", row) else { continue };
+                        let index = column as usize;
+                        if index == 0 {
+                            continue;
+                        }
+                        let fragments: Vec<u32> = t.numbers(if t.has_column("fragments") { "fragments" } else { "fragment" }, row).unwrap_or_default().iter().map(|f| *f as u32).collect();
+                        let shares = t.numbers("shares", row).unwrap_or_else(|| vec![1.0; fragments.len()]);
+                        let detail = if analysis == "oslo" {
+                            OrbitalDetail::Oslo { iteration: t.number("iteration", row), foli: t.number("foli", row) }
+                        } else {
+                            OrbitalDetail::Efo {
+                                net: t.number("net", row),
+                                gross: t.number("gross", row),
+                                fit_percent: t.number("fit_percent", row),
+                                electrons: t.number("electrons", row),
+                                negative,
+                                recovered_percent: t.number("recovered_percent", row),
+                            }
+                        };
+                        if labels.len() < index {
+                            labels.resize(index, None);
+                        }
+                        labels[index - 1] = Some(OrbitalLabel { fragments, shares, detail });
+                    }
+                }
+            }
+            sets.push(set);
+        }
+        sets
     }
 }
 
@@ -466,6 +684,26 @@ pub fn check_against_fchk(results: &ApostResults, fchk: &FchkSummary) -> Result<
         if (a - b).abs() > ENERGY_TOLERANCE_AU {
             return Err(format!("the results were computed from an energy of {a:.6} hartree, the .fchk has {b:.6}"));
         }
+    }
+    Ok(())
+}
+
+/// Whether an analysis orbital file belongs to the main `.fchk`: the
+/// same atoms at the same positions and the same number of basis
+/// functions (it is a copy of it with other orbitals). `Err` gives the
+/// first difference.
+pub fn check_orbital_file(main: &FchkSummary, orbitals: &FchkSummary) -> Result<(), String> {
+    if main.atomic_numbers != orbitals.atomic_numbers {
+        return Err("its atoms differ from the open .fchk".to_string());
+    }
+    for (index, (a, b)) in main.coordinates_bohr.iter().zip(&orbitals.coordinates_bohr).enumerate() {
+        let distance = ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt();
+        if distance > COORDINATE_TOLERANCE_BOHR {
+            return Err(format!("atom {} is not where it is in the open .fchk", index + 1));
+        }
+    }
+    if main.n_basis_functions != orbitals.n_basis_functions {
+        return Err(format!("it has {:?} basis functions, the open .fchk {:?}", orbitals.n_basis_functions, main.n_basis_functions));
     }
     Ok(())
 }
@@ -672,9 +910,9 @@ mod tests {
     }
 
     #[test]
-    fn comparison_values_are_recognized() {
-        let entry = |id: &str, role: Option<&str>| IndexEntry {
-            id: id.into(),
+    fn comparison_values_are_marked_by_their_role() {
+        let entry = |role: Option<&str>| IndexEntry {
+            id: "populations.mulliken.atoms.charges".into(),
             analysis: None,
             spin: None,
             path: String::new(),
@@ -683,11 +921,10 @@ mod tests {
             unit: None,
             decimals: None,
             role: role.map(Into::into),
+            signed: Some(true),
         };
-        assert!(entry("populations.mulliken.atoms.charges", None).is_comparison());
-        assert!(!entry("populations.atoms.charges", None).is_comparison());
-        assert!(entry("populations.atoms.charges", Some("comparison")).is_comparison(), "the mark wins");
-        assert!(!entry("populations.mulliken.atoms.charges", Some("main")).is_comparison());
+        assert!(entry(Some("comparison")).is_comparison());
+        assert!(!entry(None).is_comparison(), "only the role decides (0.4)");
     }
 
     #[test]

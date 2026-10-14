@@ -8,6 +8,7 @@ use apost3dview_render::BondVisualStyle;
 use egui::Color32;
 
 use crate::isosurfaces::Surface;
+use crate::orbital_sets::LoadedOrbitalSet;
 use crate::results::ApostAttachment;
 
 /// A committed distance/angle/dihedral, with a screen-space label position
@@ -112,6 +113,11 @@ pub(crate) struct LoadedStructure {
     pub(crate) selected_beta_mos: HashSet<usize>,
     /// APOST-3D results found for (or opened with) this structure.
     pub(crate) apost: Option<ApostAttachment>,
+    /// The analysis orbital sets next to the results (EOS, GEOS, OSLO).
+    pub(crate) orbital_sets: Vec<LoadedOrbitalSet>,
+    /// The orbitals the Surfaces window generates from: 0 the SCF ones,
+    /// i the set `orbital_sets[i - 1]`.
+    pub(crate) active_orbital_set: usize,
 }
 
 impl LoadedStructure {
@@ -135,6 +141,8 @@ impl LoadedStructure {
             selected_alpha_mos: HashSet::new(),
             selected_beta_mos: HashSet::new(),
             apost: None,
+            orbital_sets: Vec::new(),
+            active_orbital_set: 0,
         }
     }
 

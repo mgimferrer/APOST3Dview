@@ -177,6 +177,7 @@ impl App {
         let scale = scene.legend.as_ref().map(|l| l.scale);
 
         egui::CollapsingHeader::new(RichText::new(&entry.title).strong()).id_salt("results_values").default_open(true).show(ui, |ui| match &quantity {
+            Quantity::Scalar(_) | Quantity::Table(_) => {}
             Quantity::Vector(values) => {
                 if ui.button("Copy").on_hover_text("As tab-separated text, for a spreadsheet").clicked() {
                     let text: String = names.iter().zip(values).map(|(n, v)| format!("{n}\t{}\n", v.map(|x| x.to_string()).unwrap_or_default())).collect();

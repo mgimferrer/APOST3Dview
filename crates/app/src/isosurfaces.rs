@@ -11,6 +11,7 @@ use egui::Color32;
 
 use crate::app::App;
 use crate::orbitals::OrbitalChoice;
+use glam::Vec3;
 use crate::util::color32_to_rgb;
 
 /// Isovalue is a fixed constant rather than derived from each grid's own
@@ -36,6 +37,9 @@ pub(crate) struct SurfaceSettings {
     pub(crate) negative_color: Color32,
     /// 1.0 = opaque (the default), lower = translucent.
     pub(crate) opacity: f32,
+    /// For an analysis orbital (EFO, OSLO): colored by its fragment(s)
+    /// instead of the positive/negative colors.
+    pub(crate) by_fragment: bool,
 }
 
 impl Default for SurfaceSettings {
@@ -47,6 +51,7 @@ impl Default for SurfaceSettings {
             positive_color: Color32::from_rgb(60, 90, 230),
             negative_color: Color32::from_rgb(220, 70, 60),
             opacity: DEFAULT_ISOSURFACE_OPACITY,
+            by_fragment: true,
         }
     }
 }
@@ -66,7 +71,14 @@ struct ExtractionKey {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum SurfaceSource {
     Cube(PathBuf),
-    Orbital { choice: OrbitalChoice, spacing_bohr: f64, padding_bohr: f64 },
+    Orbital {
+        choice: OrbitalChoice,
+        spacing_bohr: f64,
+        padding_bohr: f64,
+        /// The analysis set ("eos", "geos", "oslo") for an EFO or OSLO;
+        /// `None` for the SCF orbitals.
+        set: Option<String>,
+    },
 }
 
 pub(crate) struct Surface {
@@ -76,6 +88,9 @@ pub(crate) struct Surface {
     pub(crate) grid: ScalarGrid,
     pub(crate) visible: bool,
     pub(crate) settings: SurfaceSettings,
+    /// For an analysis orbital: its fragments' atoms and colors, to color
+    /// the surface by fragment (blended across space for a shared one).
+    pub(crate) fragment_tint: Option<Vec<(Vec3, [f32; 3])>>,
     positive: Option<IsosurfaceMesh>,
     negative: Option<IsosurfaceMesh>,
     /// What `positive`/`negative` were extracted with; `None` before the
@@ -85,7 +100,7 @@ pub(crate) struct Surface {
 
 impl Surface {
     pub(crate) fn new(label: String, grid: ScalarGrid, settings: SurfaceSettings, source: SurfaceSource) -> Self {
-        Self { label, source, grid, visible: false, settings, positive: None, negative: None, extracted_with: None }
+        Self { label, source, grid, visible: false, settings, fragment_tint: None, positive: None, negative: None, extracted_with: None }
     }
 
     fn extraction_key(&self) -> ExtractionKey {
@@ -117,6 +132,21 @@ impl Surface {
 
     fn push_vertices(&self, vertices: &mut Vec<IsosurfaceVertex>) {
         let s = &self.settings;
+        if let (true, Some(tint)) = (s.by_fragment, &self.fragment_tint) {
+            if !tint.is_empty() {
+                // Positive lobe in the fragment color, negative in a paler
+                // tint of it: the phase stays visible, the fragment too.
+                for (mesh, pale) in [(&self.positive, false), (&self.negative, true)] {
+                    if pale && !s.both_signs {
+                        continue;
+                    }
+                    if let Some(mesh) = mesh {
+                        push_tinted_vertices(vertices, mesh, tint, pale, s.opacity);
+                    }
+                }
+                return;
+            }
+        }
         if let Some(mesh) = &self.positive {
             push_isosurface_vertices(vertices, mesh, color32_to_rgb(s.positive_color), s.opacity);
         }
@@ -125,6 +155,38 @@ impl Surface {
                 push_isosurface_vertices(vertices, mesh, color32_to_rgb(s.negative_color), s.opacity);
             }
         }
+    }
+}
+
+/// Each vertex colored by the fragments near it: Gaussian weights on the
+/// distance to each tint atom, so a shared orbital blends smoothly from
+/// one fragment's color to the other's.
+fn push_tinted_vertices(vertices: &mut Vec<IsosurfaceVertex>, mesh: &IsosurfaceMesh, tint: &[(Vec3, [f32; 3])], pale: bool, opacity: f32) {
+    let single = tint.iter().all(|(_, c)| *c == tint[0].1);
+    const WIDTH2: f32 = 0.8 * 0.8;
+    for (position, normal) in mesh.positions.iter().zip(&mesh.normals) {
+        let mut color = tint[0].1;
+        if !single {
+            let mut total = 0.0f32;
+            let mut sum = [0.0f32; 3];
+            let mut nearest = (f32::MAX, tint[0].1);
+            for (atom, c) in tint {
+                let d2 = position.distance_squared(*atom);
+                if d2 < nearest.0 {
+                    nearest = (d2, *c);
+                }
+                let w = (-d2 / WIDTH2).exp();
+                total += w;
+                for i in 0..3 {
+                    sum[i] += w * c[i];
+                }
+            }
+            color = if total > 1e-6 { sum.map(|v| v / total) } else { nearest.1 };
+        }
+        if pale {
+            color = color.map(|v| v + (1.0 - v) * 0.55);
+        }
+        vertices.push(IsosurfaceVertex { position: position.to_array(), _padding0: 0.0, normal: normal.to_array(), _padding1: 0.0, color, opacity });
     }
 }
 

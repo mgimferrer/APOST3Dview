@@ -2,10 +2,11 @@
 
 use std::collections::HashSet;
 
-use apost3dview_core::{generate_mo_grids, MolecularOrbitals, Wavefunction};
+use apost3dview_core::{generate_mo_grids, ApostResults, MolecularOrbitals, Molecule, Wavefunction};
 
 use crate::app::App;
 use crate::isosurfaces::{Surface, SurfaceSettings, SurfaceSource};
+use crate::orbital_sets::{fragment_tint, LoadedOrbitalSet};
 
 /// One spin channel's tick-box list in the "Generate orbitals" section —
 /// factored out since alpha and beta need identical rendering, just
@@ -134,12 +135,20 @@ fn orbital_label(wfn: &Wavefunction, choice: OrbitalChoice) -> String {
 /// call: the basis functions (the expensive part, hundreds of shells on a
 /// real molecule) are computed once per grid point and shared, rather
 /// than once per orbital.
+/// For orbitals of an analysis set: what labels and colors them.
+pub(crate) struct SetContext<'a> {
+    pub(crate) set: &'a LoadedOrbitalSet,
+    pub(crate) results: &'a ApostResults,
+    pub(crate) molecule: &'a Molecule,
+}
+
 pub(crate) fn orbital_surfaces(
     wfn: &Wavefunction,
     choices: &[OrbitalChoice],
     spacing_bohr: f64,
     padding_bohr: f64,
     settings: SurfaceSettings,
+    context: Option<&SetContext>,
 ) -> Result<Vec<Surface>, String> {
     let mut requests: Vec<(&MolecularOrbitals, usize)> = Vec::new();
     for choice in choices {
@@ -154,8 +163,17 @@ pub(crate) fn orbital_surfaces(
         .into_iter()
         .zip(choices)
         .map(|(grid, &choice)| {
-            let source = SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr };
-            Surface::new(orbital_label(wfn, choice), grid, settings, source)
+            let set = context.map(|c| c.set.set.analysis.clone());
+            let source = SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set };
+            let label = match context {
+                Some(c) => App::set_orbital_label(c.set, choice.beta, choice.mo_index, c.results, c.molecule),
+                None => orbital_label(wfn, choice),
+            };
+            let mut surface = Surface::new(label, grid, settings, source);
+            if let Some(c) = context {
+                surface.fragment_tint = c.set.labels(choice.beta).get(choice.mo_index).and_then(Option::as_ref).map(|l| fragment_tint(c.results, c.molecule, l));
+            }
+            surface
         })
         .collect())
 }
@@ -181,7 +199,7 @@ impl App {
         }
         choices.sort_unstable_by_key(|c| (c.beta, c.mo_index));
 
-        let surfaces = match orbital_surfaces(wfn, &choices, spacing, self.orbital_generation.padding_bohr, self.surface_defaults) {
+        let surfaces = match orbital_surfaces(wfn, &choices, spacing, self.orbital_generation.padding_bohr, self.surface_defaults, None) {
             Ok(surfaces) => surfaces,
             Err(err) => {
                 self.show_warning(format!("Orbitals could not be generated: {err}"));
@@ -191,5 +209,77 @@ impl App {
         let count = choices.len();
         self.add_surfaces(active, surfaces, true);
         self.show_status(format!("{count} orbital{} generated", if count == 1 { "" } else { "s" }));
+    }
+
+    /// Loads the active structure's orbital set `index` (0-based in
+    /// `orbital_sets`) if needed; reports why it can't be used.
+    pub(crate) fn load_orbital_set(&mut self, structure_index: usize, index: usize) -> bool {
+        let Some(structure) = self.structures.get_mut(structure_index) else { return false };
+        let Some(main) = structure.source_path.clone() else { return false };
+        let Some(set) = structure.orbital_sets.get_mut(index) else { return false };
+        let first_time = set.wavefunction.is_none();
+        set.load(&main);
+        match &set.wavefunction {
+            Some(Ok(_)) => true,
+            Some(Err(reason)) => {
+                if first_time {
+                    let reason = reason.clone();
+                    self.show_warning(reason);
+                }
+                false
+            }
+            None => false,
+        }
+    }
+
+    /// Generates the ticked orbitals of the active structure's current
+    /// analysis set, labeled from the tables and colored by fragment.
+    pub(crate) fn generate_set_orbitals(&mut self) {
+        let Some(active) = self.active_structure else { return };
+        let Some(index) = self.structures[active].active_orbital_set.checked_sub(1) else { return };
+        if !self.load_orbital_set(active, index) {
+            return;
+        }
+        let spacing = self.orbital_generation.resolve_spacing_bohr();
+        let padding = self.orbital_generation.padding_bohr;
+        let structure = &self.structures[active];
+        let set = &structure.orbital_sets[index];
+        let mut choices: Vec<OrbitalChoice> = set.selected_alpha.iter().map(|&mo_index| OrbitalChoice { beta: false, mo_index }).collect();
+        choices.extend(set.selected_beta.iter().map(|&mo_index| OrbitalChoice { beta: true, mo_index }));
+        choices.sort_unstable_by_key(|c| (c.beta, c.mo_index));
+        if choices.is_empty() {
+            self.show_warning("No orbitals selected");
+            return;
+        }
+        let (Some(Ok(wfn)), Some(Ok(results))) = (&set.wavefunction, structure.apost.as_ref().map(|a| &a.results)) else { return };
+        let context = SetContext { set, results, molecule: &structure.molecule };
+        let surfaces = match orbital_surfaces(wfn, &choices, spacing, padding, self.surface_defaults, Some(&context)) {
+            Ok(surfaces) => surfaces,
+            Err(err) => {
+                self.show_warning(format!("Orbitals could not be generated: {err}"));
+                return;
+            }
+        };
+        let count = surfaces.len();
+        let title = set.set.title();
+        self.add_surfaces(active, surfaces, true);
+        self.show_status(format!("{count} {} generated", if count == 1 { title.trim_end_matches('s').to_string() } else { title.to_string() }));
+    }
+
+    /// Draws one orbital of an analysis set (from a table row): the set
+    /// becomes the current one, the orbital is generated and shown.
+    pub(crate) fn draw_set_orbital(&mut self, analysis: &str, beta: bool, mo_index: usize) {
+        let Some(active) = self.active_structure else { return };
+        let Some(position) = self.structures[active].orbital_sets.iter().position(|s| s.set.analysis == analysis) else {
+            self.show_warning("The orbital file of this analysis was not found next to the results.");
+            return;
+        };
+        let structure = &mut self.structures[active];
+        structure.active_orbital_set = position + 1;
+        let set = &mut structure.orbital_sets[position];
+        set.selected_alpha.clear();
+        set.selected_beta.clear();
+        if beta { set.selected_beta.insert(mo_index) } else { set.selected_alpha.insert(mo_index) };
+        self.generate_set_orbitals();
     }
 }

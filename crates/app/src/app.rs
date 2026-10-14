@@ -162,6 +162,8 @@ pub struct App {
     /// List, in the Show menu, the values APOST-3D prints only for
     /// comparison (Mulliken's, in a run with another atomic definition).
     pub(crate) list_comparison_values: bool,
+    /// The table chosen in the APOST-3D window's Tables section (entry id).
+    pub(crate) apost_table: Option<String>,
     /// What the results display was last built for (see
     /// `update_results_display`).
     pub(crate) results_signature: String,
@@ -233,6 +235,7 @@ impl App {
             toasts: Vec::new(),
             color_ranges: Default::default(),
             list_comparison_values: false,
+            apost_table: None,
             results_signature: String::new(),
             session_path: None,
             shown_title: String::new(),

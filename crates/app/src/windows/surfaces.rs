@@ -7,6 +7,7 @@ use egui::{RichText, Slider};
 
 use crate::app::App;
 use crate::isosurfaces::SurfaceSettings;
+use crate::orbital_sets::show_set_checklist;
 use crate::orbitals::{show_mo_checklist, OrbitalAccuracyPreset};
 use crate::state::LoadedStructure;
 
@@ -30,16 +31,98 @@ impl App {
                     ui.label(RichText::new("Open a structure first.").weak());
                     return;
                 };
-                if self.structures[active].wavefunction.is_some() {
+                let structure = &self.structures[active];
+                if structure.wavefunction.is_some() || !structure.orbital_sets.is_empty() {
                     egui::CollapsingHeader::new(RichText::new("Generate orbitals").strong())
                         .id_salt("generate_orbitals")
                         .default_open(true)
-                        .show(ui, |ui| self.show_generate_orbitals(ui, active));
+                        .show(ui, |ui| {
+                            self.show_orbital_set_selector(ui, active);
+                            if self.structures[active].active_orbital_set == 0 {
+                                self.show_generate_orbitals(ui, active);
+                            } else {
+                                self.show_generate_set_orbitals(ui, active);
+                            }
+                        });
                     ui.add_space(6.0);
                 }
                 self.show_surface_list(ui, active);
             });
         self.show_surfaces = open;
+    }
+
+    /// Which orbitals to generate from: the SCF ones of the open file, or
+    /// one of the analysis sets APOST-3D wrote next to its results.
+    fn show_orbital_set_selector(&mut self, ui: &mut egui::Ui, active: usize) {
+        let structure = &mut self.structures[active];
+        if structure.orbital_sets.is_empty() {
+            return;
+        }
+        let name = |sets: &[crate::orbital_sets::LoadedOrbitalSet], i: usize| if i == 0 { "SCF orbitals".to_string() } else { sets[i - 1].set.title().to_string() };
+        let current = name(&structure.orbital_sets, structure.active_orbital_set);
+        ui.horizontal(|ui| {
+            ui.label("Orbitals:");
+            egui::ComboBox::from_id_salt("orbital_set")
+                .selected_text(current)
+                .show_ui(ui, |ui| {
+                    if structure.wavefunction.is_some() {
+                        ui.selectable_value(&mut structure.active_orbital_set, 0, name(&structure.orbital_sets, 0));
+                    }
+                    for i in 1..=structure.orbital_sets.len() {
+                        let label = name(&structure.orbital_sets, i);
+                        ui.selectable_value(&mut structure.active_orbital_set, i, label);
+                    }
+                })
+                .response
+                .on_hover_text("SCF orbitals come from the open file; the others are APOST-3D's analysis orbitals, labeled with their fragments and colored by fragment.");
+        });
+        if structure.wavefunction.is_none() && structure.active_orbital_set == 0 {
+            structure.active_orbital_set = 1;
+        }
+        ui.add_space(2.0);
+    }
+
+    /// The orbitals of an analysis set: only those the tables describe,
+    /// each labeled with its fragment(s) and numbers.
+    fn show_generate_set_orbitals(&mut self, ui: &mut egui::Ui, active: usize) {
+        let set_index = self.structures[active].active_orbital_set - 1;
+        let LoadedStructure { orbital_sets, apost, molecule, .. } = &mut self.structures[active];
+        let Some(Ok(results)) = apost.as_ref().map(|a| &a.results) else { return };
+        let set = &mut orbital_sets[set_index];
+        if let Some(Err(reason)) = &set.wavefunction {
+            ui.label(RichText::new(reason).small().color(ui.visuals().warn_fg_color));
+            return;
+        }
+        ui.horizontal(|ui| {
+            if ui.button("Select all").clicked() {
+                for beta in [false, true] {
+                    let indices: Vec<usize> = set.labels(beta).iter().enumerate().filter(|(_, l)| l.is_some()).map(|(i, _)| i).collect();
+                    let selected = if beta { &mut set.selected_beta } else { &mut set.selected_alpha };
+                    selected.extend(indices);
+                }
+            }
+            if ui.button("Clear").clicked() {
+                set.selected_alpha.clear();
+                set.selected_beta.clear();
+            }
+        });
+        let has_beta = set.labels(true).iter().any(Option::is_some);
+        let list_height = if has_beta { 110.0 } else { 160.0 };
+        show_set_checklist(ui, set, false, results, molecule, list_height);
+        if has_beta {
+            show_set_checklist(ui, set, true, results, molecule, list_height);
+        } else if let Some(note) = &set.set.beta_note {
+            ui.label(RichText::new(note).small().weak());
+        }
+        let selected_count = set.selected_alpha.len() + set.selected_beta.len();
+        self.show_grid_controls(ui);
+        ui.add_space(4.0);
+        if ui
+            .add_sized([ui.available_width(), 26.0], egui::Button::new(format!("Generate {selected_count} orbital(s)")))
+            .clicked()
+        {
+            self.generate_set_orbitals();
+        }
     }
 
     fn show_generate_orbitals(&mut self, ui: &mut egui::Ui, active: usize) {
@@ -105,6 +188,20 @@ impl App {
             show_mo_checklist(ui, beta, selected_beta_mos, "beta", list_height);
         }
 
+        self.show_grid_controls(ui);
+
+        ui.add_space(4.0);
+        let selected_count = self.structures[active].selected_alpha_mos.len() + self.structures[active].selected_beta_mos.len();
+        if ui
+            .add_sized([ui.available_width(), 26.0], egui::Button::new(format!("Generate {selected_count} orbital(s)")))
+            .clicked()
+        {
+            self.generate_selected_orbitals();
+        }
+    }
+
+    /// Grid accuracy and box padding, shared by SCF and analysis orbitals.
+    fn show_grid_controls(&mut self, ui: &mut egui::Ui) {
         ui.add_space(4.0);
         ui.label("Accuracy:");
         ui.horizontal(|ui| {
@@ -134,15 +231,7 @@ impl App {
                 .small()
                 .weak(),
         );
-
-        ui.add_space(4.0);
-        let selected_count = self.structures[active].selected_alpha_mos.len() + self.structures[active].selected_beta_mos.len();
-        if ui
-            .add_sized([ui.available_width(), 26.0], egui::Button::new(format!("Generate {selected_count} orbital(s)")))
-            .clicked()
-        {
-            self.generate_selected_orbitals();
-        }    }
+    }
 
     fn show_surface_list(&mut self, ui: &mut egui::Ui, active: usize) {
         let structure = &self.structures[active];
@@ -174,7 +263,25 @@ impl App {
                         action = Some(ListAction::Toggle(index));
                     }
                     let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-                    ui.painter().rect_filled(rect, 2.0, surface.settings.positive_color);
+                    // Colored by fragment: the fragment colors, side by side
+                    // for a shared orbital.
+                    let mut colors: Vec<egui::Color32> = Vec::new();
+                    if let (true, Some(tint)) = (surface.settings.by_fragment, &surface.fragment_tint) {
+                        for (_, c) in tint {
+                            let color = egui::Color32::from_rgb((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8);
+                            if !colors.contains(&color) {
+                                colors.push(color);
+                            }
+                        }
+                    }
+                    if colors.is_empty() {
+                        colors.push(surface.settings.positive_color);
+                    }
+                    let width = rect.width() / colors.len() as f32;
+                    for (k, color) in colors.iter().enumerate() {
+                        let part = egui::Rect::from_min_size(rect.min + egui::vec2(k as f32 * width, 0.0), egui::vec2(width, rect.height()));
+                        ui.painter().rect_filled(part, 0.0, *color);
+                    }
                     let selected = structure.selected_surface == Some(index);
                     if ui.selectable_label(selected, &surface.label).on_hover_text("Show this surface alone, and edit it below").clicked() {
                         action = Some(ListAction::ShowAlone(index));
@@ -238,6 +345,10 @@ impl App {
             ui.checkbox(&mut s.both_signs, "Both signs (+/-)");
             ui.add(Slider::new(&mut s.opacity, 0.05..=1.0).text("opacity"));
         });
+        if surface.fragment_tint.is_some() {
+            ui.checkbox(&mut s.by_fragment, "Color by fragment")
+                .on_hover_text("Color the orbital with its fragment's color (blended for an orbital shared between fragments); off uses the colors below");
+        }
         ui.horizontal(|ui| {
             ui.label("Positive:");
             ui.color_edit_button_srgba(&mut s.positive_color);

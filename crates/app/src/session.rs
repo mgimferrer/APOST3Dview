@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::App;
 use crate::isosurfaces::{Surface, SurfaceSettings, SurfaceSource};
-use crate::orbitals::{orbital_surfaces, OrbitalChoice};
+use crate::orbitals::{orbital_surfaces, OrbitalChoice, SetContext};
 use crate::results_view::ResultsView;
 use crate::state::{AtomLabelMode, Measurement};
 use crate::util::find_bond_between;
@@ -123,7 +123,15 @@ struct MeasurementState {
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum SurfaceOrigin {
     Cube { file: String, file_absolute: String },
-    Orbital { spin: Spin, orbital: usize, grid_spacing_bohr: f64, box_padding_bohr: f64 },
+    Orbital {
+        spin: Spin,
+        orbital: usize,
+        grid_spacing_bohr: f64,
+        box_padding_bohr: f64,
+        /// The analysis set ("eos", "geos", "oslo"); absent for SCF orbitals.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        orbital_set: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
@@ -143,8 +151,15 @@ struct SurfaceState {
     positive_color: [u8; 4],
     negative_color: [u8; 4],
     opacity: f32,
+    /// Analysis orbitals colored by fragment (default on).
+    #[serde(default = "default_true")]
+    by_fragment: bool,
     #[serde(flatten)]
     origin: SurfaceOrigin,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn color_to_array(color: Color32) -> [u8; 4] {
@@ -210,11 +225,12 @@ impl App {
                     .map(|surface| {
                         let origin = match &surface.source {
                             SurfaceSource::Cube(file) => SurfaceOrigin::Cube { file: relative_path(base, file), file_absolute: file.to_string_lossy().into_owned() },
-                            SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr } => SurfaceOrigin::Orbital {
+                            SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set } => SurfaceOrigin::Orbital {
                                 spin: if choice.beta { Spin::Beta } else { Spin::Alpha },
                                 orbital: choice.mo_index + 1,
                                 grid_spacing_bohr: *spacing_bohr,
                                 box_padding_bohr: *padding_bohr,
+                                orbital_set: set.clone(),
                             },
                         };
                         let s = &surface.settings;
@@ -227,6 +243,7 @@ impl App {
                             positive_color: color_to_array(s.positive_color),
                             negative_color: color_to_array(s.negative_color),
                             opacity: s.opacity,
+                            by_fragment: s.by_fragment,
                             origin,
                         }
                     })
@@ -465,7 +482,7 @@ impl App {
 
     /// The structure's surfaces, in the recorded order: cubes read again,
     /// generated orbitals computed again (all of one grid in one pass).
-    fn restore_surfaces(&self, index: usize, states: &[SurfaceState], base: &Path, name: &str, problems: &mut Vec<String>) -> Vec<Surface> {
+    fn restore_surfaces(&mut self, index: usize, states: &[SurfaceState], base: &Path, name: &str, problems: &mut Vec<String>) -> Vec<Surface> {
         let mut slots: Vec<Option<Surface>> = states.iter().map(|_| None).collect();
         let settings_of = |s: &SurfaceState| SurfaceSettings {
             isovalue: s.isovalue,
@@ -474,10 +491,12 @@ impl App {
             positive_color: color_from_array(s.positive_color),
             negative_color: color_from_array(s.negative_color),
             opacity: s.opacity.clamp(0.05, 1.0),
+            by_fragment: s.by_fragment,
         };
 
-        // Orbitals, grouped by grid so each group is one batched evaluation.
-        let mut groups: BTreeMap<(u64, u64), Vec<(usize, OrbitalChoice)>> = BTreeMap::new();
+        // Orbitals, grouped by set and grid so each group is one batched
+        // evaluation.
+        let mut groups: BTreeMap<(Option<String>, u64, u64), Vec<(usize, OrbitalChoice)>> = BTreeMap::new();
         for (slot, state) in states.iter().enumerate() {
             match &state.origin {
                 SurfaceOrigin::Cube { file, file_absolute } => match resolve(base, file, file_absolute).map(|p| (parse_cube(&p), p)) {
@@ -485,29 +504,43 @@ impl App {
                     Some((Err(_), _)) => problems.push(format!("{} could not be read", file_name(file))),
                     None => problems.push(format!("{} was not found", file_name(file))),
                 },
-                SurfaceOrigin::Orbital { spin, orbital, grid_spacing_bohr, box_padding_bohr } => {
+                SurfaceOrigin::Orbital { spin, orbital, grid_spacing_bohr, box_padding_bohr, orbital_set } => {
                     let choice = OrbitalChoice { beta: *spin == Spin::Beta, mo_index: orbital.saturating_sub(1) };
-                    groups.entry((grid_spacing_bohr.to_bits(), box_padding_bohr.to_bits())).or_default().push((slot, choice));
+                    groups.entry((orbital_set.clone(), grid_spacing_bohr.to_bits(), box_padding_bohr.to_bits())).or_default().push((slot, choice));
                 }
             }
         }
-        if !groups.is_empty() {
-            match &self.structures[index].wavefunction {
-                None => problems.push(format!("the orbitals of {name} could not be generated (no wavefunction)")),
-                Some(wfn) => {
-                    for ((spacing, padding), members) in groups {
-                        let choices: Vec<OrbitalChoice> = members.iter().map(|(_, c)| *c).collect();
-                        match orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default()) {
-                            Ok(surfaces) => {
-                                for ((slot, _), mut surface) in members.into_iter().zip(surfaces) {
-                                    surface.settings = settings_of(&states[slot]);
-                                    slots[slot] = Some(surface);
-                                }
+        for ((set_name, spacing, padding), members) in groups {
+            let choices: Vec<OrbitalChoice> = members.iter().map(|(_, c)| *c).collect();
+            let generated = match &set_name {
+                None => match &self.structures[index].wavefunction {
+                    None => Err("no wavefunction".to_string()),
+                    Some(wfn) => orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), None),
+                },
+                Some(analysis) => match self.structures[index].orbital_sets.iter().position(|s| &s.set.analysis == analysis) {
+                    None => Err(format!("its {analysis} orbital file was not found")),
+                    Some(position) if !self.load_orbital_set(index, position) => Err(format!("its {analysis} orbital file could not be used")),
+                    Some(position) => {
+                        let structure = &self.structures[index];
+                        let set = &structure.orbital_sets[position];
+                        match (&set.wavefunction, structure.apost.as_ref().map(|a| &a.results)) {
+                            (Some(Ok(wfn)), Some(Ok(results))) => {
+                                let context = SetContext { set, results, molecule: &structure.molecule };
+                                orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), Some(&context))
                             }
-                            Err(err) => problems.push(format!("orbitals of {name}: {err}")),
+                            _ => Err("no results".to_string()),
                         }
                     }
+                },
+            };
+            match generated {
+                Ok(surfaces) => {
+                    for ((slot, _), mut surface) in members.into_iter().zip(surfaces) {
+                        surface.settings = settings_of(&states[slot]);
+                        slots[slot] = Some(surface);
+                    }
                 }
+                Err(err) => problems.push(format!("orbitals of {name} could not be generated ({err})")),
             }
         }
 

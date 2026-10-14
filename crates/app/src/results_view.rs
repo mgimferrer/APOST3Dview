@@ -70,11 +70,16 @@ const ENVELOPE_STRENGTH: f32 = 0.5;
 /// The color of the focused fragment or atom in the focus view.
 pub(crate) const FOCUS_COLOR: [f32; 3] = [0.929, 0.631, 0.0];
 
-/// A quantity whose sign means something (charges, spin): always shown on
-/// the diverging scale centered on zero, whatever the values happen to be.
+/// A quantity whose sign means something (charges, spin, oxidation
+/// states): always shown on the diverging scale centered on zero, whatever
+/// the values happen to be. APOST-3D says so (`signed`, 0.4); for older
+/// files, guessed from the id.
 fn is_signed(entry: &IndexEntry, values: &[f64]) -> bool {
+    if let Some(signed) = entry.signed {
+        return signed;
+    }
     let id = entry.id.to_ascii_lowercase();
-    id.contains("charges") || id.ends_with(".spin") || id.contains(".s2") || values.iter().any(|v| *v < 0.0)
+    id.contains("charges") || id.ends_with(".spin") || id.contains(".s2") || values.iter().any(|v| *v < -1e-3)
 }
 
 /// The automatic scale for some values: diverging up to the largest
@@ -164,6 +169,7 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             let name = |i: usize| if on_fragments { name_of_fragment(results, molecule, i) } else { name_of_atom(molecule, i) };
             let anchor = |i: usize| if on_fragments { LabelAnchor::Fragment(i) } else { LabelAnchor::Atom(i) };
             let (values, focus): (Vec<f64>, Option<usize>) = match &quantity {
+                Quantity::Scalar(_) | Quantity::Table(_) => return scene,
                 Quantity::Vector(v) => (v.iter().map(|x| x.unwrap_or(0.0)).collect(), None),
                 Quantity::Matrix(m) => {
                     let focus = view.focus.min(m.values.len().saturating_sub(1));
@@ -196,7 +202,11 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             let title = match (&quantity, focus) {
                 (Quantity::Matrix(m), Some(f)) => {
                     let what = m.off_diagonal.clone().unwrap_or_else(|| entry.title.clone());
-                    format!("{} with {} ({})", capitalize(&what), name(f), results.input.as_ref().and_then(|i| i.atomic_definition.as_ref()).and_then(|d| d.keyword.clone()).unwrap_or_default())
+                    let scheme = results.input.as_ref().and_then(|i| i.atomic_definition.as_ref()).and_then(|d| d.short_name.clone().or_else(|| d.keyword.clone()));
+                    match scheme {
+                        Some(scheme) => format!("{} with {} ({scheme})", capitalize(&what), name(f)),
+                        None => format!("{} with {}", capitalize(&what), name(f)),
+                    }
                 }
                 _ => entry.title.clone(),
             };
