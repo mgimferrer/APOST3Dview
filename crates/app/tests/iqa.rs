@@ -19,10 +19,10 @@ fn iqa_between_atoms_with_its_terms() {
     let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.fchk")]);
     assert!(harness.state_mut().show_on_molecule("enpart.total.atoms"));
     harness.run_steps(3);
-    assert_eq!(harness.state().legend_title().as_deref(), Some("Interaction energy with O1 (TFVC)"));
+    assert_eq!(harness.state().legend_title().as_deref(), Some("Interaction energy with O1 (TFVC), kcal/mol"));
     // O1's pair with H5 comes from the multipolar expansion.
     harness.get_by_label_contains("pair from the multipolar expansion (approximate exchange-correlation)");
-    harness.get_by_label("Self-energy of O1: \u{2212}74.877289 au");
+    harness.get_by_label("Self-energy of O1: \u{2212}46986.21 kcal/mol");
     // The run-quality section, with the final error in its heading.
     harness.get_by_label_contains("Energy decomposition (IQA) \u{b7} error");
     screenshot(&mut harness, "iqa-atoms-total");
@@ -32,12 +32,12 @@ fn iqa_between_atoms_with_its_terms() {
     harness.run_steps(2);
     harness.get_by_label("Classical (electrostatic)").click();
     harness.run_steps(3);
-    assert_eq!(harness.state().legend_title().as_deref(), Some("Classical interaction energy with O1 (TFVC)"));
+    assert_eq!(harness.state().legend_title().as_deref(), Some("Classical interaction energy with O1 (TFVC), kcal/mol"));
 
     // Logarithmic colors.
     harness.get_by_label("Logarithmic colors").click();
     harness.run_steps(3);
-    assert_eq!(harness.state().legend_title().as_deref(), Some("Classical interaction energy with O1 (TFVC), log scale"));
+    assert_eq!(harness.state().legend_title().as_deref(), Some("Classical interaction energy with O1 (TFVC), kcal/mol, log scale"));
     screenshot(&mut harness, "iqa-atoms-classical-log");
 }
 
@@ -47,7 +47,7 @@ fn iqa_between_fragments() {
     let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.fchk")]);
     assert!(harness.state_mut().show_on_molecule("enpart.total.fragments"));
     harness.run_steps(3);
-    assert_eq!(harness.state().legend_title().as_deref(), Some("Interaction energy with 1 H2O (TFVC)"));
+    assert_eq!(harness.state().legend_title().as_deref(), Some("Interaction energy with 1 H2O (TFVC), kcal/mol"));
     combo_with_value(&harness, "Total (IQA)");
     // The two waters' interaction includes multipolar atom pairs.
     harness.get_by_label_contains("includes atom pairs from the multipolar expansion");
@@ -76,13 +76,12 @@ fn atomic_energies_and_the_selected_pair() {
     // Atomic energies as numbers, in the IQA section.
     harness.get_by_label_contains("Energy decomposition (IQA)").click();
     harness.run_steps(2);
-    harness.get_by_label("Atomic energies, au");
-    harness.get_by_label("Fragment energies, au");
-    harness.get_by_label("-75.440754");
+    harness.get_by_label("Atomic energies, kcal/mol");
+    harness.get_by_label("Fragment energies, kcal/mol");
     // Selecting the first water's O and H shows their IQA decomposition.
     harness.state_mut().select_atoms(&[0, 4]);
     harness.run_steps(3);
-    harness.get_by_label("Interaction energy (IQA), au");
+    harness.get_by_label("Interaction energy (IQA), kcal/mol");
     harness.get_by_label("Total (IQA)");
     harness.get_by_label_contains("comes from the multipolar expansion (approximate)");
     screenshot(&mut harness, "iqa-additive-pair");
@@ -104,4 +103,27 @@ fn stopped_and_unreferenced_runs() {
     harness.get_by_label_contains("Energy decomposition (IQA)").click();
     harness.run_steps(2);
     harness.get_by_label("External field energy");
+}
+
+#[test]
+fn energies_in_kcal_per_mol_or_au() {
+    let Some(dir) = fixtures_dir() else { return };
+    let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.fchk")]);
+    assert!(harness.state_mut().show_on_molecule("enpart.total.fragments"));
+    harness.run_steps(3);
+    // kcal/mol by default: the waters' interaction, -0.033217 au.
+    harness.get_by_label("1 H2O \u{2013} 2 H2O   -20.84");
+    harness.get_all_by_label("au").next().unwrap().click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().legend_title().as_deref(), Some("Interaction energy with 1 H2O (TFVC), au"));
+    harness.get_by_label("1 H2O \u{2013} 2 H2O   -0.033217");
+    // Fixed ranges are kept in au whatever the unit shown.
+    harness.get_by_label("Fixed").click();
+    harness.run_steps(2);
+    let fixed_au = harness.state().legend_bounds();
+    harness.get_all_by_label("kcal/mol").next().unwrap().click();
+    harness.run_steps(3);
+    let (lo, _) = harness.state().legend_bounds().unwrap();
+    assert_eq!(fixed_au.unwrap().0, "\u{2212}0.0332");
+    assert_eq!(lo, "\u{2212}20.8437");
 }

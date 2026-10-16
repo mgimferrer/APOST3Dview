@@ -74,6 +74,14 @@ impl ColorScale {
         }
     }
 
+    /// The same scale for values multiplied by `factor` (a unit change).
+    pub fn scaled(&self, factor: f64) -> Self {
+        match *self {
+            ColorScale::Diverging { max_abs, log } => ColorScale::Diverging { max_abs: max_abs * factor, log },
+            ColorScale::Sequential { min, max } => ColorScale::Sequential { min: min * factor, max: max * factor },
+        }
+    }
+
     /// The colors along the legend bar, left to right, `u` in [0, 1].
     pub fn bar_color(&self, u: f32) -> [f32; 3] {
         match self {

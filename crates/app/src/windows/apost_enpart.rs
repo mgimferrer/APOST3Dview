@@ -12,6 +12,8 @@ use apost3dview_render::format_signed;
 use egui::{Color32, RichText};
 
 use crate::app::App;
+use crate::results_view::EnergyUnit;
+use crate::windows::apost_values::energy_unit_selector;
 
 /// Warnings (APOST-3D's suggestions, brief 09): a final error above
 /// chemical accuracy when no zero-error correction was applied (after one
@@ -84,9 +86,11 @@ fn energy_rows(results: &ApostResults, level: &str, names: &[String]) -> Option<
 }
 
 impl App {
-    pub(crate) fn show_enpart_quality(&self, ui: &mut egui::Ui) {
-        let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) else { return };
-        let Some(Ok(results)) = structure.apost.as_ref().map(|a| &a.results) else { return };
+    pub(crate) fn show_enpart_quality(&mut self, ui: &mut egui::Ui) {
+        let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
+        let molecule = structure.molecule.clone();
+        let Some(attachment) = structure.apost.as_mut() else { return };
+        let (Ok(results), Some(view)) = (&attachment.results, attachment.view.as_mut()) else { return };
         let Some(enpart) = results.enpart() else { return };
         let warnings = warnings(&enpart);
         let mut header = RichText::new(match enpart.integration_error_kcal {
@@ -176,23 +180,29 @@ impl App {
                 );
             }
             if !enpart.multipolar_pairs.is_empty() {
-                let names: Vec<String> = enpart.multipolar_pairs.iter().map(|&p| pair_name(&structure.molecule, p)).collect();
+                let names: Vec<String> = enpart.multipolar_pairs.iter().map(|&p| pair_name(&molecule, p)).collect();
                 ui.label(RichText::new(format!("Exchange-correlation from the multipolar expansion: {}.", names.join(", "))).small().weak());
             }
             for warning in &warnings {
                 ui.label(RichText::new(*warning).small().color(NOTICE));
             }
 
-            // The atomic (and fragment) energies, as numbers.
-            let molecule = &structure.molecule;
+            // The atomic (and fragment) energies, as numbers, in the chosen
+            // unit (the total energies above stay in au, as in the .fchk).
+            ui.add_space(6.0);
+            energy_unit_selector(ui, &mut view.energy_unit);
+            let (factor, unit, d) = (view.energy_unit.factor(), view.energy_unit.name(), if view.energy_unit == EnergyUnit::KcalPerMol { 2 } else { 6 });
+            let molecule = &molecule;
             let atom_names: Vec<String> = (0..molecule.atomic_numbers.len()).map(|a| format!("{}{}", element_data(molecule.atomic_numbers[a]).symbol, a + 1)).collect();
             let fragment_names: Vec<String> = results
                 .fragments()
                 .iter()
                 .map(|f| format!("{} {}", f.id, hill_formula(f.atoms.iter().filter_map(|&a| molecule.atomic_numbers.get(a - 1).copied()))))
                 .collect();
-            for (level, title, names) in [("fragments", "Fragment energies, au", &fragment_names), ("atoms", "Atomic energies, au", &atom_names)] {
+            for (level, title, names) in [("fragments", "Fragment energies", &fragment_names), ("atoms", "Atomic energies", &atom_names)] {
                 let Some(rows) = energy_rows(results, level, names) else { continue };
+                let rows: Vec<_> = rows.into_iter().map(|(n, s, a)| (n, s.map(|v| v * factor), a.map(|v| v * factor))).collect();
+                let title = format!("{title}, {unit}");
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(title).small().weak());
@@ -212,7 +222,7 @@ impl App {
                         for (name, own, additive) in &rows {
                             ui.label(name);
                             for v in [own, additive] {
-                                ui.label(RichText::new(v.map(|x| format!("{x:.6}")).unwrap_or_else(|| "n/a".into())).monospace());
+                                ui.label(RichText::new(v.map(|x| format!("{x:.d$}")).unwrap_or_else(|| "n/a".into())).monospace());
                             }
                             ui.end_row();
                         }

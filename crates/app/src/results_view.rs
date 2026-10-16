@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use apost3dview_core::{element_data, envelope_mesh, ApostResults, IndexEntry, IsosurfaceMesh, Molecule, Quantity, QuantityKind};
+use apost3dview_core::{element_data, envelope_mesh, ApostResults, IndexEntry, IsosurfaceMesh, MatrixObject, Molecule, Quantity, QuantityKind};
 use apost3dview_render::{format_signed, AtomInstance, ColorScale, EnvelopeRange, IsosurfaceVertex, Legend};
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
@@ -48,6 +48,60 @@ pub(crate) struct ResultsView {
     /// values spanning orders of magnitude, such as IQA pair energies).
     #[serde(default)]
     pub(crate) log_scale: bool,
+    /// The unit energies are shown in (APOST-3D writes them in au).
+    #[serde(default)]
+    pub(crate) energy_unit: EnergyUnit,
+}
+
+/// How energies are shown. kcal/mol by default: what chemists read
+/// interaction energies in.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum EnergyUnit {
+    Hartree,
+    #[default]
+    KcalPerMol,
+}
+
+/// Hartree to kcal/mol (CODATA 2018).
+pub(crate) const KCAL_PER_HARTREE: f64 = 627.509_474_063_1;
+
+impl EnergyUnit {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            EnergyUnit::Hartree => "au",
+            EnergyUnit::KcalPerMol => "kcal/mol",
+        }
+    }
+
+    /// What an energy in hartree is multiplied by to show it.
+    pub(crate) fn factor(self) -> f64 {
+        match self {
+            EnergyUnit::Hartree => 1.0,
+            EnergyUnit::KcalPerMol => KCAL_PER_HARTREE,
+        }
+    }
+}
+
+/// Whether an index entry is an energy (APOST-3D writes them in "au").
+pub(crate) fn is_energy(entry: &IndexEntry) -> bool {
+    entry.unit.as_deref() == Some("au")
+}
+
+/// The factor `entry`'s values are shown with in `view` (1 unless it is
+/// an energy shown in kcal/mol), and the unit to name, if any.
+pub(crate) fn display_unit(entry: &IndexEntry, view: &ResultsView) -> (f64, Option<&'static str>) {
+    if is_energy(entry) { (view.energy_unit.factor(), Some(view.energy_unit.name())) } else { (1.0, None) }
+}
+
+/// A matrix with its values (and total) multiplied by `factor`.
+pub(crate) fn scaled_matrix(m: &MatrixObject, factor: f64) -> MatrixObject {
+    let mut m = m.clone();
+    if factor != 1.0 {
+        m.values.iter_mut().flatten().flatten().for_each(|v| *v *= factor);
+        m.total = m.total.map(|t| t * factor);
+    }
+    m
 }
 
 impl ResultsView {
@@ -61,6 +115,7 @@ impl ResultsView {
             label_size: 26.0,
             bond_thickness: false,
             log_scale: false,
+            energy_unit: EnergyUnit::default(),
         }
     }
 }
@@ -99,10 +154,12 @@ fn automatic_scale(entry: &IndexEntry, values: &[f64]) -> ColorScale {
     }
 }
 
-/// Decimals enough to show two significant digits of the largest value.
-fn automatic_decimals(values: &[f64]) -> usize {
+/// Decimals enough to show two significant digits of the largest value
+/// (energies in kcal/mol: one decimal from 10 kcal/mol up).
+fn automatic_decimals(values: &[f64], kcal: bool) -> usize {
     let max_abs = values.iter().fold(0.0f64, |m, v| m.max(v.abs()));
     match max_abs {
+        m if kcal && m >= 10.0 => 1,
         m if m >= 0.1 || m == 0.0 => 2,
         m if m >= 0.01 => 3,
         _ => 4,
@@ -209,6 +266,13 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             let on_fragments = entry.kind.on_fragments();
             let name = |i: usize| if on_fragments { name_of_fragment(results, molecule, i) } else { name_of_atom(molecule, i) };
             let anchor = |i: usize| if on_fragments { LabelAnchor::Fragment(i) } else { LabelAnchor::Atom(i) };
+            // Energies in the chosen unit; fixed ranges are kept in au.
+            let (factor, unit) = display_unit(entry, view);
+            let quantity = match quantity {
+                Quantity::Matrix(m) => Quantity::Matrix(scaled_matrix(&m, factor)),
+                Quantity::Vector(v) => Quantity::Vector(v.into_iter().map(|x| x.map(|x| x * factor)).collect()),
+                other => other,
+            };
             let (values, focus): (Vec<f64>, Option<usize>) = match &quantity {
                 Quantity::Scalar(_) | Quantity::Table(_) => return scene,
                 Quantity::Vector(v) => (v.iter().map(|x| x.unwrap_or(0.0)).collect(), None),
@@ -219,11 +283,11 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             };
             // The focused one's own (diagonal) value doesn't set the scale.
             let others: Vec<f64> = values.iter().enumerate().filter(|(i, _)| Some(*i) != focus).map(|(_, v)| *v).collect();
-            let mut scale = fixed.get(&entry.id).copied().unwrap_or_else(|| automatic_scale(entry, &others));
+            let mut scale = fixed.get(&entry.id).map(|s| s.scaled(factor)).unwrap_or_else(|| automatic_scale(entry, &others));
             if let ColorScale::Diverging { log, .. } = &mut scale {
                 *log = view.log_scale;
             }
-            let decimals = view.decimals.unwrap_or_else(|| automatic_decimals(&others));
+            let decimals = view.decimals.unwrap_or_else(|| automatic_decimals(&others, unit == Some("kcal/mol")));
             let signed = matches!(scale, ColorScale::Diverging { .. });
             let format = |v: f64| if signed { format_signed(v, decimals) } else { format!("{v:.decimals$}") };
 
@@ -243,7 +307,8 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             let enpart = enpart_term(&entry.id).and_then(|_| results.enpart());
             if let (Quantity::Matrix(m), Some(f), Some(_)) = (&quantity, focus, &enpart) {
                 if let (Some(noun), Some(e)) = (m.diagonal.as_deref().filter(|d| *d != "none"), m.get(f, f)) {
-                    scene.notes.push(format!("{} of {}: {} au", capitalize(noun), name(f), format_signed(e, 6)));
+                    let (d, u) = if unit == Some("kcal/mol") { (2, "kcal/mol") } else { (6, "au") };
+                    scene.notes.push(format!("{} of {}: {} {u}", capitalize(noun), name(f), format_signed(e, d)));
                 }
             }
             let fragments = results.fragments();
@@ -281,6 +346,10 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
                     }
                 }
                 _ => entry.title.clone(),
+            };
+            let title = match unit {
+                Some(unit) => format!("{title}, {unit}"),
+                None => title,
             };
             let title = if matches!(scale, ColorScale::Diverging { log: true, .. }) { format!("{title}, log scale") } else { title };
             scene.caption = Some(title.clone());
@@ -449,8 +518,10 @@ mod tests {
 
     #[test]
     fn decimals_follow_the_size_of_the_values() {
-        assert_eq!(automatic_decimals(&[0.52, -0.1]), 2);
-        assert_eq!(automatic_decimals(&[0.018, -0.018]), 3);
-        assert_eq!(automatic_decimals(&[0.004]), 4);
+        assert_eq!(automatic_decimals(&[0.52, -0.1], false), 2);
+        assert_eq!(automatic_decimals(&[0.018, -0.018], false), 3);
+        assert_eq!(automatic_decimals(&[0.004], false), 4);
+        assert_eq!(automatic_decimals(&[-338.8, 20.8], true), 1);
+        assert_eq!(automatic_decimals(&[26.1], false), 2);
     }
 }

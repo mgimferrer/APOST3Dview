@@ -7,7 +7,7 @@ use apost3dview_render::{format_signed, ColorScale};
 use egui::{Color32, RichText, Sense};
 
 use crate::app::App;
-use crate::results_view::{build_scene, enpart_term, enpart_term_name, focus_target, grouped_entries, shown_entry, ResultsView, Shown, FOCUS_COLOR};
+use crate::results_view::{build_scene, display_unit, enpart_term, enpart_term_name, is_energy, scaled_matrix, EnergyUnit, focus_target, grouped_entries, shown_entry, ResultsView, Shown, FOCUS_COLOR};
 
 fn color32(c: [f32; 3]) -> Color32 {
     Color32::from_rgb((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8)
@@ -114,9 +114,15 @@ impl App {
                 ui.label(RichText::new(format!("Click {what} in the view to see it from there.")).small().weak());
             }
 
-            // Color range: automatic, or fixed for this quantity everywhere.
+            if is_energy(entry) {
+                energy_unit_selector(ui, &mut view.energy_unit);
+            }
+
+            // Color range: automatic, or fixed for this quantity everywhere
+            // (kept in the file's unit, shown in the chosen one).
+            let (factor, _) = display_unit(entry, view);
             let automatic = build_scene(results, &molecule, &ResultsView { ..view.clone() }, &Default::default()).legend.map(|l| l.scale);
-            let mut fixed = self.color_ranges.get(&entry.id).copied();
+            let mut fixed = self.color_ranges.get(&entry.id).map(|s| s.scaled(factor));
             ui.horizontal(|ui| {
                 ui.label("Colors");
                 if ui.selectable_label(fixed.is_none(), "Automatic").clicked() {
@@ -147,7 +153,7 @@ impl App {
             }
             match fixed {
                 Some(scale) => {
-                    self.color_ranges.insert(entry.id.clone(), scale);
+                    self.color_ranges.insert(entry.id.clone(), scale.scaled(1.0 / factor));
                 }
                 None => {
                     self.color_ranges.remove(&entry.id);
@@ -189,13 +195,19 @@ impl App {
         let (Ok(results), Some(view)) = (&attachment.results, attachment.view.as_mut()) else { return };
         let Some(entry) = shown_entry(results, view).cloned() else { return };
         let Ok(quantity) = results.quantity(&entry) else { return };
+        let (factor, unit) = display_unit(&entry, view);
+        let quantity = match quantity {
+            Quantity::Matrix(m) => Quantity::Matrix(scaled_matrix(&m, factor)),
+            Quantity::Vector(v) => Quantity::Vector(v.into_iter().map(|x| x.map(|x| x * factor)).collect()),
+            other => other,
+        };
         let on_fragments = entry.kind.on_fragments();
         let names: Vec<String> = if on_fragments {
             (0..results.fragments().len()).map(|f| fragment_name(results, &molecule, f)).collect()
         } else {
             (0..molecule.atomic_numbers.len()).map(|a| atom_name(&molecule, a)).collect()
         };
-        let decimals = entry.decimals.unwrap_or(6).min(6);
+        let decimals = if unit == Some("kcal/mol") { 2 } else { entry.decimals.unwrap_or(6).min(6) };
         let scene = build_scene(results, &molecule, view, &self.color_ranges);
         let scale = scene.legend.as_ref().map(|l| l.scale);
 
@@ -227,7 +239,8 @@ impl App {
                     ui.label(RichText::new(format!("Diagonal: {d}. Off-diagonal: {o}.")).small().weak());
                 }
                 if let (Some(total), Some(rule)) = (matrix.total, &matrix.total_rule) {
-                    ui.label(format!("Total {total:.decimals$} ({rule})"));
+                    let unit = unit.map(|u| format!(" {u}")).unwrap_or_default();
+                    ui.label(format!("Total {total:.decimals$}{unit} ({rule})"));
                 }
                 if ui.button("Copy matrix").on_hover_text("As tab-separated text, for a spreadsheet").clicked() {
                     ui.ctx().copy_text(matrix_text(matrix, &names));
@@ -259,6 +272,8 @@ impl App {
         let order = |id: &str| enpart_term(id).and_then(|(t, _)| apost3dview_core::ENPART_TERMS.iter().position(|x| *x == t)).unwrap_or(usize::MAX);
         iqa.sort_by_key(|(entry, _)| order(&entry.id));
         let enpart = structure.apost.as_ref().and_then(|x| x.results.as_ref().ok()).and_then(|r| r.enpart());
+        let energy_unit = structure.apost.as_ref().and_then(|x| x.view.as_ref()).map(|v| v.energy_unit).unwrap_or_default();
+        let (factor, d) = (energy_unit.factor(), if energy_unit == EnergyUnit::KcalPerMol { 2 } else { 6 });
         egui::CollapsingHeader::new(RichText::new(format!("Selected pair {pair}")).strong()).id_salt("results_pair").default_open(true).show(ui, |ui| {
             egui::Grid::new("results_pair_grid").num_columns(2).spacing([12.0, 3.0]).show(ui, |ui| {
                 for (entry, value) in &other {
@@ -270,7 +285,7 @@ impl App {
             });
             if !iqa.is_empty() {
                 ui.add_space(4.0);
-                ui.label(RichText::new("Interaction energy (IQA), au").small().weak());
+                ui.label(RichText::new(format!("Interaction energy (IQA), {}", energy_unit.name())).small().weak());
                 egui::Grid::new("results_pair_iqa").num_columns(2).spacing([12.0, 3.0]).striped(true).show(ui, |ui| {
                     for (entry, value) in &iqa {
                         let Some((term, _)) = enpart_term(&entry.id) else { continue };
@@ -278,7 +293,7 @@ impl App {
                             continue;
                         }
                         ui.label(enpart_term_name(term));
-                        ui.label(RichText::new(format_signed(*value, 6)).monospace());
+                        ui.label(RichText::new(format_signed(*value * factor, d)).monospace());
                         ui.end_row();
                     }
                 });
@@ -358,4 +373,13 @@ fn strongest_pairs(ui: &mut egui::Ui, matrix: &MatrixObject, names: &[String], d
         }
     });
     clicked
+}
+
+/// au or kcal/mol, for the energies of the energy decomposition.
+pub(crate) fn energy_unit_selector(ui: &mut egui::Ui, unit: &mut EnergyUnit) {
+    ui.horizontal(|ui| {
+        ui.label("Energies in");
+        ui.selectable_value(unit, EnergyUnit::KcalPerMol, "kcal/mol");
+        ui.selectable_value(unit, EnergyUnit::Hartree, "au");
+    });
 }
