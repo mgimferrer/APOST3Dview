@@ -22,33 +22,38 @@ enum ListAction {
 impl App {
     pub(crate) fn show_surfaces_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_surfaces;
-        egui::Window::new("Surfaces")
-            .open(&mut open)
-            .default_pos([16.0, 330.0])
-            .default_width(300.0)
-            .show(ctx, |ui| {
-                let Some(active) = self.active_structure else {
-                    ui.label(RichText::new("Open a structure first.").weak());
-                    return;
-                };
-                let structure = &self.structures[active];
-                if structure.wavefunction.is_some() || !structure.orbital_sets.is_empty() {
-                    egui::CollapsingHeader::new(RichText::new("Generate orbitals").strong())
-                        .id_salt("generate_orbitals")
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            self.show_orbital_set_selector(ui, active);
-                            if self.structures[active].active_orbital_set == 0 {
-                                self.show_generate_orbitals(ui, active);
-                            } else {
-                                self.show_generate_set_orbitals(ui, active);
-                            }
-                        });
-                    ui.add_space(6.0);
-                }
-                self.show_surface_list(ui, active);
-            });
+        egui::Window::new("Surfaces").open(&mut open).default_pos([16.0, 330.0]).default_width(300.0).show(ctx, |ui| {
+            // Its own scroll area, capped at the screen: with orbitals,
+            // densities and a surface list it can outgrow a laptop's.
+            egui::ScrollArea::vertical()
+                .id_salt("surfaces_window")
+                .max_height(ctx.content_rect().height() - 140.0)
+                .show(ui, |ui| self.show_surfaces_content(ui));
+        });
         self.show_surfaces = open;
+    }
+
+    fn show_surfaces_content(&mut self, ui: &mut egui::Ui) {
+        let Some(active) = self.active_structure else {
+            ui.label(RichText::new("Open a structure first.").weak());
+            return;
+        };
+        let structure = &self.structures[active];
+        if structure.wavefunction.is_some() || !structure.orbital_sets.is_empty() {
+            egui::CollapsingHeader::new(RichText::new("Generate orbitals and densities").strong())
+                .id_salt("generate_orbitals")
+                .default_open(true)
+                .show(ui, |ui| {
+                    self.show_orbital_set_selector(ui, active);
+                    if self.structures[active].active_orbital_set == 0 {
+                        self.show_generate_orbitals(ui, active);
+                    } else {
+                        self.show_generate_set_orbitals(ui, active);
+                    }
+                });
+            ui.add_space(6.0);
+        }
+        self.show_surface_list(ui, active);
     }
 
     /// Which orbitals to generate from: the SCF ones of the open file, or
@@ -117,10 +122,7 @@ impl App {
         let selected_count = set.selected_alpha.len() + set.selected_beta.len();
         self.show_grid_controls(ui);
         ui.add_space(4.0);
-        if ui
-            .add_sized([ui.available_width(), 26.0], egui::Button::new(format!("Generate {selected_count} orbital(s)")))
-            .clicked()
-        {
+        if ui.add_sized([ui.available_width(), 26.0], egui::Button::new(format!("Generate {selected_count} orbital(s)"))).clicked() {
             self.generate_set_orbitals();
         }
     }
@@ -162,7 +164,10 @@ impl App {
             ui.label("to");
             ui.add(egui::DragValue::new(&mut self.orbital_generation.range_end).range(1..=num_orbitals.max(1)));
             if ui.button("Select range").clicked() {
-                let (lo, hi) = (self.orbital_generation.range_start.min(self.orbital_generation.range_end), self.orbital_generation.range_start.max(self.orbital_generation.range_end));
+                let (lo, hi) = (
+                    self.orbital_generation.range_start.min(self.orbital_generation.range_end),
+                    self.orbital_generation.range_start.max(self.orbital_generation.range_end),
+                );
                 let structure = &mut self.structures[active];
                 for mo_number in lo..=hi {
                     structure.selected_alpha_mos.insert(mo_number - 1);
@@ -173,6 +178,34 @@ impl App {
             }
         });
 
+        // The densities, generated with the orbitals.
+        let has_spin = self.structures[active].wavefunction.as_ref().unwrap().spin_density_weights().is_some();
+        let correlated = self.structures[active]
+            .apost
+            .as_ref()
+            .and_then(|a| a.results.as_ref().ok())
+            .and_then(|r| r.enpart())
+            .and_then(|e| e.wavefunction)
+            .filter(|w| w == "CASSCF" || w == "CISD");
+        ui.horizontal(|ui| {
+            let structure = &mut self.structures[active];
+            ui.checkbox(&mut structure.selected_total_density, "Total density")
+                .on_hover_text("The electron density, from the occupied orbitals");
+            if has_spin {
+                ui.checkbox(&mut structure.selected_spin_density, "Spin density")
+                    .on_hover_text("Alpha minus beta density: positive where alpha electrons are in excess");
+            }
+        });
+        if let Some(method) = correlated {
+            ui.label(
+                RichText::new(format!(
+                    "For this {method} wavefunction, the density is that of the occupied orbitals in the .fchk, not the correlated density."
+                ))
+                .small()
+                .weak(),
+            );
+        }
+
         let list_height = if is_unrestricted { 90.0 } else { 120.0 };
         // Destructuring through the `&mut LoadedStructure`
         // borrows `wavefunction`/`selected_alpha_mos`/
@@ -181,7 +214,12 @@ impl App {
         // (mutable) coexist without needing two separate
         // indexing expressions into `self.structures`, which
         // the borrow checker can't prove disjoint on its own.
-        let LoadedStructure { wavefunction, selected_alpha_mos, selected_beta_mos, .. } = &mut self.structures[active];
+        let LoadedStructure {
+            wavefunction,
+            selected_alpha_mos,
+            selected_beta_mos,
+            ..
+        } = &mut self.structures[active];
         let wfn = wavefunction.as_ref().unwrap();
         show_mo_checklist(ui, &wfn.alpha, selected_alpha_mos, "alpha", list_height);
         if let Some(beta) = &wfn.beta {
@@ -191,11 +229,14 @@ impl App {
         self.show_grid_controls(ui);
 
         ui.add_space(4.0);
-        let selected_count = self.structures[active].selected_alpha_mos.len() + self.structures[active].selected_beta_mos.len();
-        if ui
-            .add_sized([ui.available_width(), 26.0], egui::Button::new(format!("Generate {selected_count} orbital(s)")))
-            .clicked()
-        {
+        let structure = &self.structures[active];
+        let selected_count = structure.selected_alpha_mos.len() + structure.selected_beta_mos.len();
+        let density_count = usize::from(structure.selected_total_density) + usize::from(structure.selected_spin_density && has_spin);
+        let label = match density_count {
+            0 => format!("Generate {selected_count} orbital(s)"),
+            n => format!("Generate {} surface(s)", selected_count + n),
+        };
+        if ui.add_sized([ui.available_width(), 26.0], egui::Button::new(label)).clicked() {
             self.generate_selected_orbitals();
         }
     }
@@ -216,21 +257,13 @@ impl App {
                 ui.add(egui::DragValue::new(&mut self.orbital_generation.custom_spacing_bohr).speed(0.01).range(0.02..=2.0));
             });
         } else {
-            ui.label(
-                egui::RichText::new(format!("Grid spacing: {:.2} Bohr", self.orbital_generation.resolve_spacing_bohr()))
-                    .small()
-                    .weak(),
-            );
+            ui.label(egui::RichText::new(format!("Grid spacing: {:.2} Bohr", self.orbital_generation.resolve_spacing_bohr())).small().weak());
         }
         ui.horizontal(|ui| {
             ui.label("Box padding (Bohr):");
             ui.add(egui::DragValue::new(&mut self.orbital_generation.padding_bohr).speed(0.1).range(1.0..=20.0));
         });
-        ui.label(
-            egui::RichText::new("If a generated orbital's isosurface looks flat-cut at one side, raise this.")
-                .small()
-                .weak(),
-        );
+        ui.label(egui::RichText::new("If a generated orbital's isosurface looks flat-cut at one side, raise this.").small().weak());
     }
 
     fn show_surface_list(&mut self, ui: &mut egui::Ui, active: usize) {
@@ -324,7 +357,9 @@ impl App {
     /// become those of the next surfaces opened or generated.
     fn show_surface_settings(&mut self, ui: &mut egui::Ui, active: usize) {
         let structure = &mut self.structures[active];
-        let Some(index) = structure.selected_surface.filter(|&i| i < structure.surfaces.len()) else { return };
+        let Some(index) = structure.selected_surface.filter(|&i| i < structure.surfaces.len()) else {
+            return;
+        };
         let surface_count = structure.surfaces.len();
         let surface = &mut structure.surfaces[index];
 

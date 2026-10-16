@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::App;
 use crate::isosurfaces::{Surface, SurfaceSettings, SurfaceSource};
-use crate::orbitals::{orbital_surfaces, OrbitalChoice, SetContext};
+use crate::orbitals::{density_surface, orbital_surfaces, OrbitalChoice, SetContext};
 use crate::results_view::ResultsView;
 use crate::state::{AtomLabelMode, Measurement};
 use crate::util::find_bond_between;
@@ -132,6 +132,8 @@ enum SurfaceOrigin {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         orbital_set: Option<String>,
     },
+    /// The total or spin density, recomputed from the wavefunction.
+    Density { spin_density: bool, grid_spacing_bohr: f64, box_padding_bohr: f64 },
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
@@ -221,6 +223,9 @@ impl App {
                     .map(|surface| {
                         let origin = match &surface.source {
                             SurfaceSource::Cube(file) => SurfaceOrigin::Cube { file: relative_path(base, file), file_absolute: file.to_string_lossy().into_owned() },
+                            SurfaceSource::Density { spin, spacing_bohr, padding_bohr } => {
+                                SurfaceOrigin::Density { spin_density: *spin, grid_spacing_bohr: *spacing_bohr, box_padding_bohr: *padding_bohr }
+                            }
                             SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set } => SurfaceOrigin::Orbital {
                                 spin: if choice.beta { Spin::Beta } else { Spin::Alpha },
                                 orbital: choice.mo_index + 1,
@@ -499,6 +504,16 @@ impl App {
                     Some((Ok(cube), path)) => slots[slot] = Some(Surface::new(state.label.clone(), cube.grid, settings_of(state), SurfaceSource::Cube(path))),
                     Some((Err(_), _)) => problems.push(format!("{} could not be read", file_name(file))),
                     None => problems.push(format!("{} was not found", file_name(file))),
+                },
+                SurfaceOrigin::Density { spin_density, grid_spacing_bohr, box_padding_bohr } => match &self.structures[index].wavefunction {
+                    Some(wfn) => match density_surface(wfn, *spin_density, *grid_spacing_bohr, *box_padding_bohr) {
+                        Ok(mut surface) => {
+                            surface.settings = settings_of(state);
+                            slots[slot] = Some(surface);
+                        }
+                        Err(err) => problems.push(format!("the density of {name} could not be generated ({err})")),
+                    },
+                    None => problems.push(format!("the density of {name} could not be generated (no wavefunction)")),
                 },
                 SurfaceOrigin::Orbital { spin, orbital, grid_spacing_bohr, box_padding_bohr, orbital_set } => {
                     let choice = OrbitalChoice { beta: *spin == Spin::Beta, mo_index: orbital.saturating_sub(1) };

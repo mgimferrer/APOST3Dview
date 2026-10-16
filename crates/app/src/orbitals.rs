@@ -2,10 +2,10 @@
 
 use std::collections::HashSet;
 
-use apost3dview_core::{generate_mo_grids, ApostResults, MolecularOrbitals, Molecule, Wavefunction};
+use apost3dview_core::{generate_density_grid, generate_mo_grids, ApostResults, MolecularOrbitals, Molecule, Wavefunction};
 
 use crate::app::App;
-use crate::isosurfaces::{Surface, SurfaceSettings, SurfaceSource};
+use crate::isosurfaces::{density_settings, Surface, SurfaceSettings, SurfaceSource};
 use crate::orbital_sets::{fragment_tint, LoadedOrbitalSet};
 
 /// One spin channel's tick-box list in the "Generate orbitals" section —
@@ -135,6 +135,15 @@ fn orbital_label(wfn: &Wavefunction, choice: OrbitalChoice) -> String {
 /// call: the basis functions (the expensive part, hundreds of shells on a
 /// real molecule) are computed once per grid point and shared, rather
 /// than once per orbital.
+/// The total (or spin) density of `wfn` as a surface, "Total density" or
+/// "Spin density", first drawn with `density_settings`.
+pub(crate) fn density_surface(wfn: &Wavefunction, spin: bool, spacing_bohr: f64, padding_bohr: f64) -> Result<Surface, String> {
+    let terms = if spin { wfn.spin_density_weights().ok_or("a closed shell has no spin density")? } else { wfn.total_density_weights() };
+    let grid = generate_density_grid(&wfn.basis, &terms, spacing_bohr, padding_bohr)?;
+    let label = if spin { "Spin density" } else { "Total density" };
+    Ok(Surface::new(label.to_string(), grid, density_settings(spin), SurfaceSource::Density { spin, spacing_bohr, padding_bohr }))
+}
+
 /// For orbitals of an analysis set: what labels and colors them.
 pub(crate) struct SetContext<'a> {
     pub(crate) set: &'a LoadedOrbitalSet,
@@ -187,7 +196,12 @@ impl App {
         let Some(active) = self.active_structure else { return };
         let Some(structure) = self.structures.get(active) else { return };
         let Some(wfn) = &structure.wavefunction else { return };
-        if structure.selected_alpha_mos.is_empty() && structure.selected_beta_mos.is_empty() {
+        let densities: Vec<bool> = [(structure.selected_total_density, false), (structure.selected_spin_density && wfn.spin_density_weights().is_some(), true)]
+            .into_iter()
+            .filter(|(ticked, _)| *ticked)
+            .map(|(_, spin)| spin)
+            .collect();
+        if structure.selected_alpha_mos.is_empty() && structure.selected_beta_mos.is_empty() && densities.is_empty() {
             self.show_warning("No orbitals selected");
             return;
         }
@@ -199,16 +213,37 @@ impl App {
         }
         choices.sort_unstable_by_key(|c| (c.beta, c.mo_index));
 
-        let surfaces = match orbital_surfaces(wfn, &choices, spacing, self.orbital_generation.padding_bohr, self.surface_defaults, None) {
-            Ok(surfaces) => surfaces,
-            Err(err) => {
-                self.show_warning(format!("Orbitals could not be generated: {err}"));
-                return;
+        let padding = self.orbital_generation.padding_bohr;
+        let mut surfaces = Vec::new();
+        if !choices.is_empty() {
+            match orbital_surfaces(wfn, &choices, spacing, padding, self.surface_defaults, None) {
+                Ok(s) => surfaces = s,
+                Err(err) => {
+                    self.show_warning(format!("Orbitals could not be generated: {err}"));
+                    return;
+                }
             }
-        };
+        }
+        for &spin in &densities {
+            match density_surface(wfn, spin, spacing, padding) {
+                Ok(s) => surfaces.push(s),
+                Err(err) => {
+                    self.show_warning(format!("The density could not be generated: {err}"));
+                    return;
+                }
+            }
+        }
         let count = choices.len();
+        let mut done = Vec::new();
+        if count > 0 {
+            done.push(format!("{count} orbital{}", if count == 1 { "" } else { "s" }));
+        }
+        done.extend(densities.iter().map(|&spin| if spin { "the spin density".to_string() } else { "the total density".to_string() }));
         self.add_surfaces(active, surfaces, true);
-        self.show_status(format!("{count} orbital{} generated", if count == 1 { "" } else { "s" }));
+        let text = done.join(" and ");
+        let mut chars = text.chars();
+        let text = chars.next().map(|c| c.to_uppercase().chain(chars).collect::<String>()).unwrap_or_default();
+        self.show_status(format!("{text} generated"));
     }
 
     /// Loads the active structure's orbital set `index` (0-based in

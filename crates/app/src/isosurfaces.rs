@@ -80,6 +80,24 @@ pub(crate) enum SurfaceSource {
         /// `None` for the SCF orbitals.
         set: Option<String>,
     },
+    /// The electron density (or, `spin`, the spin density) of the
+    /// structure's wavefunction, from its occupied orbitals.
+    Density { spin: bool, spacing_bohr: f64, padding_bohr: f64 },
+}
+
+/// How a density is first drawn, chosen from comparison renders (H2O
+/// triplet, BiCl3): total at 0.1 e/bohr^3, opaque, light blue (lower
+/// isovalues swallow the molecule; translucent shows the same layering
+/// artifacts as translucent orbitals); spin at +/-0.01 with both signs
+/// (alpha excess positive, beta excess negative). Not the last-used orbital
+/// settings, whose isovalues mean nothing for a density.
+pub(crate) fn density_settings(spin: bool) -> SurfaceSettings {
+    let defaults = SurfaceSettings::default();
+    if spin {
+        SurfaceSettings { isovalue: 0.01, both_signs: true, ..defaults }
+    } else {
+        SurfaceSettings { isovalue: 0.1, both_signs: false, positive_color: Color32::from_rgb(120, 160, 210), ..defaults }
+    }
 }
 
 pub(crate) struct Surface {

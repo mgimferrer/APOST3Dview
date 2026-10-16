@@ -345,7 +345,8 @@ pub fn parse_molden_wavefunction(path: &Path) -> io::Result<Wavefunction> {
         for o in &orbitals {
             coefficients.extend_from_slice(&o.coefficients);
         }
-        MolecularOrbitals { num_basis_functions, orbital_energies, coefficients, num_occupied }
+        let occupations = orbitals.iter().map(|o| o.occupation).collect();
+        MolecularOrbitals { num_basis_functions, orbital_energies, coefficients, num_occupied, occupations }
     };
 
     let alpha = build_channel(alpha_orbitals);

@@ -248,9 +248,9 @@ pub fn evaluate_mo(basis: &BasisSet, orbitals: &MolecularOrbitals, mo_index: usi
 /// multiplier this replaces). Also parallelized over grid points with
 /// rayon, since points are fully independent and the per-point cost easily
 /// dwarfs the fork/join overhead on any basis set big enough to matter.
-pub fn generate_mo_grids(basis: &BasisSet, requests: &[(&MolecularOrbitals, usize)], spacing_bohr: f64, padding_bohr: f64) -> Result<Vec<crate::cube::ScalarGrid>, String> {
-    use rayon::prelude::*;
-
+/// The grid box around a basis set's shell centers, padded on every side:
+/// its corner (bohr) and point counts.
+fn grid_box(basis: &BasisSet, spacing_bohr: f64, padding_bohr: f64) -> Result<(DVec3, [usize; 3]), String> {
     let Some(first) = basis.shells.first() else { return Err("wavefunction has no shells".to_string()) };
     let mut min = first.center;
     let mut max = first.center;
@@ -261,13 +261,69 @@ pub fn generate_mo_grids(basis: &BasisSet, requests: &[(&MolecularOrbitals, usiz
     let padding = DVec3::splat(padding_bohr);
     min -= padding;
     max += padding;
-
     let extent = max - min;
     let dims = [
         ((extent.x / spacing_bohr).ceil() as usize).max(2),
         ((extent.y / spacing_bohr).ceil() as usize).max(2),
         ((extent.z / spacing_bohr).ceil() as usize).max(2),
     ];
+    Ok((min, dims))
+}
+
+/// A grid in angstrom with `values`, from a box in bohr.
+fn grid_in_angstrom(min: DVec3, dims: [usize; 3], spacing_bohr: f64, values: Vec<f32>) -> crate::cube::ScalarGrid {
+    let to_angstrom = |v: DVec3| -> Vec3 {
+        Vec3::new((v.x * crate::units::ANGSTROM_PER_BOHR) as f32, (v.y * crate::units::ANGSTROM_PER_BOHR) as f32, (v.z * crate::units::ANGSTROM_PER_BOHR) as f32)
+    };
+    let step = (spacing_bohr * crate::units::ANGSTROM_PER_BOHR) as f32;
+    let steps = [Vec3::new(step, 0.0, 0.0), Vec3::new(0.0, step, 0.0), Vec3::new(0.0, 0.0, step)];
+    crate::cube::ScalarGrid { origin: to_angstrom(min), dims, steps, values }
+}
+
+/// A density on a grid, rho(r) = sum over the channels' orbitals of
+/// w_i |phi_i(r)|^2 (`terms`: the orbitals of each channel with one
+/// weight per orbital, e.g. the occupations; see
+/// `Wavefunction::total_density_weights`). In electrons/bohr^3, on the same
+/// kind of box as the orbitals (`generate_mo_grids`).
+pub fn generate_density_grid(basis: &BasisSet, terms: &[(&MolecularOrbitals, Vec<f64>)], spacing_bohr: f64, padding_bohr: f64) -> Result<crate::cube::ScalarGrid, String> {
+    use rayon::prelude::*;
+
+    let (min, dims) = grid_box(basis, spacing_bohr, padding_bohr)?;
+    let total_points = dims[0] * dims[1] * dims[2];
+    // Only the orbitals that contribute.
+    let orbitals: Vec<(&[f64], f64)> = terms
+        .iter()
+        .flat_map(|(mo, weights)| weights.iter().enumerate().filter(|(_, w)| w.abs() > 1e-12).map(move |(i, &w)| (mo.coefficients_for(i), w)))
+        .collect();
+    if orbitals.is_empty() {
+        return Err("no occupied orbitals".to_string());
+    }
+    let values = (0..total_points)
+        .into_par_iter()
+        .map_init(Vec::new, |scratch, idx| -> Result<f32, String> {
+            let k = idx % dims[2];
+            let j = (idx / dims[2]) % dims[1];
+            let i = idx / (dims[1] * dims[2]);
+            let point = min + DVec3::new(i as f64, j as f64, k as f64) * spacing_bohr;
+            evaluate_basis_functions(basis, point, scratch)?;
+            let mut rho = 0.0f64;
+            for (coeffs, w) in &orbitals {
+                if scratch.len() != coeffs.len() {
+                    return Err(format!("basis function count ({}) doesn't match MO coefficient count ({})", scratch.len(), coeffs.len()));
+                }
+                let phi: f64 = scratch.iter().zip(*coeffs).map(|(&b, &c)| b * c).sum();
+                rho += w * phi * phi;
+            }
+            Ok(rho as f32)
+        })
+        .collect::<Result<Vec<f32>, String>>()?;
+    Ok(grid_in_angstrom(min, dims, spacing_bohr, values))
+}
+
+pub fn generate_mo_grids(basis: &BasisSet, requests: &[(&MolecularOrbitals, usize)], spacing_bohr: f64, padding_bohr: f64) -> Result<Vec<crate::cube::ScalarGrid>, String> {
+    use rayon::prelude::*;
+
+    let (min, dims) = grid_box(basis, spacing_bohr, padding_bohr)?;
     let total_points = dims[0] * dims[1] * dims[2];
 
     let coefficients: Vec<&[f64]> = requests.iter().map(|(orbitals, mo_index)| orbitals.coefficients_for(*mo_index)).collect();
@@ -296,17 +352,9 @@ pub fn generate_mo_grids(basis: &BasisSet, requests: &[(&MolecularOrbitals, usiz
         })
         .collect::<Result<Vec<Vec<f32>>, String>>()?;
 
-    let to_angstrom = |v: DVec3| -> Vec3 {
-        Vec3::new((v.x * crate::units::ANGSTROM_PER_BOHR) as f32, (v.y * crate::units::ANGSTROM_PER_BOHR) as f32, (v.z * crate::units::ANGSTROM_PER_BOHR) as f32)
-    };
-    let step = (spacing_bohr * crate::units::ANGSTROM_PER_BOHR) as f32;
-    let origin = to_angstrom(min);
-    let steps = [Vec3::new(step, 0.0, 0.0), Vec3::new(0.0, step, 0.0), Vec3::new(0.0, 0.0, step)];
-
     // Transpose point-major rows back into one flat orbital-major `values`
     // buffer per request, the shape `ScalarGrid` expects.
-    let mut grids: Vec<crate::cube::ScalarGrid> =
-        requests.iter().map(|_| crate::cube::ScalarGrid { origin, dims, steps, values: vec![0.0; total_points] }).collect();
+    let mut grids: Vec<crate::cube::ScalarGrid> = requests.iter().map(|_| grid_in_angstrom(min, dims, spacing_bohr, vec![0.0; total_points])).collect();
     for (point_idx, row) in rows.into_iter().enumerate() {
         for (r, value) in row.into_iter().enumerate() {
             grids[r].values[point_idx] = value;
@@ -569,6 +617,7 @@ mod tests {
                 0.2, -0.4, 0.6, 0.15, // MO 2
             ],
             num_occupied: 2,
+            occupations: vec![2.0, 2.0, 0.0],
         };
 
         let requests = [(&orbitals, 0usize), (&orbitals, 2usize)];

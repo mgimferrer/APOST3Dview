@@ -110,6 +110,9 @@ pub(crate) struct LoadedStructure {
     /// populated for an unrestricted file (see above); it stays empty,
     /// unused, and hidden in the UI otherwise.
     pub(crate) selected_alpha_mos: HashSet<usize>,
+    /// The densities ticked for generation, beside the orbitals.
+    pub(crate) selected_total_density: bool,
+    pub(crate) selected_spin_density: bool,
     pub(crate) selected_beta_mos: HashSet<usize>,
     /// APOST-3D results found for (or opened with) this structure.
     pub(crate) apost: Option<ApostAttachment>,
@@ -139,6 +142,8 @@ impl LoadedStructure {
             selected_surface: None,
             wavefunction: None,
             selected_alpha_mos: HashSet::new(),
+            selected_total_density: false,
+            selected_spin_density: false,
             selected_beta_mos: HashSet::new(),
             apost: None,
             orbital_sets: Vec::new(),

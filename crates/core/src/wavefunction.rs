@@ -77,6 +77,11 @@ pub struct MolecularOrbitals {
     /// `homo_index`/`lumo_index` for this channel specifically (for a
     /// triplet, say, alpha and beta have different HOMOs).
     pub num_occupied: usize,
+    /// Electrons in each orbital: in a restricted wavefunction's only
+    /// channel 2, 1 (singly occupied, restricted open shell) or 0; in an
+    /// unrestricted channel 1 or 0; from a `.molden` file, its `Occup=`
+    /// values (fractional for natural orbitals). Drives the densities.
+    pub occupations: Vec<f64>,
 }
 
 impl MolecularOrbitals {
@@ -110,6 +115,27 @@ pub struct Wavefunction {
     /// `Some` only for an unrestricted calculation — see the module doc
     /// comment on how that's detected.
     pub beta: Option<MolecularOrbitals>,
+}
+
+impl Wavefunction {
+    /// The orbitals and weights whose squares add up to the electron
+    /// density, rho = sum_i w_i |phi_i|^2: the occupations.
+    pub fn total_density_weights(&self) -> Vec<(&MolecularOrbitals, Vec<f64>)> {
+        std::iter::once(&self.alpha).chain(self.beta.as_ref()).map(|mo| (mo, mo.occupations.clone())).collect()
+    }
+
+    /// The same for the spin density (alpha minus beta): the beta channel
+    /// subtracted, or for a restricted open shell its singly occupied
+    /// orbitals. `None` for a closed shell (no spin density).
+    pub fn spin_density_weights(&self) -> Option<Vec<(&MolecularOrbitals, Vec<f64>)>> {
+        match &self.beta {
+            Some(beta) => Some(vec![(&self.alpha, self.alpha.occupations.clone()), (beta, beta.occupations.iter().map(|o| -o).collect())]),
+            None => {
+                let single: Vec<f64> = self.alpha.occupations.iter().map(|&o| if (o - 1.0).abs() < 1e-6 { 1.0 } else { 0.0 }).collect();
+                single.iter().any(|&w| w > 0.0).then(|| vec![(&self.alpha, single)])
+            }
+        }
+    }
 }
 
 fn invalid_data(message: impl Into<String>) -> io::Error {
@@ -243,7 +269,8 @@ pub fn parse_fchk_wavefunction(path: &Path) -> io::Result<Wavefunction> {
             if coefficients.len() != energies.len() * num_basis_functions {
                 return Err(invalid_data("beta MO coefficient count doesn't match beta orbital-energy count x basis-function count"));
             }
-            Some(MolecularOrbitals { num_basis_functions, orbital_energies: energies, coefficients, num_occupied: num_beta_electrons })
+            let occupations = (0..energies.len()).map(|i| if i < num_beta_electrons { 1.0 } else { 0.0 }).collect();
+            Some(MolecularOrbitals { num_basis_functions, orbital_energies: energies, coefficients, num_occupied: num_beta_electrons, occupations })
         }
         _ => None,
     };
@@ -287,7 +314,16 @@ pub fn parse_fchk_wavefunction(path: &Path) -> io::Result<Wavefunction> {
 
     Ok(Wavefunction {
         basis: BasisSet { shells },
-        alpha: MolecularOrbitals { num_basis_functions, orbital_energies: alpha_orbital_energies, coefficients: alpha_mo_coefficients, num_occupied: num_alpha_electrons },
+        alpha: MolecularOrbitals {
+            num_basis_functions,
+            // Restricted: the alpha and beta electrons share the orbitals.
+            occupations: (0..alpha_orbital_energies.len())
+                .map(|i| f64::from(u8::from(i < num_alpha_electrons)) + if beta.is_none() { f64::from(u8::from(i < num_beta_electrons)) } else { 0.0 })
+                .collect(),
+            orbital_energies: alpha_orbital_energies,
+            coefficients: alpha_mo_coefficients,
+            num_occupied: num_alpha_electrons,
+        },
         beta,
     })
 }
