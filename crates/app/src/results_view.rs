@@ -44,6 +44,10 @@ pub(crate) struct ResultsView {
     pub(crate) label_size: f32,
     /// Bonds drawn thicker for larger bond orders (off: all equal).
     pub(crate) bond_thickness: bool,
+    /// Signed values colored by the logarithm of their magnitude (for
+    /// values spanning orders of magnitude, such as IQA pair energies).
+    #[serde(default)]
+    pub(crate) log_scale: bool,
 }
 
 impl ResultsView {
@@ -56,6 +60,7 @@ impl ResultsView {
             decimals: None,
             label_size: 26.0,
             bond_thickness: false,
+            log_scale: false,
         }
     }
 }
@@ -87,7 +92,7 @@ fn is_signed(entry: &IndexEntry, values: &[f64]) -> bool {
 fn automatic_scale(entry: &IndexEntry, values: &[f64]) -> ColorScale {
     let max_abs = values.iter().fold(0.0f64, |m, v| m.max(v.abs()));
     if is_signed(entry, values) {
-        ColorScale::Diverging { max_abs: if max_abs > 0.0 { max_abs } else { 1.0 } }
+        ColorScale::Diverging { max_abs: if max_abs > 0.0 { max_abs } else { 1.0 }, log: false }
     } else {
         let max = values.iter().copied().fold(0.0f64, f64::max);
         ColorScale::Sequential { min: 0.0, max: if max > 0.0 { max } else { 1.0 } }
@@ -139,6 +144,42 @@ pub(crate) struct ResultsScene {
     pub(crate) legend: Option<Legend>,
     /// Shown in the window: what the colors and values are.
     pub(crate) caption: Option<String>,
+    /// Notes for the window about what is shown (IQA: the focus's own
+    /// self-energy, what "≈" marks).
+    pub(crate) notes: Vec<String>,
+}
+
+/// An ENPART term matrix id, "enpart.<term>.atoms|fragments", as
+/// (term, on fragments).
+pub(crate) fn enpart_term(id: &str) -> Option<(&str, bool)> {
+    let rest = id.strip_prefix("enpart.")?;
+    let (term, level) = rest.rsplit_once('.')?;
+    if !apost3dview_core::ENPART_TERMS.contains(&term) {
+        return None;
+    }
+    match level {
+        "atoms" => Some((term, false)),
+        "fragments" => Some((term, true)),
+        _ => None,
+    }
+}
+
+/// A term's name for the term selector.
+pub(crate) fn enpart_term_name(term: &str) -> &'static str {
+    match term {
+        "total" => "Total (IQA)",
+        "classical_interaction" => "Classical (electrostatic)",
+        "xc" => "Exchange-correlation",
+        "exchange" => "Exchange (part of exchange-correlation)",
+        "correlation" => "Correlation (part of exchange-correlation)",
+        "coulomb" => "Coulomb",
+        "exact_exchange_share" => "Exact-exchange share",
+        "xc_dft" => "DFT exchange-correlation",
+        "electron_nuclear" => "Electron-nuclear attraction",
+        "nuclear_repulsion" => "Nuclear repulsion",
+        "kinetic" => "Kinetic (self-energies only)",
+        _ => "Other",
+    }
 }
 
 /// The index entry a view shows, if it is a quantity this file has.
@@ -178,7 +219,10 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             };
             // The focused one's own (diagonal) value doesn't set the scale.
             let others: Vec<f64> = values.iter().enumerate().filter(|(i, _)| Some(*i) != focus).map(|(_, v)| *v).collect();
-            let scale = fixed.get(&entry.id).copied().unwrap_or_else(|| automatic_scale(entry, &others));
+            let mut scale = fixed.get(&entry.id).copied().unwrap_or_else(|| automatic_scale(entry, &others));
+            if let ColorScale::Diverging { log, .. } = &mut scale {
+                *log = view.log_scale;
+            }
             let decimals = view.decimals.unwrap_or_else(|| automatic_decimals(&others));
             let signed = matches!(scale, ColorScale::Diverging { .. });
             let format = |v: f64| if signed { format_signed(v, decimals) } else { format!("{v:.decimals$}") };
@@ -193,9 +237,31 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             } else {
                 scene.halos = items;
             }
+            // IQA: the focus's own term (its self-energy) in the window, and
+            // the values of its pairs from the multipolar expansion marked
+            // "≈" (their exchange-correlation is approximate).
+            let enpart = enpart_term(&entry.id).and_then(|_| results.enpart());
+            if let (Quantity::Matrix(m), Some(f), Some(_)) = (&quantity, focus, &enpart) {
+                if let (Some(noun), Some(e)) = (m.diagonal.as_deref().filter(|d| *d != "none"), m.get(f, f)) {
+                    scene.notes.push(format!("{} of {}: {} au", capitalize(noun), name(f), format_signed(e, 6)));
+                }
+            }
+            let approximate = |i: usize| match (&enpart, focus) {
+                (Some(enpart), Some(f)) if !on_fragments => i != f && enpart.is_multipolar(f, i),
+                _ => false,
+            };
+            if (0..values.len()).any(approximate) {
+                scene.notes.push("\u{2248}: pair from the multipolar expansion (approximate exchange-correlation).".to_string());
+            }
             if view.labels {
                 for (i, &v) in values.iter().enumerate() {
-                    let (text, color) = if Some(i) == focus { (name(i), FOCUS_COLOR) } else { (format(v), [0.0; 3]) };
+                    let (text, color) = if Some(i) == focus {
+                        (name(i), FOCUS_COLOR)
+                    } else if approximate(i) {
+                        (format!("\u{2248}{}", format(v)), [0.0; 3])
+                    } else {
+                        (format(v), [0.0; 3])
+                    };
                     scene.labels.push(ValueLabel { text, anchor: anchor(i), color });
                 }
             }
@@ -210,6 +276,7 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
                 }
                 _ => entry.title.clone(),
             };
+            let title = if matches!(scale, ColorScale::Diverging { log: true, .. }) { format!("{title}, log scale") } else { title };
             scene.caption = Some(title.clone());
             scene.legend = Some(Legend { title, scale, decimals: decimals.min(3) });
         }
@@ -327,16 +394,33 @@ pub(crate) fn label_position(anchor: LabelAnchor, results: &ApostResults, molecu
 /// the run's own, printed only for comparison, are left out unless
 /// `include_comparison`.
 pub(crate) fn grouped_entries(results: &ApostResults, include_comparison: bool) -> Vec<(&'static str, Vec<&IndexEntry>)> {
-    [
+    // The energy decomposition has a group of its own: the IQA matrices
+    // (their other terms through the term selector) and the atomic
+    // energies.
+    let is_enpart = |e: &IndexEntry| e.analysis.as_deref() == Some("enpart");
+    let mut groups: Vec<(&'static str, Vec<&IndexEntry>)> = [
         ("Fragment values", QuantityKind::FragmentVector),
         ("Between fragments", QuantityKind::FragmentMatrix),
         ("Atom values", QuantityKind::AtomVector),
         ("Between atoms", QuantityKind::AtomMatrix),
     ]
     .into_iter()
-    .map(|(group, kind)| (group, results.entries(kind).filter(|e| include_comparison || !e.is_comparison()).collect::<Vec<_>>()))
-    .filter(|(_, entries)| !entries.is_empty())
-    .collect()
+    .map(|(group, kind)| (group, results.entries(kind).filter(|e| (include_comparison || !e.is_comparison()) && !is_enpart(e)).collect::<Vec<_>>()))
+    .collect();
+    let iqa: Vec<&IndexEntry> = [
+        "enpart.total.fragments",
+        "enpart.atomic_energies.fragments.additive_energy",
+        "enpart.atomic_energies.fragments.self_energy",
+        "enpart.total.atoms",
+        "enpart.atomic_energies.atoms.additive_energy",
+        "enpart.atomic_energies.atoms.self_energy",
+    ]
+    .iter()
+    .filter_map(|id| results.index.iter().find(|e| e.id == *id))
+    .collect();
+    groups.push(("Energy decomposition (IQA)", iqa));
+    groups.retain(|(_, entries)| !entries.is_empty());
+    groups
 }
 
 /// Whether the shown quantity is a pair quantity on fragments (`Some(true)`)
@@ -353,6 +437,14 @@ pub(crate) fn focus_target(results: &ApostResults, view: &ResultsView) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn enpart_term_ids() {
+        assert_eq!(enpart_term("enpart.total.atoms"), Some(("total", false)));
+        assert_eq!(enpart_term("enpart.classical_interaction.fragments"), Some(("classical_interaction", true)));
+        assert_eq!(enpart_term("enpart.atomic_energies.atoms.additive_energy"), None);
+        assert_eq!(enpart_term("bond_orders.atoms.matrix"), None);
+    }
 
     #[test]
     fn decimals_follow_the_size_of_the_values() {

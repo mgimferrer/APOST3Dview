@@ -579,6 +579,111 @@ impl ApostResults {
     }
 }
 
+/// The ENPART (IQA) energy decomposition (since 0.10; correlated
+/// wavefunctions since 0.11): what describes the run, beside the term
+/// matrices and atomic energies the index lists. Every field is optional:
+/// a run stopped inside ENPART writes the block with `functional` only.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Enpart {
+    /// "Hartree-Fock", "KS-DFT", "CASSCF" or "CISD".
+    pub wavefunction: Option<String>,
+    pub formalism: Option<String>,
+    pub functional: Option<EnpartFunctional>,
+    /// The bond order below which a pair's exchange-correlation comes from
+    /// the multipolar expansion.
+    pub pair_threshold: Option<f64>,
+    /// Those pairs, 1-based `[A, B]`.
+    #[serde(default)]
+    pub multipolar_pairs: Vec<[usize; 2]>,
+    pub total_energy: Option<f64>,
+    /// The energy of the `.fchk`.
+    pub reference_energy: Option<f64>,
+    pub integration_error: Option<f64>,
+    pub integration_error_kcal: Option<f64>,
+    pub two_electron_integration: Option<TwoElectronIntegration>,
+    /// Integration errors of the one-electron terms (with reference
+    /// energies in the `.fchk`).
+    #[serde(skip)]
+    pub electron_nuclear_error_kcal: Option<f64>,
+    #[serde(skip)]
+    pub kinetic_error_kcal: Option<f64>,
+    /// The terms written, in the file's order ("electron_nuclear", ...,
+    /// "total", "exchange", "correlation", "classical_interaction").
+    #[serde(skip)]
+    pub terms: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EnpartFunctional {
+    /// The predefined keyword of `# ENPART`, or "LIBRARY".
+    pub keyword: Option<String>,
+    #[serde(default)]
+    pub components: Vec<FunctionalComponent>,
+    /// 0 for a pure functional.
+    pub exact_exchange_fraction: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct FunctionalComponent {
+    pub libxc_id: Option<u32>,
+    pub name: Option<String>,
+    /// "exchange", "correlation", "exchange-correlation".
+    pub kind: Option<String>,
+    /// "LDA", "GGA", "hybrid GGA", "meta-GGA", ...
+    pub family: Option<String>,
+}
+
+/// The quality of the two-electron integration.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TwoElectronIntegration {
+    /// The electron-electron energy and its error on the first grid.
+    pub energy: Option<f64>,
+    pub error_kcal: Option<f64>,
+    pub tolerance_kcal: Option<f64>,
+    /// "applied", "not needed" or "no reference energy".
+    pub zero_error_correction: Option<String>,
+    pub rotated_grid_error_kcal: Option<f64>,
+    pub damping: Option<f64>,
+    pub corrected_energy: Option<f64>,
+    pub corrected_error_kcal: Option<f64>,
+}
+
+impl Enpart {
+    /// Whether atoms `a` and `b` (0-based) are a pair whose
+    /// exchange-correlation comes from the multipolar expansion.
+    pub fn is_multipolar(&self, a: usize, b: usize) -> bool {
+        self.multipolar_pairs.iter().any(|&[x, y]| (x == a + 1 && y == b + 1) || (x == b + 1 && y == a + 1))
+    }
+}
+
+/// The ENPART terms that are matrices, in the order a menu lists them.
+pub const ENPART_TERMS: [&str; 11] = [
+    "total",
+    "classical_interaction",
+    "xc",
+    "exchange",
+    "correlation",
+    "coulomb",
+    "exact_exchange_share",
+    "xc_dft",
+    "electron_nuclear",
+    "nuclear_repulsion",
+    "kinetic",
+];
+
+impl ApostResults {
+    /// The ENPART block, if the run wrote one.
+    pub fn enpart(&self) -> Option<Enpart> {
+        let block = self.raw.pointer("/analyses/enpart")?;
+        let mut enpart: Enpart = serde_json::from_value(block.clone()).ok()?;
+        let error = |term: &str| block.get(term).and_then(|t| t.get("integration_error_kcal")).and_then(Value::as_f64);
+        enpart.electron_nuclear_error_kcal = error("electron_nuclear");
+        enpart.kinetic_error_kcal = error("kinetic");
+        enpart.terms = ENPART_TERMS.iter().filter(|t| block.get(**t).and_then(|v| v.get("atoms")).is_some()).map(|t| t.to_string()).collect();
+        Some(enpart)
+    }
+}
+
 /// Parses the text of a results file. Checks `schema` and the major
 /// version first, so a file from an incompatible APOST-3D gets a clear
 /// message instead of an error about some key it doesn't recognize.

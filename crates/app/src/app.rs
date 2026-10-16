@@ -335,6 +335,16 @@ impl App {
         self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.selected_atoms.clone()).unwrap_or_default()
     }
 
+    /// Selects these atoms (0-based, in this order), as clicks would —
+    /// for tests.
+    pub fn select_atoms(&mut self, atoms: &[usize]) {
+        if let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) {
+            structure.selected_atoms = atoms.to_vec();
+            structure.selected_bonds.clear();
+        }
+        self.rebuild_highlights();
+    }
+
     pub(crate) fn clear_selection(&mut self) {
         if let Some(active) = self.active_structure {
             self.structures[active].selected_atoms.clear();

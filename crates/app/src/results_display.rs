@@ -78,6 +78,7 @@ impl App {
                         (vertices, ranges) = envelope_vertices(&scene, meshes);
                     }
                     halos = halo_instances(&scene, &structure.molecule, atom_scale, &structure.hidden_atoms);
+
                 }
             }
         }
@@ -85,6 +86,7 @@ impl App {
         if let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() {
             resources.update_envelopes(&self.render_state.device, &vertices, &ranges);
             resources.update_halos(&self.render_state.device, &halos);
+
         }
     }
 
@@ -191,14 +193,14 @@ impl App {
     }
 
     /// The values of every atom-pair quantity for two atoms (0-based), as
-    /// (title, value) — for the two-atom selection.
-    pub(crate) fn pair_values(&self, a: usize, b: usize) -> Vec<(String, f64, Option<usize>)> {
+    /// (entry, value) — for the two-atom selection.
+    pub(crate) fn pair_values(&self, a: usize, b: usize) -> Vec<(apost3dview_core::IndexEntry, f64)> {
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) else { return Vec::new() };
         let Some(Ok(results)) = structure.apost.as_ref().map(|a| &a.results) else { return Vec::new() };
         results
             .entries(apost3dview_core::QuantityKind::AtomMatrix)
             .filter_map(|entry| match results.quantity(entry) {
-                Ok(Quantity::Matrix(m)) => m.get(a, b).map(|v| (entry.title.clone(), v, entry.decimals)),
+                Ok(Quantity::Matrix(m)) => m.get(a, b).map(|v| (entry.clone(), v)),
                 _ => None,
             })
             .collect()

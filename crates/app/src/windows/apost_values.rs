@@ -7,7 +7,7 @@ use apost3dview_render::{format_signed, ColorScale};
 use egui::{Color32, RichText, Sense};
 
 use crate::app::App;
-use crate::results_view::{build_scene, focus_target, grouped_entries, shown_entry, ResultsView, Shown, FOCUS_COLOR};
+use crate::results_view::{build_scene, enpart_term, enpart_term_name, focus_target, grouped_entries, shown_entry, ResultsView, Shown, FOCUS_COLOR};
 
 fn color32(c: [f32; 3]) -> Color32 {
     Color32::from_rgb((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8)
@@ -80,6 +80,22 @@ impl App {
             ui.checkbox(&mut view.visible, "").on_hover_text("Show or hide on the molecule, keeping the choice");
         });
 
+        // IQA: the term shown, between the same atoms or fragments.
+        if let Some((term, on_fragments)) = shown_entry(results, view).and_then(|e| enpart_term(&e.id)).map(|(t, f)| (t.to_string(), f)) {
+            let level = if on_fragments { "fragments" } else { "atoms" };
+            let terms: Vec<String> = results.enpart().map(|e| e.terms).unwrap_or_default().into_iter().filter(|t| results.index.iter().any(|e| e.id == format!("enpart.{t}.{level}"))).collect();
+            ui.horizontal(|ui| {
+                ui.label("Term");
+                egui::ComboBox::from_id_salt("results_iqa_term").width(250.0).selected_text(enpart_term_name(&term)).show_ui(ui, |ui| {
+                    for t in &terms {
+                        if ui.selectable_label(*t == term, enpart_term_name(t)).clicked() {
+                            view.shown = Shown::Quantity(format!("enpart.{t}.{level}"));
+                        }
+                    }
+                });
+            });
+        }
+
         let entry = shown_entry(results, view).cloned();
         if let Some(entry) = &entry {
             if let Some(on_fragments) = focus_target(results, view) {
@@ -110,7 +126,7 @@ impl App {
                     fixed = automatic;
                 }
                 match &mut fixed {
-                    Some(ColorScale::Diverging { max_abs }) => {
+                    Some(ColorScale::Diverging { max_abs, .. }) => {
                         ui.label("\u{b1}");
                         ui.add(egui::DragValue::new(max_abs).speed(0.005).range(1e-4..=1e4).max_decimals(4));
                     }
@@ -122,6 +138,13 @@ impl App {
                     None => {}
                 }
             });
+            if matches!(automatic, Some(ColorScale::Diverging { .. })) {
+                ui.checkbox(&mut view.log_scale, "Logarithmic colors")
+                    .on_hover_text("Colors follow the order of magnitude, so small values (weak interactions) keep their sign's color next to large ones");
+            }
+            for note in build_scene(results, &molecule, view, &self.color_ranges).notes {
+                ui.label(RichText::new(note).small().weak());
+            }
             match fixed {
                 Some(scale) => {
                     self.color_ranges.insert(entry.id.clone(), scale);
@@ -209,7 +232,8 @@ impl App {
                 if ui.button("Copy matrix").on_hover_text("As tab-separated text, for a spreadsheet").clicked() {
                     ui.ctx().copy_text(matrix_text(matrix, &names));
                 }
-                if let Some(focus) = heat_map(ui, matrix, &names, view.focus) {
+                let signed = matches!(scale, Some(ColorScale::Diverging { .. }));
+                if let Some(focus) = heat_map(ui, matrix, &names, view.focus, signed, view.log_scale) {
                     view.focus = focus;
                 }
                 if let Some(focus) = strongest_pairs(ui, matrix, &names, decimals) {
@@ -228,15 +252,40 @@ impl App {
             return;
         }
         let pair = format!("{} \u{2013} {}", atom_name(&structure.molecule, a), atom_name(&structure.molecule, b));
+        // The IQA terms of the pair apart, as a decomposition of its
+        // interaction energy.
+        let (mut iqa, other): (Vec<_>, Vec<_>) = values.into_iter().partition(|(entry, _)| enpart_term(&entry.id).is_some());
+        // Total first, then its parts, as the term selector lists them.
+        let order = |id: &str| enpart_term(id).and_then(|(t, _)| apost3dview_core::ENPART_TERMS.iter().position(|x| *x == t)).unwrap_or(usize::MAX);
+        iqa.sort_by_key(|(entry, _)| order(&entry.id));
+        let enpart = structure.apost.as_ref().and_then(|x| x.results.as_ref().ok()).and_then(|r| r.enpart());
         egui::CollapsingHeader::new(RichText::new(format!("Selected pair {pair}")).strong()).id_salt("results_pair").default_open(true).show(ui, |ui| {
             egui::Grid::new("results_pair_grid").num_columns(2).spacing([12.0, 3.0]).show(ui, |ui| {
-                for (title, value, decimals) in values {
-                    ui.label(title);
-                    let d = decimals.unwrap_or(6).min(6);
+                for (entry, value) in &other {
+                    ui.label(&entry.title);
+                    let d = entry.decimals.unwrap_or(6).min(6);
                     ui.label(RichText::new(format!("{value:.d$}")).monospace());
                     ui.end_row();
                 }
             });
+            if !iqa.is_empty() {
+                ui.add_space(4.0);
+                ui.label(RichText::new("Interaction energy (IQA), au").small().weak());
+                egui::Grid::new("results_pair_iqa").num_columns(2).spacing([12.0, 3.0]).striped(true).show(ui, |ui| {
+                    for (entry, value) in &iqa {
+                        let Some((term, _)) = enpart_term(&entry.id) else { continue };
+                        if term == "kinetic" {
+                            continue;
+                        }
+                        ui.label(enpart_term_name(term));
+                        ui.label(RichText::new(format_signed(*value, 6)).monospace());
+                        ui.end_row();
+                    }
+                });
+                if enpart.is_some_and(|e| e.is_multipolar(a, b)) {
+                    ui.label(RichText::new("This pair's exchange-correlation comes from the multipolar expansion (approximate).").small().weak());
+                }
+            }
         });
     }
 }
@@ -244,7 +293,10 @@ impl App {
 /// A heat map of the matrix (up to 40 x 40): off-diagonal cells shaded by
 /// magnitude, the diagonal (a different quantity) in gray, the focused row
 /// outlined. Hovering shows the value; clicking a cell focuses on its row.
-fn heat_map(ui: &mut egui::Ui, matrix: &MatrixObject, names: &[String], focus: usize) -> Option<usize> {
+/// The matrix as colored cells, the focus's row outlined. A signed
+/// quantity uses the diverging scale (`log` as on the molecule), others
+/// the magnitude.
+fn heat_map(ui: &mut egui::Ui, matrix: &MatrixObject, names: &[String], focus: usize, signed: bool, log: bool) -> Option<usize> {
     let n = matrix.values.len();
     if n == 0 || n > 40 {
         return None;
@@ -259,8 +311,12 @@ fn heat_map(ui: &mut egui::Ui, matrix: &MatrixObject, names: &[String], focus: u
             let color = if i == j {
                 Color32::from_gray(150)
             } else {
-                let v = matrix.get(i, j).unwrap_or(0.0).abs();
-                color32(apost3dview_render::colormap::sequential(if max > 0.0 { (v / max) as f32 } else { 0.0 }))
+                let v = matrix.get(i, j).unwrap_or(0.0);
+                if signed {
+                    color32(ColorScale::Diverging { max_abs: if max > 0.0 { max } else { 1.0 }, log }.color(v))
+                } else {
+                    color32(apost3dview_render::colormap::sequential(if max > 0.0 { (v.abs() / max) as f32 } else { 0.0 }))
+                }
             };
             painter.rect_filled(r, 1.0, color);
         }

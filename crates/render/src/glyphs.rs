@@ -19,7 +19,7 @@ use wgpu::util::DeviceExt;
 /// Greek alpha/beta for spin channels.
 fn character_set() -> Vec<char> {
     let mut chars: Vec<char> = (0x20u8..=0x7Eu8).map(|b| b as char).collect();
-    chars.extend(['Å', '°', '\u{2212}', 'α', 'β', '·']);
+    chars.extend(['Å', '°', '\u{2212}', 'α', 'β', '·', '≈']);
     chars
 }
 

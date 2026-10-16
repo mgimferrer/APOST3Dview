@@ -38,12 +38,23 @@ pub fn sequential(t: f32) -> [f32; 3] {
     ramp(&[hex(0xf0efec), hex(0x86b6ef), hex(0x3987e5), hex(0x184f95)], t)
 }
 
+/// The logarithmic diverging scale is linear below max_abs / this (two
+/// decades of magnitude get distinct colors).
+const LOG_DECADES_FACTOR: f64 = 100.0;
+
 /// How values map to colors.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "scale", rename_all = "lowercase")]
 pub enum ColorScale {
     /// Symmetric around zero, from -max_abs (red) to +max_abs (blue).
-    Diverging { max_abs: f64 },
+    /// `log`: colors follow the logarithm of the magnitude (two decades
+    /// below max_abs, linear near zero), for values spanning orders of
+    /// magnitude such as interaction energies.
+    Diverging {
+        max_abs: f64,
+        #[serde(default)]
+        log: bool,
+    },
     /// From min (light) to max (dark).
     Sequential { min: f64, max: f64 },
 }
@@ -51,7 +62,14 @@ pub enum ColorScale {
 impl ColorScale {
     pub fn color(&self, value: f64) -> [f32; 3] {
         match *self {
-            ColorScale::Diverging { max_abs } => diverging(if max_abs > 0.0 { (value / max_abs) as f32 } else { 0.0 }),
+            ColorScale::Diverging { max_abs, log } => diverging(if max_abs <= 0.0 {
+                0.0
+            } else if log {
+                let c = max_abs / LOG_DECADES_FACTOR;
+                (value.signum() * (1.0 + value.abs() / c).ln() / (1.0 + max_abs / c).ln()) as f32
+            } else {
+                (value / max_abs) as f32
+            }),
             ColorScale::Sequential { min, max } => sequential(if max > min { ((value - min) / (max - min)) as f32 } else { 1.0 }),
         }
     }
@@ -68,7 +86,7 @@ impl ColorScale {
     /// only: zero), right end.
     pub fn bar_labels(&self, decimals: usize) -> (String, Option<String>, String) {
         match *self {
-            ColorScale::Diverging { max_abs } => (format_signed(-max_abs, decimals), Some("0".to_string()), format_signed(max_abs, decimals)),
+            ColorScale::Diverging { max_abs, .. } => (format_signed(-max_abs, decimals), Some("0".to_string()), format_signed(max_abs, decimals)),
             ColorScale::Sequential { min, max } => (format!("{min:.decimals$}"), None, format!("{max:.decimals$}")),
         }
     }
@@ -172,7 +190,7 @@ mod tests {
 
     #[test]
     fn scales() {
-        let d = ColorScale::Diverging { max_abs: 0.5 };
+        let d = ColorScale::Diverging { max_abs: 0.5, log: false };
         assert!(close(d.color(0.0), hex(0xf0efec)));
         assert!(close(d.color(0.5), hex(0x184f95)));
         assert!(close(d.color(-0.5), hex(0x9c2523)));
@@ -180,6 +198,11 @@ mod tests {
         let s = ColorScale::Sequential { min: 0.0, max: 2.0 };
         assert!(close(s.color(0.0), hex(0xf0efec)));
         assert!(close(s.color(2.0), hex(0x184f95)));
+        let l = ColorScale::Diverging { max_abs: 0.5, log: true };
+        assert!(close(l.color(0.5), hex(0x184f95)) && close(l.color(-0.5), hex(0x9c2523)) && close(l.color(0.0), hex(0xf0efec)));
+        // A value 100 times smaller still gets a third of the way out.
+        let t = |c: [f32; 3]| (c[0] - hex(0xf0efec)[0]).abs();
+        assert!(t(l.color(-0.005)) > 3.0 * t(d.color(-0.005)));
         assert_eq!(format_signed(-0.518, 2), "\u{2212}0.52");
         assert_eq!(format_signed(0.004, 2), "0.00");
         assert_eq!(format_signed(0.69, 2), "+0.69");
@@ -189,7 +212,7 @@ mod tests {
     fn the_legend_draws_its_bar_and_text() {
         let (w, h) = (800u32, 600u32);
         let mut pixels = vec![255u8; (w * h * 4) as usize];
-        draw_legend(&mut pixels, w, h, &Legend { title: "Fragment charge (TFVC)".into(), scale: ColorScale::Diverging { max_abs: 0.5 }, decimals: 2 }, [30, 30, 30]);
+        draw_legend(&mut pixels, w, h, &Legend { title: "Fragment charge (TFVC)".into(), scale: ColorScale::Diverging { max_abs: 0.5, log: false }, decimals: 2 }, [30, 30, 30]);
         let changed = pixels.chunks(4).filter(|p| p[..3] != [255, 255, 255]).count();
         assert!(changed > 2000, "{changed}");
     }

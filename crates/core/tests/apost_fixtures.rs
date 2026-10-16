@@ -307,3 +307,72 @@ fn orbital_tables_share_one_form() {
     }
     assert!(tables > 0 && effao > 0, "{tables} orbital tables, {effao} EFFAO");
 }
+
+/// ENPART (0.10, 0.11): every term matrix adds up by its rule, the IQA
+/// matrix to the total energy, the additive energies too; the classical
+/// interaction is total minus xc off the diagonal; exchange + correlation
+/// = xc when split; multipolar pairs name real atoms.
+#[test]
+fn enpart_blocks_add_up() {
+    use apost3dview_core::{Quantity, ENPART_TERMS};
+    let Some(dir) = fixtures_dir() else { return };
+    let mut cases = 0;
+    for json in std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.to_string_lossy().ends_with(".apost.json")) {
+        let name = json.file_name().unwrap().to_string_lossy().into_owned();
+        let results = load_apost_results(&json).unwrap();
+        let Some(enpart) = results.enpart() else { continue };
+        cases += 1;
+        let Some(total_energy) = enpart.total_energy else {
+            assert!(results.stopped(), "{name}: no total energy in a finished run");
+            continue;
+        };
+        let matrix = |id: &str| match results.index.iter().find(|e| e.id == id).map(|e| results.quantity(e)) {
+            Some(Ok(Quantity::Matrix(m))) => Some(m),
+            _ => None,
+        };
+        let vector = |id: &str| match results.index.iter().find(|e| e.id == id).map(|e| results.quantity(e)) {
+            Some(Ok(Quantity::Vector(v))) => Some(v.into_iter().map(|x| x.unwrap()).collect::<Vec<f64>>()),
+            _ => None,
+        };
+        for term in &enpart.terms {
+            assert!(ENPART_TERMS.contains(&term.as_str()));
+            let m = matrix(&format!("enpart.{term}.atoms")).unwrap_or_else(|| panic!("{name}: {term}"));
+            if let (Some(total), Some(by_rule)) = (m.total, m.total_by_rule()) {
+                assert!((total - by_rule).abs() < 1e-8, "{name}: {term} total {total} vs {by_rule}");
+            }
+        }
+        let total = matrix("enpart.total.atoms").unwrap();
+        assert!((total.total_by_rule().unwrap() - total_energy).abs() < 1e-8, "{name}");
+        let additive: f64 = vector("enpart.atomic_energies.atoms.additive_energy").unwrap().iter().sum();
+        assert!((additive - total_energy).abs() < 1e-7, "{name}: additive {additive} vs {total_energy}");
+        let (xc, classical) = (matrix("enpart.xc.atoms").unwrap(), matrix("enpart.classical_interaction.atoms").unwrap());
+        let n = total.values.len();
+        for i in 0..n {
+            for j in 0..n {
+                if i != j {
+                    let expected = total.get(i, j).unwrap() - xc.get(i, j).unwrap();
+                    assert!((classical.get(i, j).unwrap() - expected).abs() < 1e-7, "{name}: classical {i} {j}");
+                }
+            }
+        }
+        if let (Some(x), Some(c)) = (matrix("enpart.exchange.atoms"), matrix("enpart.correlation.atoms")) {
+            for i in 0..n {
+                for j in 0..n {
+                    assert!((x.get(i, j).unwrap() + c.get(i, j).unwrap() - xc.get(i, j).unwrap()).abs() < 1e-8, "{name}: exchange + correlation");
+                }
+            }
+        }
+        for &[a, b] in &enpart.multipolar_pairs {
+            assert!(a >= 1 && b >= 1 && a <= n && b <= n && a != b, "{name}: pair {a} {b}");
+            assert!(enpart.is_multipolar(a - 1, b - 1) && enpart.is_multipolar(b - 1, a - 1));
+        }
+        // A run in an external field: the field terms are not written, so
+        // total - reference is not the integration error (reported to
+        // APOST-3D, 2026-10-16).
+        let in_field = results.input.as_ref().and_then(|i| i.text.as_deref()).is_some_and(|t| t.lines().any(|l| l.trim() == "POLAR"));
+        if let (Some(r), Some(e), false) = (enpart.reference_energy, enpart.integration_error, in_field) {
+            assert!((total_energy - r - e).abs() < 1e-8 || (r - total_energy - e).abs() < 1e-8, "{name}: error sign");
+        }
+    }
+    assert!(cases >= 11, "{cases} ENPART cases");
+}
