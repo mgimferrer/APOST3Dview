@@ -246,12 +246,18 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
                     scene.notes.push(format!("{} of {}: {} au", capitalize(noun), name(f), format_signed(e, 6)));
                 }
             }
+            let fragments = results.fragments();
             let approximate = |i: usize| match (&enpart, focus) {
                 (Some(enpart), Some(f)) if !on_fragments => i != f && enpart.is_multipolar(f, i),
+                (Some(enpart), Some(f)) => i != f && fragments.get(f).zip(fragments.get(i)).is_some_and(|(a, b)| enpart.has_multipolar_pair(a, b)),
                 _ => false,
             };
             if (0..values.len()).any(approximate) {
-                scene.notes.push("\u{2248}: pair from the multipolar expansion (approximate exchange-correlation).".to_string());
+                scene.notes.push(if on_fragments {
+                    "\u{2248}: includes atom pairs from the multipolar expansion (approximate exchange-correlation).".to_string()
+                } else {
+                    "\u{2248}: pair from the multipolar expansion (approximate exchange-correlation).".to_string()
+                });
             }
             if view.labels {
                 for (i, &v) in values.iter().enumerate() {
@@ -395,8 +401,7 @@ pub(crate) fn label_position(anchor: LabelAnchor, results: &ApostResults, molecu
 /// `include_comparison`.
 pub(crate) fn grouped_entries(results: &ApostResults, include_comparison: bool) -> Vec<(&'static str, Vec<&IndexEntry>)> {
     // The energy decomposition has a group of its own: the IQA matrices
-    // (their other terms through the term selector) and the atomic
-    // energies.
+    // (their other terms through the term selector).
     let is_enpart = |e: &IndexEntry| e.analysis.as_deref() == Some("enpart");
     let mut groups: Vec<(&'static str, Vec<&IndexEntry>)> = [
         ("Fragment values", QuantityKind::FragmentVector),
@@ -407,14 +412,10 @@ pub(crate) fn grouped_entries(results: &ApostResults, include_comparison: bool) 
     .into_iter()
     .map(|(group, kind)| (group, results.entries(kind).filter(|e| (include_comparison || !e.is_comparison()) && !is_enpart(e)).collect::<Vec<_>>()))
     .collect();
-    let iqa: Vec<&IndexEntry> = [
-        "enpart.total.fragments",
-        "enpart.atomic_energies.fragments.additive_energy",
-        "enpart.atomic_energies.fragments.self_energy",
-        "enpart.total.atoms",
-        "enpart.atomic_energies.atoms.additive_energy",
-        "enpart.atomic_energies.atoms.self_energy",
-    ]
+    // Atomic energies are listed as numbers in the window, not offered as
+    // colors: dominated by the core, they would only tell elements apart
+    // (APOST-3D's advice, brief 09).
+    let iqa: Vec<&IndexEntry> = ["enpart.total.fragments", "enpart.total.atoms"]
     .iter()
     .filter_map(|id| results.index.iter().find(|e| e.id == *id))
     .collect();

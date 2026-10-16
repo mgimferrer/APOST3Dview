@@ -600,6 +600,10 @@ pub struct Enpart {
     pub reference_energy: Option<f64>,
     pub integration_error: Option<f64>,
     pub integration_error_kcal: Option<f64>,
+    /// The interaction energy with an external static field (since 0.12;
+    /// `None` without a field). Not an IQA term; the `.fchk` energy
+    /// includes it: integration_error = total + field - reference.
+    pub field_energy: Option<f64>,
     pub two_electron_integration: Option<TwoElectronIntegration>,
     /// Integration errors of the one-electron terms (with reference
     /// energies in the `.fchk`).
@@ -653,6 +657,12 @@ impl Enpart {
     /// exchange-correlation comes from the multipolar expansion.
     pub fn is_multipolar(&self, a: usize, b: usize) -> bool {
         self.multipolar_pairs.iter().any(|&[x, y]| (x == a + 1 && y == b + 1) || (x == b + 1 && y == a + 1))
+    }
+
+    /// Whether two fragments' interaction includes a multipolar atom pair
+    /// (one atom in each).
+    pub fn has_multipolar_pair(&self, a: &Fragment, b: &Fragment) -> bool {
+        self.multipolar_pairs.iter().any(|&[x, y]| (a.atoms.contains(&x) && b.atoms.contains(&y)) || (a.atoms.contains(&y) && b.atoms.contains(&x)))
     }
 }
 

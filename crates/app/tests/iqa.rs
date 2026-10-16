@@ -1,6 +1,6 @@
 //! The energy decomposition (ENPART, IQA): the IQA view with its term
 //! selector, between atoms and between fragments, the pairs from the
-//! multipolar expansion marked, the atomic energies on the atoms, the
+//! multipolar expansion marked, the atomic energies as numbers, the
 //! selected pair's decomposition, and the run-quality section.
 
 mod common;
@@ -49,6 +49,8 @@ fn iqa_between_fragments() {
     harness.run_steps(3);
     assert_eq!(harness.state().legend_title().as_deref(), Some("Interaction energy with 1 H2O (TFVC)"));
     combo_with_value(&harness, "Total (IQA)");
+    // The two waters' interaction includes multipolar atom pairs.
+    harness.get_by_label_contains("includes atom pairs from the multipolar expansion");
     screenshot(&mut harness, "iqa-fragments");
 }
 
@@ -71,9 +73,12 @@ fn a_correlated_wavefunction_splits_exchange_and_correlation() {
 fn atomic_energies_and_the_selected_pair() {
     let Some(dir) = fixtures_dir() else { return };
     let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.fchk")]);
-    assert!(harness.state_mut().show_on_molecule("enpart.atomic_energies.atoms.additive_energy"));
-    harness.run_steps(3);
-    assert_eq!(harness.state().legend_title().as_deref(), Some("Additive atomic energies"));
+    // Atomic energies as numbers, in the IQA section.
+    harness.get_by_label_contains("Energy decomposition (IQA)").click();
+    harness.run_steps(2);
+    harness.get_by_label("Atomic energies, au");
+    harness.get_by_label("Fragment energies, au");
+    harness.get_by_label("-75.440754");
     // Selecting the first water's O and H shows their IQA decomposition.
     harness.state_mut().select_atoms(&[0, 4]);
     harness.run_steps(3);
@@ -93,5 +98,10 @@ fn stopped_and_unreferenced_runs() {
     let mut harness = app_with(vec![dir.join("H2O-Dimer-RHF-NOREF.fchk")]);
     harness.get_by_label_contains("Energy decomposition (IQA)").click();
     harness.run_steps(2);
-    harness.get_by_label("not possible (the .fchk has no reference energies)");
+    harness.get_by_label_contains("Not possible: the .fchk has no reference energy components");
+    // A run in an external field: its energy is listed.
+    let mut harness = app_with(vec![dir.join("H2O-RHF-FIELD.fchk")]);
+    harness.get_by_label_contains("Energy decomposition (IQA)").click();
+    harness.run_steps(2);
+    harness.get_by_label("External field energy");
 }

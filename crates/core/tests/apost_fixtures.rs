@@ -316,7 +316,7 @@ fn orbital_tables_share_one_form() {
 fn enpart_blocks_add_up() {
     use apost3dview_core::{Quantity, ENPART_TERMS};
     let Some(dir) = fixtures_dir() else { return };
-    let mut cases = 0;
+    let (mut cases, mut fields) = (0, 0);
     for json in std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.to_string_lossy().ends_with(".apost.json")) {
         let name = json.file_name().unwrap().to_string_lossy().into_owned();
         let results = load_apost_results(&json).unwrap();
@@ -366,13 +366,13 @@ fn enpart_blocks_add_up() {
             assert!(a >= 1 && b >= 1 && a <= n && b <= n && a != b, "{name}: pair {a} {b}");
             assert!(enpart.is_multipolar(a - 1, b - 1) && enpart.is_multipolar(b - 1, a - 1));
         }
-        // A run in an external field: the field terms are not written, so
-        // total - reference is not the integration error (reported to
-        // APOST-3D, 2026-10-16).
-        let in_field = results.input.as_ref().and_then(|i| i.text.as_deref()).is_some_and(|t| t.lines().any(|l| l.trim() == "POLAR"));
-        if let (Some(r), Some(e), false) = (enpart.reference_energy, enpart.integration_error, in_field) {
-            assert!((total_energy - r - e).abs() < 1e-8 || (r - total_energy - e).abs() < 1e-8, "{name}: error sign");
+        // integration_error = total + field - reference (0.12), in every run.
+        if let (Some(r), Some(e)) = (enpart.reference_energy, enpart.integration_error) {
+            let field = enpart.field_energy.unwrap_or(0.0);
+            assert!((total_energy + field - r - e).abs() < 1e-8, "{name}: {total_energy} + {field} - {r} != {e}");
+            fields += usize::from(enpart.field_energy.is_some());
         }
     }
     assert!(cases >= 11, "{cases} ENPART cases");
+    assert_eq!(fields, 2, "the two field runs");
 }
