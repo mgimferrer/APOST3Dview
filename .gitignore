@@ -40,6 +40,8 @@ PROJECT-ROADMAP.md
 # double the committed size for no functional benefit.
 !/TESTS-VISUALIZER/*.fchk
 !/TESTS-VISUALIZER/*.cube
+# Unpublished systems stay local, even though they are .fchk/.cube files.
+/TESTS-VISUALIZER/Bi-dianion-OSD*
 /TESTS-VISUALIZER/*.chk
 /TESTS-VISUALIZER/*.log
 /TESTS-VISUALIZER/*.com
