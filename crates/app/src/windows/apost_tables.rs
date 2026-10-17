@@ -6,11 +6,12 @@
 
 use apost3dview_core::{ApostResults, IndexEntry, Molecule, Quantity, QuantityKind, TableCell, TableColumn, TableObject};
 use apost3dview_render::format_signed;
-use egui::{Color32, RichText};
+use egui::RichText;
 
 use crate::app::App;
-use crate::orbital_sets::{fragment_name, LoadedOrbitalSet};
-use crate::results::fragment_color;
+use crate::names::{fragment_name, fragment_name_by_id};
+use crate::orbital_sets::LoadedOrbitalSet;
+use crate::results::fragment_swatches;
 
 /// The orbital set (by analysis) and channel (beta) whose orbitals a
 /// table describes: its `fchk_orbitals` block, in the analysis it sits in.
@@ -34,11 +35,11 @@ fn number_text(value: f64, column: &TableColumn) -> String {
 fn cell_text(table: &TableObject, column: &TableColumn, row: usize, results: &ApostResults, molecule: &Molecule) -> String {
     let fragment_column = column.key == "fragment" || column.key == "fragments";
     match table.cell_value(&column.key, row) {
-        TableCell::Number(v) if fragment_column => fragment_name(results, molecule, v as u32),
+        TableCell::Number(v) if fragment_column => fragment_name_by_id(results, &molecule.atomic_numbers, v as u32),
         TableCell::Number(v) => number_text(v, column),
         TableCell::List(values) => {
             if fragment_column {
-                values.iter().map(|&v| fragment_name(results, molecule, v as u32)).collect::<Vec<_>>().join(" + ")
+                values.iter().map(|&v| fragment_name_by_id(results, &molecule.atomic_numbers, v as u32)).collect::<Vec<_>>().join(" + ")
             } else {
                 values.iter().map(|&v| number_text(v, column)).collect::<Vec<_>>().join(" / ")
             }
@@ -62,16 +63,6 @@ fn table_text(table: &TableObject, names: &[String], results: &ApostResults, mol
         text.push_str(&format!("{name}\t{}\n", cells.join("\t")));
     }
     text
-}
-
-fn fragment_swatches(ui: &mut egui::Ui, results: &ApostResults, ids: &[f64]) {
-    for &id in ids {
-        if let Some(position) = results.fragments().iter().position(|f| f.id == id as u32) {
-            let [r, g, b] = fragment_color(position);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-            ui.painter().rect_filled(rect, 2.0, Color32::from_rgb(r, g, b));
-        }
-    }
 }
 
 impl App {
@@ -142,7 +133,7 @@ impl App {
                             _ => format!("{}", row + 1),
                         }
                     } else {
-                        results.fragments().get(row).map(|f| fragment_name(results, &structure.molecule, f.id)).unwrap_or_else(|| format!("{}", row + 1))
+                        results.fragments().get(row).map(|f| fragment_name(f, &structure.molecule.atomic_numbers)).unwrap_or_else(|| format!("{}", row + 1))
                     }
                 })
                 .collect();
@@ -174,7 +165,7 @@ impl App {
                         ui.horizontal(|ui| {
                             if !by_orbital {
                                 if let Some(f) = results.fragments().get(row) {
-                                    fragment_swatches(ui, results, &[f.id as f64]);
+                                    fragment_swatches(ui, results, [f.id]);
                                 }
                             }
                             ui.label(&names[row]);
@@ -183,7 +174,7 @@ impl App {
                             let text = cell_text(&table, column, row, results, &structure.molecule);
                             if column.key == "fragment" || column.key == "fragments" {
                                 ui.horizontal(|ui| {
-                                    fragment_swatches(ui, results, &table.numbers(&column.key, row).unwrap_or_default());
+                                    fragment_swatches(ui, results, table.numbers(&column.key, row).unwrap_or_default().into_iter().map(|v| v as u32));
                                     ui.label(text);
                                 });
                             } else {

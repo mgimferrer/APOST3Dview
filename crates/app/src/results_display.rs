@@ -153,7 +153,7 @@ impl App {
         for i in 0..steps {
             let (u0, u1) = (i as f32 / steps as f32, (i + 1) as f32 / steps as f32);
             let c = legend.scale.bar_color((u0 + u1) / 2.0);
-            let color = Color32::from_rgb((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8);
+            let color = crate::util::rgb_to_color32(c);
             mesh.add_colored_rect(Rect::from_min_max(Pos2::new(origin.x + u0 * bar_w, origin.y), Pos2::new(origin.x + u1 * bar_w, origin.y + bar_h)), color);
         }
         painter.add(egui::Shape::mesh(mesh));

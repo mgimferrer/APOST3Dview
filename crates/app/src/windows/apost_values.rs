@@ -2,26 +2,14 @@
 //! (M3-M5) and the values themselves, as a table, or for a pair quantity
 //! a heat map and the strongest pairs.
 
-use apost3dview_core::{element_data, hill_formula, ApostResults, MatrixObject, Molecule, Quantity};
+use apost3dview_core::{ApostResults, MatrixObject, Quantity};
 use apost3dview_render::{format_signed, ColorScale};
 use egui::{Color32, RichText, Sense};
 
 use crate::app::App;
-use crate::results_view::{build_scene, display_unit, enpart_term, enpart_term_name, is_energy, scaled_matrix, EnergyUnit, focus_target, grouped_entries, shown_entry, ResultsView, Shown, FOCUS_COLOR};
-
-fn color32(c: [f32; 3]) -> Color32 {
-    Color32::from_rgb((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8)
-}
-
-fn fragment_name(results: &ApostResults, molecule: &Molecule, f: usize) -> String {
-    let fragment = &results.fragments()[f];
-    let formula = hill_formula(fragment.atoms.iter().filter_map(|&a| molecule.atomic_numbers.get(a - 1).copied()));
-    format!("{} {formula}", fragment.id)
-}
-
-fn atom_name(molecule: &Molecule, a: usize) -> String {
-    format!("{}{}", element_data(molecule.atomic_numbers[a]).symbol, a + 1)
-}
+use crate::names::{atom_name, fragment_name};
+use crate::util::rgb_to_color32;
+use crate::results_view::{build_scene, display_unit, enpart_term, enpart_term_name, is_energy, scaled_quantity, EnergyUnit, focus_target, grouped_entries, shown_entry, ResultsView, Shown, FOCUS_COLOR};
 
 fn shown_label(results: &ApostResults, shown: &Shown) -> String {
     match shown {
@@ -100,7 +88,7 @@ impl App {
         if let Some(entry) = &entry {
             if let Some(on_fragments) = focus_target(results, view) {
                 let count = if on_fragments { results.fragments().len() } else { molecule.atomic_numbers.len() };
-                let name = |i: usize| if on_fragments { fragment_name(results, &molecule, i) } else { atom_name(&molecule, i) };
+                let name = |i: usize| if on_fragments { fragment_name(&results.fragments()[i], &molecule.atomic_numbers) } else { atom_name(&molecule.atomic_numbers, i) };
                 view.focus = view.focus.min(count.saturating_sub(1));
                 ui.horizontal(|ui| {
                     ui.label("Seen from");
@@ -196,16 +184,12 @@ impl App {
         let Some(entry) = shown_entry(results, view).cloned() else { return };
         let Ok(quantity) = results.quantity(&entry) else { return };
         let (factor, unit) = display_unit(&entry, view);
-        let quantity = match quantity {
-            Quantity::Matrix(m) => Quantity::Matrix(scaled_matrix(&m, factor)),
-            Quantity::Vector(v) => Quantity::Vector(v.into_iter().map(|x| x.map(|x| x * factor)).collect()),
-            other => other,
-        };
+        let quantity = scaled_quantity(quantity, factor);
         let on_fragments = entry.kind.on_fragments();
         let names: Vec<String> = if on_fragments {
-            (0..results.fragments().len()).map(|f| fragment_name(results, &molecule, f)).collect()
+            results.fragments().iter().map(|f| fragment_name(f, &molecule.atomic_numbers)).collect()
         } else {
-            (0..molecule.atomic_numbers.len()).map(|a| atom_name(&molecule, a)).collect()
+            (0..molecule.atomic_numbers.len()).map(|a| atom_name(&molecule.atomic_numbers, a)).collect()
         };
         let decimals = if unit == Some("kcal/mol") { 2 } else { entry.decimals.unwrap_or(6).min(6) };
         let scene = build_scene(results, &molecule, view, &self.color_ranges);
@@ -225,7 +209,7 @@ impl App {
                         ui.horizontal(|ui| {
                             let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), Sense::hover());
                             if let (Some(scale), Some(v)) = (scale, values[i]) {
-                                ui.painter().rect_filled(rect, 2.0, color32(scale.color(v)));
+                                ui.painter().rect_filled(rect, 2.0, rgb_to_color32(scale.color(v)));
                             }
                             ui.add_sized([110.0, row_height], egui::Label::new(&names[i]).truncate());
                             let text = values[i].map(|v| if signed { format_signed(v, decimals) } else { format!("{v:.decimals$}") }).unwrap_or_else(|| "n/a".into());
@@ -264,7 +248,7 @@ impl App {
         if values.is_empty() {
             return;
         }
-        let pair = format!("{} \u{2013} {}", atom_name(&structure.molecule, a), atom_name(&structure.molecule, b));
+        let pair = format!("{} \u{2013} {}", atom_name(&structure.molecule.atomic_numbers, a), atom_name(&structure.molecule.atomic_numbers, b));
         // The IQA terms of the pair apart, as a decomposition of its
         // interaction energy.
         let (mut iqa, other): (Vec<_>, Vec<_>) = values.into_iter().partition(|(entry, _)| enpart_term(&entry.id).is_some());
@@ -328,16 +312,16 @@ fn heat_map(ui: &mut egui::Ui, matrix: &MatrixObject, names: &[String], focus: u
             } else {
                 let v = matrix.get(i, j).unwrap_or(0.0);
                 if signed {
-                    color32(ColorScale::Diverging { max_abs: if max > 0.0 { max } else { 1.0 }, log }.color(v))
+                    rgb_to_color32(ColorScale::Diverging { max_abs: if max > 0.0 { max } else { 1.0 }, log }.color(v))
                 } else {
-                    color32(apost3dview_render::colormap::sequential(if max > 0.0 { (v.abs() / max) as f32 } else { 0.0 }))
+                    rgb_to_color32(apost3dview_render::colormap::sequential(if max > 0.0 { (v.abs() / max) as f32 } else { 0.0 }))
                 }
             };
             painter.rect_filled(r, 1.0, color);
         }
     }
     let focus_row = egui::Rect::from_min_size(rect.min + egui::vec2(0.0, focus as f32 * cell), egui::vec2(cell * n as f32, cell));
-    painter.rect_stroke(focus_row, 1.0, egui::Stroke::new(2.0, color32(FOCUS_COLOR)), egui::StrokeKind::Inside);
+    painter.rect_stroke(focus_row, 1.0, egui::Stroke::new(2.0, rgb_to_color32(FOCUS_COLOR)), egui::StrokeKind::Inside);
 
     let cell_at = |pos: egui::Pos2| {
         let local = pos - rect.min;

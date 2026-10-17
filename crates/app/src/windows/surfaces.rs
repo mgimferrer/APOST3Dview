@@ -301,7 +301,7 @@ impl App {
                     let mut colors: Vec<egui::Color32> = Vec::new();
                     if let (true, Some(tint)) = (surface.settings.by_fragment, &surface.fragment_tint) {
                         for (_, c) in tint {
-                            let color = egui::Color32::from_rgb((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8);
+                            let color = crate::util::rgb_to_color32(*c);
                             if !colors.contains(&color) {
                                 colors.push(color);
                             }

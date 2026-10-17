@@ -7,11 +7,12 @@
 //! colors they would only tell the elements apart). The pair terms are
 //! shown on the molecule (On the molecule, Energy decomposition).
 
-use apost3dview_core::{element_data, hill_formula, ApostResults, Enpart, Molecule, Quantity};
+use apost3dview_core::{ApostResults, Enpart, Quantity};
 use apost3dview_render::format_signed;
 use egui::{Color32, RichText};
 
 use crate::app::App;
+use crate::names::{atom_name, fragment_name};
 use crate::results_view::EnergyUnit;
 use crate::windows::apost_values::energy_unit_selector;
 
@@ -50,9 +51,8 @@ fn method_text(enpart: &Enpart) -> String {
     text
 }
 
-fn pair_name(molecule: &Molecule, [a, b]: [usize; 2]) -> String {
-    let name = |i: usize| molecule.atomic_numbers.get(i - 1).map(|&z| format!("{}{i}", element_data(z).symbol)).unwrap_or_else(|| i.to_string());
-    format!("{}\u{2013}{}", name(a), name(b))
+fn pair_name(atomic_numbers: &[u32], [a, b]: [usize; 2]) -> String {
+    format!("{}\u{2013}{}", atom_name(atomic_numbers, a - 1), atom_name(atomic_numbers, b - 1))
 }
 
 /// What deserves a warning in an ENPART run, each with its explanation.
@@ -180,7 +180,7 @@ impl App {
                 );
             }
             if !enpart.multipolar_pairs.is_empty() {
-                let names: Vec<String> = enpart.multipolar_pairs.iter().map(|&p| pair_name(&molecule, p)).collect();
+                let names: Vec<String> = enpart.multipolar_pairs.iter().map(|&p| pair_name(&molecule.atomic_numbers, p)).collect();
                 ui.label(RichText::new(format!("Exchange-correlation from the multipolar expansion: {}.", names.join(", "))).small().weak());
             }
             for warning in &warnings {
@@ -193,12 +193,8 @@ impl App {
             energy_unit_selector(ui, &mut view.energy_unit);
             let (factor, unit, d) = (view.energy_unit.factor(), view.energy_unit.name(), if view.energy_unit == EnergyUnit::KcalPerMol { 2 } else { 6 });
             let molecule = &molecule;
-            let atom_names: Vec<String> = (0..molecule.atomic_numbers.len()).map(|a| format!("{}{}", element_data(molecule.atomic_numbers[a]).symbol, a + 1)).collect();
-            let fragment_names: Vec<String> = results
-                .fragments()
-                .iter()
-                .map(|f| format!("{} {}", f.id, hill_formula(f.atoms.iter().filter_map(|&a| molecule.atomic_numbers.get(a - 1).copied()))))
-                .collect();
+            let atom_names: Vec<String> = (0..molecule.atomic_numbers.len()).map(|a| atom_name(&molecule.atomic_numbers, a)).collect();
+            let fragment_names: Vec<String> = results.fragments().iter().map(|f| fragment_name(f, &molecule.atomic_numbers)).collect();
             for (level, title, names) in [("fragments", "Fragment energies", &fragment_names), ("atoms", "Atomic energies", &atom_names)] {
                 let Some(rows) = energy_rows(results, level, names) else { continue };
                 let rows: Vec<_> = rows.into_iter().map(|(n, s, a)| (n, s.map(|v| v * factor), a.map(|v| v * factor))).collect();

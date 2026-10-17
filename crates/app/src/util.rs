@@ -68,6 +68,17 @@ pub(crate) fn color32_to_rgb(color: Color32) -> [f32; 3] {
     [color.r() as f32 / 255.0, color.g() as f32 / 255.0, color.b() as f32 / 255.0]
 }
 
+/// The reverse: an sRGB color in [0, 1] as an egui color.
+pub(crate) fn rgb_to_color32(c: [f32; 3]) -> Color32 {
+    Color32::from_rgb((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8)
+}
+
+/// A small square of `color`, `size` points wide, in the current row.
+pub(crate) fn swatch(ui: &mut egui::Ui, color: Color32, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    ui.painter().rect_filled(rect, 2.0, color);
+}
+
 /// Whether two molecules describe the same geometry (same atoms, same
 /// positions within a small tolerance) — used to decide whether switching
 /// the active structure should reframe the camera. `.cube` files sharing

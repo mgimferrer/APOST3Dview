@@ -16,6 +16,7 @@ use apost3dview_render::{format_signed, AtomInstance, ColorScale, EnvelopeRange,
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
+use crate::names::{atom_name, fragment_name};
 use crate::results::fragment_color;
 
 /// What is shown on the molecule.
@@ -94,6 +95,15 @@ pub(crate) fn display_unit(entry: &IndexEntry, view: &ResultsView) -> (f64, Opti
     if is_energy(entry) { (view.energy_unit.factor(), Some(view.energy_unit.name())) } else { (1.0, None) }
 }
 
+/// A quantity's values multiplied by `factor` (energies shown in kcal/mol).
+pub(crate) fn scaled_quantity(quantity: Quantity, factor: f64) -> Quantity {
+    match quantity {
+        Quantity::Matrix(m) if factor != 1.0 => Quantity::Matrix(scaled_matrix(&m, factor)),
+        Quantity::Vector(v) if factor != 1.0 => Quantity::Vector(v.into_iter().map(|x| x.map(|x| x * factor)).collect()),
+        other => other,
+    }
+}
+
 /// A matrix with its values (and total) multiplied by `factor`.
 pub(crate) fn scaled_matrix(m: &MatrixObject, factor: f64) -> MatrixObject {
     let mut m = m.clone();
@@ -164,16 +174,6 @@ fn automatic_decimals(values: &[f64], kcal: bool) -> usize {
         m if m >= 0.01 => 3,
         _ => 4,
     }
-}
-
-fn name_of_fragment(results: &ApostResults, molecule: &Molecule, f: usize) -> String {
-    let atoms = &results.fragments()[f].atoms;
-    let formula = apost3dview_core::hill_formula(atoms.iter().filter_map(|&a| molecule.atomic_numbers.get(a - 1).copied()));
-    format!("{} {formula}", results.fragments()[f].id)
-}
-
-fn name_of_atom(molecule: &Molecule, a: usize) -> String {
-    format!("{}{}", element_data(molecule.atomic_numbers[a]).symbol, a + 1)
 }
 
 /// Where a value label sits: beside a fragment or on an atom.
@@ -264,15 +264,11 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             let Some(entry) = shown_entry(results, view) else { return scene };
             let Ok(quantity) = results.quantity(entry) else { return scene };
             let on_fragments = entry.kind.on_fragments();
-            let name = |i: usize| if on_fragments { name_of_fragment(results, molecule, i) } else { name_of_atom(molecule, i) };
+            let name = |i: usize| if on_fragments { fragment_name(&results.fragments()[i], &molecule.atomic_numbers) } else { atom_name(&molecule.atomic_numbers, i) };
             let anchor = |i: usize| if on_fragments { LabelAnchor::Fragment(i) } else { LabelAnchor::Atom(i) };
             // Energies in the chosen unit; fixed ranges are kept in au.
             let (factor, unit) = display_unit(entry, view);
-            let quantity = match quantity {
-                Quantity::Matrix(m) => Quantity::Matrix(scaled_matrix(&m, factor)),
-                Quantity::Vector(v) => Quantity::Vector(v.into_iter().map(|x| x.map(|x| x * factor)).collect()),
-                other => other,
-            };
+            let quantity = scaled_quantity(quantity, factor);
             let (values, focus): (Vec<f64>, Option<usize>) = match &quantity {
                 Quantity::Scalar(_) | Quantity::Table(_) => return scene,
                 Quantity::Vector(v) => (v.iter().map(|x| x.unwrap_or(0.0)).collect(), None),

@@ -1,10 +1,12 @@
 //! APOST-3D window: what was computed and how (run information), then the
 //! results themselves, for the active structure.
 
-use apost3dview_core::{element_data, fragment_coverage, hill_formula, ApostResults};
+use apost3dview_core::{fragment_coverage, hill_formula, ApostResults};
 use egui::{Color32, RichText};
 
 use crate::app::App;
+use crate::names::atom_name;
+use crate::util::swatch;
 use crate::results::{fragment_color, ApostAttachment, FRAGMENT_PALETTE, UNASSIGNED_COLOR};
 use crate::results_view::focus_target;
 
@@ -156,10 +158,9 @@ fn show_input_text(ui: &mut egui::Ui, results: &ApostResults) {
     });
 }
 
-/// Atom numbers as the user sees them elsewhere ("Fe1, C2, N3"), from
-/// 0-based indices.
+/// Atom names ("Fe1, C2, N3"), from 0-based indices.
 fn atom_names(atomic_numbers: &[u32], atoms: impl IntoIterator<Item = usize>) -> Vec<String> {
-    atoms.into_iter().map(|i| format!("{}{}", element_data(atomic_numbers[i]).symbol, i + 1)).collect()
+    atoms.into_iter().map(|i| atom_name(atomic_numbers, i)).collect()
 }
 
 /// At most `limit` names, then a count of the rest.
@@ -169,11 +170,6 @@ fn abbreviated(names: &[String], limit: usize) -> String {
     } else {
         format!("{}, ... (+{} more)", names[..limit].join(", "), names.len() - limit)
     }
-}
-
-fn swatch(ui: &mut egui::Ui, color: [u8; 3]) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
-    ui.painter().rect_filled(rect, 2.0, Color32::from_rgb(color[0], color[1], color[2]));
 }
 
 /// What the fragment list asks the window to do after drawing.
@@ -202,7 +198,7 @@ fn show_fragments(ui: &mut egui::Ui, results: &ApostResults, atomic_numbers: &[u
         if !coverage.unassigned.is_empty() {
             let names = atom_names(atomic_numbers, coverage.unassigned.iter().copied());
             ui.horizontal_wrapped(|ui| {
-                swatch(ui, UNASSIGNED_COLOR);
+                swatch(ui, Color32::from_rgb(UNASSIGNED_COLOR[0], UNASSIGNED_COLOR[1], UNASSIGNED_COLOR[2]), 12.0);
                 ui.label(RichText::new(format!("In no fragment: {}", abbreviated(&names, 12))).color(Color32::from_rgb(200, 130, 20)));
             });
         }
@@ -219,7 +215,8 @@ fn show_fragments(ui: &mut egui::Ui, results: &ApostResults, atomic_numbers: &[u
                 let formula = hill_formula(atoms.iter().map(|&i| atomic_numbers[i]));
                 let is_selected = !selected.is_empty() && selected.len() == atoms.len() && atoms.iter().all(|a| selected.contains(a));
                 ui.horizontal(|ui| {
-                    swatch(ui, fragment_color(position));
+                    let [r, g, b] = fragment_color(position);
+                    swatch(ui, Color32::from_rgb(r, g, b), 12.0);
                     let text = format!("{}  {formula}   {}", fragment.id, abbreviated(&names, 8));
                     let hint = if focus_mode { "Click to see the values from this fragment." } else { "Click to select its atoms, Cmd/Ctrl-click to add them to the selection." };
                     let response = ui.selectable_label(is_selected, text).on_hover_text(format!("Fragment {}: {}\n{hint}", fragment.id, names.join(", ")));

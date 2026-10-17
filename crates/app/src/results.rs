@@ -27,6 +27,16 @@ pub(crate) const FRAGMENT_PALETTE: [[u8; 3]; 8] = [
 /// fragment list's swatch for them).
 pub(crate) const UNASSIGNED_COLOR: [u8; 3] = [0xb0, 0xae, 0xa6];
 
+/// One swatch per fragment id (in its palette color), side by side.
+pub(crate) fn fragment_swatches(ui: &mut egui::Ui, results: &ApostResults, ids: impl IntoIterator<Item = u32>) {
+    for id in ids {
+        if let Some(position) = results.fragments().iter().position(|f| f.id == id) {
+            let [r, g, b] = fragment_color(position);
+            crate::util::swatch(ui, egui::Color32::from_rgb(r, g, b), 10.0);
+        }
+    }
+}
+
 pub(crate) fn fragment_color(position: usize) -> [u8; 3] {
     FRAGMENT_PALETTE[position % FRAGMENT_PALETTE.len()]
 }

@@ -9,6 +9,7 @@ mod export;
 mod files;
 mod isosurfaces;
 mod labels;
+mod names;
 mod orbital_sets;
 mod orbitals;
 mod presets;

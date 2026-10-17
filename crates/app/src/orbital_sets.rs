@@ -7,12 +7,13 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use apost3dview_core::{check_orbital_file, check_orbital_file_id, orbital_file_run_id, hill_formula, parse_fchk_summary, parse_fchk_wavefunction, ApostResults, Molecule, OrbitalDetail, OrbitalLabel, OrbitalSet, Wavefunction};
-use egui::{Color32, RichText};
+use apost3dview_core::{check_orbital_file, check_orbital_file_id, orbital_file_run_id, parse_fchk_summary, parse_fchk_wavefunction, ApostResults, Molecule, OrbitalDetail, OrbitalLabel, OrbitalSet, Wavefunction};
+use egui::RichText;
 use glam::Vec3;
 
 use crate::app::App;
-use crate::results::fragment_color;
+use crate::names::fragment_name_by_id;
+use crate::results::{fragment_color, fragment_swatches};
 
 /// An orbital set found next to a structure's results.
 pub(crate) struct LoadedOrbitalSet {
@@ -91,15 +92,9 @@ impl LoadedOrbitalSet {
     }
 }
 
-/// "2 CN", from a fragment id.
-pub(crate) fn fragment_name(results: &ApostResults, molecule: &Molecule, id: u32) -> String {
-    let Some(fragment) = results.fragments().iter().find(|f| f.id == id) else { return id.to_string() };
-    format!("{id} {}", hill_formula(fragment.atoms.iter().filter_map(|&a| molecule.atomic_numbers.get(a - 1).copied())))
-}
-
 /// "1 CH3 + 2 CH3".
 fn fragments_text(results: &ApostResults, molecule: &Molecule, label: &OrbitalLabel) -> String {
-    label.fragments.iter().map(|&f| fragment_name(results, molecule, f)).collect::<Vec<_>>().join(" + ")
+    label.fragments.iter().map(|&f| fragment_name_by_id(results, &molecule.atomic_numbers, f)).collect::<Vec<_>>().join(" + ")
 }
 
 /// The numbers that describe an orbital, for its row in the list.
@@ -162,13 +157,7 @@ pub(crate) fn show_set_checklist(ui: &mut egui::Ui, set: &mut LoadedOrbitalSet, 
                         selected.remove(index);
                     }
                 }
-                for &id in &label.fragments {
-                    if let Some(position) = results.fragments().iter().position(|f| f.id == id) {
-                        let [r, g, b] = fragment_color(position);
-                        let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 2.0, Color32::from_rgb(r, g, b));
-                    }
-                }
+                fragment_swatches(ui, results, label.fragments.iter().copied());
                 let negative = matches!(label.detail, OrbitalDetail::Efo { negative: true, .. });
                 let text = format!("{}  {}", names[k], fragments_text(results, molecule, label));
                 ui.label(if negative { RichText::new(text).italics() } else { RichText::new(text) });
