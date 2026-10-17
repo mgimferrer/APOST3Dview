@@ -46,6 +46,190 @@ fn bond_radius_scale_attribute() -> wgpu::VertexAttribute {
     wgpu::VertexAttribute { offset: 44, shader_location: 7, format: wgpu::VertexFormat::Float32 }
 }
 
+/// G-buffer normals, written by the depth+normal pre-pass that ambient
+/// occlusion and depth of field share.
+const GBUFFER_NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+/// Raw and blurred ambient occlusion.
+const AO_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
+
+fn depth_state(write: bool, compare: wgpu::CompareFunction) -> Option<wgpu::DepthStencilState> {
+    Some(wgpu::DepthStencilState {
+        format: DEPTH_FORMAT,
+        depth_write_enabled: Some(write),
+        depth_compare: Some(compare),
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState::default(),
+    })
+}
+
+fn color_target(format: wgpu::TextureFormat, blend: Option<wgpu::BlendState>) -> wgpu::ColorTargetState {
+    wgpu::ColorTargetState { format, blend, write_mask: wgpu::ColorWrites::ALL }
+}
+
+fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+        count: None,
+    }
+}
+
+fn depth_texture_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
+        count: None,
+    }
+}
+
+fn float_texture_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    }
+}
+
+fn create_bind_group_layout(device: &wgpu::Device, label: &str, entries: &[wgpu::BindGroupLayoutEntry]) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some(label), entries })
+}
+
+fn create_pipeline_layout(device: &wgpu::Device, label: &str, groups: &[&wgpu::BindGroupLayout]) -> wgpu::PipelineLayout {
+    let groups: Vec<Option<&wgpu::BindGroupLayout>> = groups.iter().map(|group| Some(*group)).collect();
+    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some(label), bind_group_layouts: &groups, immediate_size: 0 })
+}
+
+/// Where a pipeline's vertices come from: a shader module (which also
+/// holds the fragment entry point), its vertex entry point and its vertex
+/// buffers.
+struct VertexSource<'a> {
+    module: &'a wgpu::ShaderModule,
+    entry: &'static str,
+    buffers: &'a [Option<wgpu::VertexBufferLayout<'a>>],
+}
+
+/// A render pipeline drawing into one color target; every pipeline here
+/// has that shape, and none culls faces.
+struct PipelineSpec<'a> {
+    label: &'a str,
+    layout: &'a wgpu::PipelineLayout,
+    vertex: &'a VertexSource<'a>,
+    fragment: &'static str,
+    target: wgpu::ColorTargetState,
+    depth: Option<wgpu::DepthStencilState>,
+    multisample: wgpu::MultisampleState,
+}
+
+impl PipelineSpec<'_> {
+    fn build(self, device: &wgpu::Device) -> wgpu::RenderPipeline {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(self.label),
+            layout: Some(self.layout),
+            vertex: wgpu::VertexState {
+                module: self.vertex.module,
+                entry_point: Some(self.vertex.entry),
+                buffers: self.vertex.buffers,
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: self.vertex.module,
+                entry_point: Some(self.fragment),
+                targets: &[Some(self.target)],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: self.depth,
+            multisample: self.multisample,
+            multiview_mask: None,
+            cache: None,
+        })
+    }
+}
+
+/// A 2D render-target texture, one mip level.
+fn render_texture(
+    device: &wgpu::Device,
+    label: &str,
+    size: wgpu::Extent3d,
+    format: wgpu::TextureFormat,
+    sample_count: u32,
+    usage: wgpu::TextureUsages,
+) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size,
+        mip_level_count: 1,
+        sample_count,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | usage,
+        view_formats: &[],
+    })
+}
+
+/// A render pass into one color target (`resolve` receiving the resolved
+/// samples of a multisampled one), with a depth buffer if `depth` is given
+/// (cleared to 1.0, then stored or discarded).
+fn begin_pass<'e>(
+    encoder: &'e mut wgpu::CommandEncoder,
+    label: &str,
+    view: &wgpu::TextureView,
+    resolve: Option<&wgpu::TextureView>,
+    load: wgpu::LoadOp<wgpu::Color>,
+    depth: Option<(&wgpu::TextureView, wgpu::StoreOp)>,
+) -> wgpu::RenderPass<'e> {
+    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            resolve_target: resolve,
+            ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment: depth.map(|(view, store)| wgpu::RenderPassDepthStencilAttachment {
+            view,
+            depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store }),
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    })
+}
+
+/// One full-screen pass: clears `target` to `clear` and draws the
+/// full-screen triangle with `pipeline` and `bind_group`.
+fn fullscreen_pass(
+    encoder: &mut wgpu::CommandEncoder,
+    label: &str,
+    target: &wgpu::TextureView,
+    clear: wgpu::Color,
+    pipeline: &wgpu::RenderPipeline,
+    bind_group: &wgpu::BindGroup,
+) {
+    let mut pass = begin_pass(encoder, label, target, None, wgpu::LoadOp::Clear(clear), None);
+    pass.set_pipeline(pipeline);
+    pass.set_bind_group(0, bind_group, &[]);
+    pass.draw(0..3, 0..1);
+}
+
+/// The textures one depth-of-field run reads and writes: the sharp scene
+/// and its depth, the two blur directions, and the output.
+struct DofTargets<'a> {
+    sharp: &'a wgpu::TextureView,
+    depth: &'a wgpu::TextureView,
+    blur_h: &'a wgpu::TextureView,
+    blur_v: &'a wgpu::TextureView,
+    output: &'a wgpu::TextureView,
+}
+
 /// Owns the GPU resources for the 3D viewport (pipelines, buffers). Lives
 /// in egui-wgpu's `CallbackResources` so it shares the device/queue eframe
 /// already created, rather than opening a second one.
@@ -225,19 +409,11 @@ impl ViewportResources {
             mapped_at_creation: false,
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("scene_bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let bind_group_layout = create_bind_group_layout(
+            device,
+            "scene_bind_group_layout",
+            &[wgpu::BindGroupLayoutEntry { visibility: wgpu::ShaderStages::VERTEX_FRAGMENT, ..uniform_entry(0) }],
+        );
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene_bind_group"),
@@ -245,32 +421,21 @@ impl ViewportResources {
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() }],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("viewport_pipeline_layout"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
-            immediate_size: 0,
-        });
+        let pipeline_layout = create_pipeline_layout(device, "viewport_pipeline_layout", &[&bind_group_layout]);
 
-        let opaque_depth = Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::Less),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        });
+        let opaque_depth = depth_state(true, wgpu::CompareFunction::Less);
         // Highlight overlays reuse the exact geometry (or a very slightly
         // enlarged one for atoms) of what's already drawn, so an exact
         // `Less` comparison risks failing on floating-point ties — hence
         // `LessEqual` and no depth write, so the overlay reliably shows up
         // without disturbing depth for anything drawn after it.
-        let highlight_depth = Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(false),
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        });
+        let highlight_depth = depth_state(false, wgpu::CompareFunction::LessEqual);
+        // Translucent layers over the finished opaque scene (halos,
+        // envelopes): depth-tested against it, never writing depth.
+        let translucent_depth = depth_state(false, wgpu::CompareFunction::Less);
         let multisample = wgpu::MultisampleState { count: MSAA_SAMPLES, ..Default::default() };
+        let replace = Some(wgpu::BlendState::REPLACE);
+        let alpha_blend = Some(wgpu::BlendState::ALPHA_BLENDING);
 
         let sphere_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sphere_impostor_shader"),
@@ -303,83 +468,28 @@ impl ViewportResources {
                 wgpu::VertexAttribute { offset: 12, shader_location: 1, format: wgpu::VertexFormat::Float32x3 },
             ],
         };
+        let atom_buffers = [Some(atom_instance_layout)];
+        let atoms = VertexSource { module: &sphere_shader, entry: "vs_main", buffers: &atom_buffers };
+        let bond_buffers = [Some(cylinder_vertex_layout), Some(bond_instance_layout)];
+        let bonds = VertexSource { module: &cylinder_shader, entry: "vs_main", buffers: &bond_buffers };
 
-        let make_atom_pipeline = |label: &str, entry_point: &'static str, blend, depth_stencil: Option<wgpu::DepthStencilState>| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &sphere_shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[Some(atom_instance_layout.clone())],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &sphere_shader,
-                    entry_point: Some(entry_point),
-                    targets: &[Some(wgpu::ColorTargetState { format: target_format, blend, write_mask: wgpu::ColorWrites::ALL })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-                depth_stencil,
-                multisample,
-                multiview_mask: None,
-                cache: None,
-            })
+        let shaded = |label, layout, vertex, fragment, blend, depth| PipelineSpec {
+            label,
+            layout,
+            vertex,
+            fragment,
+            target: color_target(target_format, blend),
+            depth,
+            multisample,
         };
 
-        let atom_pipeline = make_atom_pipeline("atom_pipeline", "fs_main", Some(wgpu::BlendState::REPLACE), opaque_depth.clone());
-        let atom_highlight_pipeline = make_atom_pipeline(
-            "atom_highlight_pipeline",
-            "fs_highlight",
-            Some(wgpu::BlendState::ALPHA_BLENDING),
-            highlight_depth.clone(),
-        );
-        let atom_halo_pipeline = make_atom_pipeline(
-            "atom_halo_pipeline",
-            "fs_halo",
-            Some(wgpu::BlendState::ALPHA_BLENDING),
-            Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-        );
-
-        let make_cylinder_pipeline = |label: &str, entry_point: &'static str, blend, depth_stencil: Option<wgpu::DepthStencilState>| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &cylinder_shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[Some(cylinder_vertex_layout.clone()), Some(bond_instance_layout.clone())],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &cylinder_shader,
-                    entry_point: Some(entry_point),
-                    targets: &[Some(wgpu::ColorTargetState { format: target_format, blend, write_mask: wgpu::ColorWrites::ALL })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-                depth_stencil,
-                multisample,
-                multiview_mask: None,
-                cache: None,
-            })
-        };
-
-        let cylinder_pipeline =
-            make_cylinder_pipeline("cylinder_pipeline", "fs_main", Some(wgpu::BlendState::REPLACE), opaque_depth.clone());
-        let cylinder_highlight_pipeline = make_cylinder_pipeline(
-            "cylinder_highlight_pipeline",
-            "fs_highlight",
-            Some(wgpu::BlendState::ALPHA_BLENDING),
-            highlight_depth,
-        );
+        let atom_pipeline = shaded("atom_pipeline", &pipeline_layout, &atoms, "fs_main", replace, opaque_depth.clone()).build(device);
+        let atom_highlight_pipeline =
+            shaded("atom_highlight_pipeline", &pipeline_layout, &atoms, "fs_highlight", alpha_blend, highlight_depth.clone()).build(device);
+        let atom_halo_pipeline = shaded("atom_halo_pipeline", &pipeline_layout, &atoms, "fs_halo", alpha_blend, translucent_depth.clone()).build(device);
+        let cylinder_pipeline = shaded("cylinder_pipeline", &pipeline_layout, &bonds, "fs_main", replace, opaque_depth.clone()).build(device);
+        let cylinder_highlight_pipeline =
+            shaded("cylinder_highlight_pipeline", &pipeline_layout, &bonds, "fs_highlight", alpha_blend, highlight_depth).build(device);
 
         // Ambient-occlusion-sampling variants of the two shaded pipelines
         // above — a separate pipeline layout (group 0 unchanged, plus a
@@ -389,80 +499,14 @@ impl ViewportResources {
         // completely untouched — zero risk of regressing it. Highlight
         // pipelines don't get an AO variant; they're a flat translucent
         // overlay with no lighting to occlude.
-        let ao_sample_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("ao_sample_bind_group_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-            ],
-        });
-        let shaded_ao_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("shaded_ao_pipeline_layout"),
-            bind_group_layouts: &[Some(&bind_group_layout), Some(&ao_sample_bind_group_layout)],
-            immediate_size: 0,
-        });
-        let atom_pipeline_ao = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("atom_pipeline_ao"),
-            layout: Some(&shaded_ao_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &sphere_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(atom_instance_layout.clone())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &sphere_shader,
-                entry_point: Some("fs_main_ao"),
-                targets: &[Some(wgpu::ColorTargetState { format: target_format, blend: Some(wgpu::BlendState::REPLACE), write_mask: wgpu::ColorWrites::ALL })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: opaque_depth.clone(),
-            multisample,
-            multiview_mask: None,
-            cache: None,
-        });
-        let cylinder_pipeline_ao = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("cylinder_pipeline_ao"),
-            layout: Some(&shaded_ao_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &cylinder_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(cylinder_vertex_layout.clone()), Some(bond_instance_layout.clone())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &cylinder_shader,
-                entry_point: Some("fs_main_ao"),
-                targets: &[Some(wgpu::ColorTargetState { format: target_format, blend: Some(wgpu::BlendState::REPLACE), write_mask: wgpu::ColorWrites::ALL })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: opaque_depth.clone(),
-            multisample,
-            multiview_mask: None,
-            cache: None,
-        });
+        let ao_sample_bind_group_layout =
+            create_bind_group_layout(device, "ao_sample_bind_group_layout", &[uniform_entry(0), depth_texture_entry(1), float_texture_entry(2)]);
+        let shaded_ao_pipeline_layout =
+            create_pipeline_layout(device, "shaded_ao_pipeline_layout", &[&bind_group_layout, &ao_sample_bind_group_layout]);
+        let atom_pipeline_ao =
+            shaded("atom_pipeline_ao", &shaded_ao_pipeline_layout, &atoms, "fs_main_ao", replace, opaque_depth.clone()).build(device);
+        let cylinder_pipeline_ao =
+            shaded("cylinder_pipeline_ao", &shaded_ao_pipeline_layout, &bonds, "fs_main_ao", replace, opaque_depth.clone()).build(device);
 
         // Bonds are a real triangle mesh (unlike atoms, which are
         // analytically raymarched and so perfectly round at any zoom) —
@@ -486,19 +530,11 @@ impl ViewportResources {
         // True 3D text: billboard glyph quads through the same depth
         // buffer as everything else, so labels get correct — including
         // partial — occlusion instead of a 2D overlay's all-or-nothing.
-        let glyph_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("glyph_bind_group_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
+        let glyph_bind_group_layout = create_bind_group_layout(
+            device,
+            "glyph_bind_group_layout",
+            &[
+                float_texture_entry(0),
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -506,7 +542,7 @@ impl ViewportResources {
                     count: None,
                 },
             ],
-        });
+        );
         let glyph_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("glyph_bind_group"),
             layout: &glyph_bind_group_layout,
@@ -515,11 +551,7 @@ impl ViewportResources {
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&glyph_atlas.sampler) },
             ],
         });
-        let text_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("text_pipeline_layout"),
-            bind_group_layouts: &[Some(&bind_group_layout), Some(&glyph_bind_group_layout)],
-            immediate_size: 0,
-        });
+        let text_pipeline_layout = create_pipeline_layout(device, "text_pipeline_layout", &[&bind_group_layout, &glyph_bind_group_layout]);
         let text_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("text_shader"),
             source: wgpu::ShaderSource::Wgsl(shaders::TEXT.into()),
@@ -539,96 +571,39 @@ impl ViewportResources {
                 wgpu::VertexAttribute { offset: 76, shader_location: 8, format: wgpu::VertexFormat::Float32 },
             ],
         };
+        let glyph_buffers = [Some(glyph_instance_layout)];
+        let glyphs = VertexSource { module: &text_shader, entry: "vs_main", buffers: &glyph_buffers };
         // Alpha-to-coverage, not blending: each MSAA sample is dithered
         // in/out based on the glyph's coverage, giving antialiased edges
         // while still writing real per-sample depth.
         let text_multisample = wgpu::MultisampleState { count: MSAA_SAMPLES, alpha_to_coverage_enabled: true, ..Default::default() };
-        let text_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("text_pipeline"),
-            layout: Some(&text_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &text_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(glyph_instance_layout.clone())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &text_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: opaque_depth.clone(),
+        let text_pipeline = PipelineSpec {
             multisample: text_multisample,
-            multiview_mask: None,
-            cache: None,
-        });
+            ..shaded("text_pipeline", &text_pipeline_layout, &glyphs, "fs_main", replace, opaque_depth.clone())
+        }
+        .build(device);
         // The same glyphs drawn regardless of depth, for value labels that
         // must stay readable even when an atom is in front of their anchor.
-        let text_overlay_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("text_overlay_pipeline"),
-            layout: Some(&text_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &text_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(glyph_instance_layout.clone())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &text_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
+        let text_overlay_pipeline = PipelineSpec {
             multisample: text_multisample,
-            multiview_mask: None,
-            cache: None,
-        });
+            ..shaded(
+                "text_overlay_pipeline",
+                &text_pipeline_layout,
+                &glyphs,
+                "fs_main",
+                replace,
+                depth_state(false, wgpu::CompareFunction::Always),
+            )
+        }
+        .build(device);
         // The same, for a single-sampled target without depth (drawn onto an
         // export's depth-of-field output): blended instead of
         // alpha-to-coverage, which needs MSAA.
-        let text_overlay_pipeline_single = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("text_overlay_pipeline_single"),
-            layout: Some(&text_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &text_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(glyph_instance_layout.clone())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &text_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: None,
+        let text_overlay_pipeline_single = PipelineSpec {
             multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+            ..shaded("text_overlay_pipeline_single", &text_pipeline_layout, &glyphs, "fs_main", alpha_blend, None)
+        }
+        .build(device);
 
         // Isosurfaces: an ordinary rasterized/lit triangle mesh, not a
         // raymarched impostor, so no custom fragment depth override is
@@ -645,23 +620,9 @@ impl ViewportResources {
         // actually nearest, the same simplification most real-time
         // viewers (VMD included) use for translucent isosurfaces rather
         // than full order-independent transparency.
-        let isosurface_depth = Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::Less),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        });
+        let isosurface_depth = depth_state(true, wgpu::CompareFunction::Less);
 
-        let isosurface_material_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("isosurface_material_bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
-                count: None,
-            }],
-        });
+        let isosurface_material_layout = create_bind_group_layout(device, "isosurface_material_bind_group_layout", &[uniform_entry(0)]);
         let isosurface_material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("isosurface_material_buffer"),
             contents: bytemuck::bytes_of(&IsosurfaceMaterial::default()),
@@ -672,11 +633,8 @@ impl ViewportResources {
             layout: &isosurface_material_layout,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: isosurface_material_buffer.as_entire_binding() }],
         });
-        let isosurface_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("isosurface_pipeline_layout"),
-            bind_group_layouts: &[Some(&bind_group_layout), Some(&isosurface_material_layout)],
-            immediate_size: 0,
-        });
+        let isosurface_pipeline_layout =
+            create_pipeline_layout(device, "isosurface_pipeline_layout", &[&bind_group_layout, &isosurface_material_layout]);
         let isosurface_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("isosurface_shader"),
             source: wgpu::ShaderSource::Wgsl(shaders::ISOSURFACE.into()),
@@ -691,6 +649,8 @@ impl ViewportResources {
                 wgpu::VertexAttribute { offset: 44, shader_location: 3, format: wgpu::VertexFormat::Float32 },
             ],
         };
+        let mesh_buffers = [Some(isosurface_vertex_layout)];
+        let isosurface_mesh = VertexSource { module: &isosurface_shader, entry: "vs_main", buffers: &mesh_buffers };
         // Envelopes (see `envelope.wgsl`): translucent, depth-tested against
         // the opaque scene but never writing depth, so they neither hide
         // nor darken what is inside them.
@@ -698,104 +658,28 @@ impl ViewportResources {
             label: Some("envelope_shader"),
             source: wgpu::ShaderSource::Wgsl(shaders::ENVELOPE.into()),
         });
-        let envelope_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("envelope_pipeline_layout"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
-            immediate_size: 0,
-        });
-        let envelope_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("envelope_pipeline"),
-            layout: Some(&envelope_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &envelope_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(isosurface_vertex_layout.clone())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &envelope_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample,
-            multiview_mask: None,
-            cache: None,
-        });
+        let envelope_mesh = VertexSource { module: &envelope_shader, entry: "vs_main", buffers: &mesh_buffers };
+        let envelope_pipeline_layout = create_pipeline_layout(device, "envelope_pipeline_layout", &[&bind_group_layout]);
+        let envelope_pipeline =
+            shaded("envelope_pipeline", &envelope_pipeline_layout, &envelope_mesh, "fs_main", alpha_blend, translucent_depth).build(device);
 
-        let isosurface_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("isosurface_pipeline"),
-            layout: Some(&isosurface_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &isosurface_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(isosurface_vertex_layout.clone())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &isosurface_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: isosurface_depth.clone(),
-            multisample,
-            multiview_mask: None,
-            cache: None,
-        });
+        let isosurface_pipeline =
+            shaded("isosurface_pipeline", &isosurface_pipeline_layout, &isosurface_mesh, "fs_main", alpha_blend, isosurface_depth.clone())
+                .build(device);
 
         // AO-sampling variant of the isosurface pipeline — same shape as
         // `atom_pipeline_ao`/`cylinder_pipeline_ao`, but AO has to bind at
         // group 2 here (not group 1, already the isosurface material) and
         // so needs its own pipeline layout. See `isosurface.wgsl`'s
-        // `fs_main_ao`/`apply_ao`.
-        let isosurface_ao_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("isosurface_ao_pipeline_layout"),
-            bind_group_layouts: &[Some(&bind_group_layout), Some(&isosurface_material_layout), Some(&ao_sample_bind_group_layout)],
-            immediate_size: 0,
-        });
-        let isosurface_pipeline_ao = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("isosurface_pipeline_ao"),
-            layout: Some(&isosurface_ao_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &isosurface_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(isosurface_vertex_layout.clone())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &isosurface_shader,
-                entry_point: Some("fs_main_ao"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: isosurface_depth,
-            multisample,
-            multiview_mask: None,
-            cache: None,
-        });
+        // `fs_main_ao`.
+        let isosurface_ao_pipeline_layout = create_pipeline_layout(
+            device,
+            "isosurface_ao_pipeline_layout",
+            &[&bind_group_layout, &isosurface_material_layout, &ao_sample_bind_group_layout],
+        );
+        let isosurface_pipeline_ao =
+            shaded("isosurface_pipeline_ao", &isosurface_ao_pipeline_layout, &isosurface_mesh, "fs_main_ao", alpha_blend, isosurface_depth)
+                .build(device);
 
         // Ambient occlusion (export-only, see `ao.rs`): a depth+normal
         // pre-pass reusing the same atom/cylinder geometry and instance
@@ -803,60 +687,17 @@ impl ViewportResources {
         // blurred afterward anyway, and the composite pass runs against
         // the already-MSAA-resolved scene color, so the G-buffer itself
         // doesn't need MSAA.
-        const GBUFFER_NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-        let gbuffer_depth_stencil = Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::Less),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        });
-        let gbuffer_multisample = wgpu::MultisampleState::default();
-
-        let atom_gbuffer_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("atom_gbuffer_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &sphere_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(atom_instance_layout.clone())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &sphere_shader,
-                entry_point: Some("fs_gbuffer"),
-                targets: &[Some(wgpu::ColorTargetState { format: GBUFFER_NORMAL_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: gbuffer_depth_stencil.clone(),
-            multisample: gbuffer_multisample,
-            multiview_mask: None,
-            cache: None,
-        });
-
-        let cylinder_gbuffer_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("cylinder_gbuffer_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &cylinder_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(cylinder_vertex_layout.clone()), Some(bond_instance_layout.clone())],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &cylinder_shader,
-                entry_point: Some("fs_gbuffer"),
-                targets: &[Some(wgpu::ColorTargetState { format: GBUFFER_NORMAL_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: gbuffer_depth_stencil.clone(),
-            multisample: gbuffer_multisample,
-            multiview_mask: None,
-            cache: None,
-        });
-
+        let gbuffer = |label, layout, vertex| PipelineSpec {
+            label,
+            layout,
+            vertex,
+            fragment: "fs_gbuffer",
+            target: color_target(GBUFFER_NORMAL_FORMAT, None),
+            depth: depth_state(true, wgpu::CompareFunction::Less),
+            multisample: wgpu::MultisampleState::default(),
+        };
+        let atom_gbuffer_pipeline = gbuffer("atom_gbuffer_pipeline", &pipeline_layout, &atoms).build(device);
+        let cylinder_gbuffer_pipeline = gbuffer("cylinder_gbuffer_pipeline", &pipeline_layout, &bonds).build(device);
         // Isosurface's own G-buffer pass — see `isosurface.wgsl`'s
         // `fs_gbuffer` doc for why this matters (without it, the
         // isosurface neither occludes atoms/bonds in AO nor receives any
@@ -865,116 +706,42 @@ impl ViewportResources {
         // group 1 at all — simpler than a third pipeline layout just for
         // this, and `draw_gbuffer_pass` already has nothing else it would
         // need group 1 bound to at that point.
-        let isosurface_gbuffer_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("isosurface_gbuffer_pipeline"),
-            layout: Some(&isosurface_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &isosurface_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(isosurface_vertex_layout)],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &isosurface_shader,
-                entry_point: Some("fs_gbuffer"),
-                targets: &[Some(wgpu::ColorTargetState { format: GBUFFER_NORMAL_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: gbuffer_depth_stencil,
-            multisample: gbuffer_multisample,
-            multiview_mask: None,
-            cache: None,
-        });
+        let isosurface_gbuffer_pipeline = gbuffer("isosurface_gbuffer_pipeline", &isosurface_pipeline_layout, &isosurface_mesh).build(device);
+
+        // Full-screen passes (ambient occlusion and depth of field): one
+        // triangle, single-sampled, no depth, writing their own textures.
+        let fullscreen = |label, layout, vertex, fragment, format| PipelineSpec {
+            label,
+            layout,
+            vertex,
+            fragment,
+            target: color_target(format, None),
+            depth: None,
+            multisample: wgpu::MultisampleState::default(),
+        };
 
         let ao_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ao_shader"),
             source: wgpu::ShaderSource::Wgsl(shaders::AO.into()),
         });
-        let fullscreen_vertex = |entry_point: &'static str| wgpu::VertexState {
-            module: &ao_shader,
-            entry_point: Some(entry_point),
-            buffers: &[],
-            compilation_options: Default::default(),
-        };
-        let depth_texture_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
-            binding,
-            visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
-            count: None,
-        };
-        let float_texture_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
-            binding,
-            visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Texture {
-                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                view_dimension: wgpu::TextureViewDimension::D2,
-                multisampled: false,
-            },
-            count: None,
-        };
-        let uniform_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
-            binding,
-            visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
-            count: None,
-        };
+        let ao_fullscreen = VertexSource { module: &ao_shader, entry: "vs_fullscreen", buffers: &[] };
 
         // SSAO: uniform + G-buffer depth + G-buffer normal -> raw occlusion.
-        let ssao_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("ssao_bind_group_layout"),
-            entries: &[uniform_entry(0), depth_texture_entry(1), float_texture_entry(2)],
-        });
-        let ssao_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("ssao_pipeline_layout"),
-            bind_group_layouts: &[Some(&ssao_bind_group_layout)],
-            immediate_size: 0,
-        });
-        let ssao_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("ssao_pipeline"),
-            layout: Some(&ssao_pipeline_layout),
-            vertex: fullscreen_vertex("vs_fullscreen"),
-            fragment: Some(wgpu::FragmentState {
-                module: &ao_shader,
-                entry_point: Some("fs_ssao"),
-                targets: &[Some(wgpu::ColorTargetState { format: wgpu::TextureFormat::R8Unorm, blend: None, write_mask: wgpu::ColorWrites::ALL })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let ssao_bind_group_layout =
+            create_bind_group_layout(device, "ssao_bind_group_layout", &[uniform_entry(0), depth_texture_entry(1), float_texture_entry(2)]);
+        let ssao_pipeline_layout = create_pipeline_layout(device, "ssao_pipeline_layout", &[&ssao_bind_group_layout]);
+        let ssao_pipeline = fullscreen("ssao_pipeline", &ssao_pipeline_layout, &ao_fullscreen, "fs_ssao", AO_FORMAT).build(device);
 
         // Depth-aware separable blur: uniform (direction) + G-buffer depth
         // + the SSAO pass's raw output -> denoised occlusion. Run twice
         // (horizontal, vertical) against the same pipeline/layout.
-        let blur_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("blur_bind_group_layout"),
-            entries: &[uniform_entry(0), depth_texture_entry(1), float_texture_entry(2), uniform_entry(3)],
-        });
-        let blur_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("blur_pipeline_layout"),
-            bind_group_layouts: &[Some(&blur_bind_group_layout)],
-            immediate_size: 0,
-        });
-        let blur_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("blur_pipeline"),
-            layout: Some(&blur_pipeline_layout),
-            vertex: fullscreen_vertex("vs_fullscreen"),
-            fragment: Some(wgpu::FragmentState {
-                module: &ao_shader,
-                entry_point: Some("fs_blur"),
-                targets: &[Some(wgpu::ColorTargetState { format: wgpu::TextureFormat::R8Unorm, blend: None, write_mask: wgpu::ColorWrites::ALL })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let blur_bind_group_layout = create_bind_group_layout(
+            device,
+            "blur_bind_group_layout",
+            &[uniform_entry(0), depth_texture_entry(1), float_texture_entry(2), uniform_entry(3)],
+        );
+        let blur_pipeline_layout = create_pipeline_layout(device, "blur_pipeline_layout", &[&blur_bind_group_layout]);
+        let blur_pipeline = fullscreen("blur_pipeline", &blur_pipeline_layout, &ao_fullscreen, "fs_blur", AO_FORMAT).build(device);
 
         // Depth of field (see `dof.rs`): a plain (non-depth-aware)
         // separable blur over the resolved scene color, then a composite
@@ -984,79 +751,28 @@ impl ViewportResources {
             label: Some("dof_shader"),
             source: wgpu::ShaderSource::Wgsl(shaders::DOF.into()),
         });
-        let dof_fullscreen_vertex = |entry_point: &'static str| wgpu::VertexState {
-            module: &dof_shader,
-            entry_point: Some(entry_point),
-            buffers: &[],
-            compilation_options: Default::default(),
-        };
+        let dof_fullscreen = VertexSource { module: &dof_shader, entry: "vs_fullscreen", buffers: &[] };
 
-        let dof_blur_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("dof_blur_bind_group_layout"),
-            entries: &[uniform_entry(0), float_texture_entry(1)],
-        });
-        let dof_blur_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("dof_blur_pipeline_layout"),
-            bind_group_layouts: &[Some(&dof_blur_bind_group_layout)],
-            immediate_size: 0,
-        });
-        let dof_blur_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("dof_blur_pipeline"),
-            layout: Some(&dof_blur_pipeline_layout),
-            vertex: dof_fullscreen_vertex("vs_fullscreen"),
-            fragment: Some(wgpu::FragmentState {
-                module: &dof_shader,
-                entry_point: Some("fs_blur"),
-                targets: &[Some(wgpu::ColorTargetState { format: target_format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let dof_blur_bind_group_layout = create_bind_group_layout(device, "dof_blur_bind_group_layout", &[uniform_entry(0), float_texture_entry(1)]);
+        let dof_blur_pipeline_layout = create_pipeline_layout(device, "dof_blur_pipeline_layout", &[&dof_blur_bind_group_layout]);
+        let dof_blur_pipeline = fullscreen("dof_blur_pipeline", &dof_blur_pipeline_layout, &dof_fullscreen, "fs_blur", target_format).build(device);
 
-        let dof_composite_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("dof_composite_bind_group_layout"),
-            entries: &[uniform_entry(0), depth_texture_entry(1), float_texture_entry(2), float_texture_entry(3)],
-        });
-        let dof_composite_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("dof_composite_pipeline_layout"),
-            bind_group_layouts: &[Some(&dof_composite_bind_group_layout)],
-            immediate_size: 0,
-        });
-        let dof_composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("dof_composite_pipeline"),
-            layout: Some(&dof_composite_pipeline_layout),
-            vertex: dof_fullscreen_vertex("vs_fullscreen"),
-            fragment: Some(wgpu::FragmentState {
-                module: &dof_shader,
-                entry_point: Some("fs_composite"),
-                targets: &[Some(wgpu::ColorTargetState { format: target_format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let dof_composite_bind_group_layout = create_bind_group_layout(
+            device,
+            "dof_composite_bind_group_layout",
+            &[uniform_entry(0), depth_texture_entry(1), float_texture_entry(2), float_texture_entry(3)],
+        );
+        let dof_composite_pipeline_layout = create_pipeline_layout(device, "dof_composite_pipeline_layout", &[&dof_composite_bind_group_layout]);
+        let dof_composite_pipeline =
+            fullscreen("dof_composite_pipeline", &dof_composite_pipeline_layout, &dof_fullscreen, "fs_composite", target_format).build(device);
 
         // Blit: samples the finished DoF composite into the live view's
         // own shared window pass — see `dof.wgsl`'s module doc for why
         // this uses a vertex-shader UV instead of `frag_coord`. Export
         // doesn't need this at all — it reads the composite texture back
         // directly (see `render_offscreen`).
-        let dof_blit_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("dof_blit_bind_group_layout"),
-            entries: &[float_texture_entry(0)],
-        });
-        let dof_blit_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("dof_blit_pipeline_layout"),
-            bind_group_layouts: &[Some(&dof_blit_bind_group_layout)],
-            immediate_size: 0,
-        });
+        let dof_blit_bind_group_layout = create_bind_group_layout(device, "dof_blit_bind_group_layout", &[float_texture_entry(0)]);
+        let dof_blit_pipeline_layout = create_pipeline_layout(device, "dof_blit_pipeline_layout", &[&dof_blit_bind_group_layout]);
         // Unlike the blur/composite passes (which render into their own
         // single-sampled private textures with no depth attachment at
         // all), this draws into the live view's shared window pass
@@ -1070,29 +786,16 @@ impl ViewportResources {
         // (it's one full-viewport quad, nothing else drawn in that rect
         // this frame), hence `Always`/no write, but it still has to
         // declare the same format to be pass-compatible at all.
-        let dof_blit_depth_stencil = Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(false),
-            depth_compare: Some(wgpu::CompareFunction::Always),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        });
-        let dof_blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("dof_blit_pipeline"),
-            layout: Some(&dof_blit_pipeline_layout),
-            vertex: wgpu::VertexState { module: &dof_shader, entry_point: Some("vs_blit"), buffers: &[], compilation_options: Default::default() },
-            fragment: Some(wgpu::FragmentState {
-                module: &dof_shader,
-                entry_point: Some("fs_blit"),
-                targets: &[Some(wgpu::ColorTargetState { format: target_format, blend: Some(wgpu::BlendState::REPLACE), write_mask: wgpu::ColorWrites::ALL })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: dof_blit_depth_stencil,
-            multisample,
-            multiview_mask: None,
-            cache: None,
-        });
+        let dof_blit = VertexSource { module: &dof_shader, entry: "vs_blit", buffers: &[] };
+        let dof_blit_pipeline = shaded(
+            "dof_blit_pipeline",
+            &dof_blit_pipeline_layout,
+            &dof_blit,
+            "fs_blit",
+            replace,
+            depth_state(false, wgpu::CompareFunction::Always),
+        )
+        .build(device);
 
         Self {
             target_format,
@@ -1355,36 +1058,13 @@ impl ViewportResources {
             render_pass.set_bind_group(1, ao_bind_group, &[]);
         }
 
-        if let Some((buffer, count)) = &self.bond_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(if ao.is_some() { &self.cylinder_pipeline_ao } else { &self.cylinder_pipeline });
-                render_pass.set_vertex_buffer(0, self.cylinder_vertex_buffer.slice(..));
-                render_pass.set_vertex_buffer(1, buffer.slice(..));
-                render_pass.set_index_buffer(self.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..self.cylinder_index_count, 0, 0..*count);
-            }
-        }
-
-        if let Some((buffer, count)) = &self.atom_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(if ao.is_some() { &self.atom_pipeline_ao } else { &self.atom_pipeline });
-                render_pass.set_vertex_buffer(0, buffer.slice(..));
-                render_pass.draw(0..6, 0..*count);
-            }
-        }
+        self.draw_cylinders(render_pass, if ao.is_some() { &self.cylinder_pipeline_ao } else { &self.cylinder_pipeline }, &self.bond_instances);
+        self.draw_spheres(render_pass, if ao.is_some() { &self.atom_pipeline_ao } else { &self.atom_pipeline }, &self.atom_instances);
 
         // Measure-window lines — opaque and depth-tested like
         // real bonds (via the same pipeline, reusing its dashed-thin-line
         // path), so they correctly interleave with the molecule.
-        if let Some((buffer, count)) = &self.measurement_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(&self.cylinder_pipeline);
-                render_pass.set_vertex_buffer(0, self.cylinder_vertex_buffer.slice(..));
-                render_pass.set_vertex_buffer(1, buffer.slice(..));
-                render_pass.set_index_buffer(self.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..self.cylinder_index_count, 0, 0..*count);
-            }
-        }
+        self.draw_cylinders(render_pass, &self.cylinder_pipeline, &self.measurement_instances);
 
         // 3D labels (atom tags, measurement values) — real depth-tested
         // billboard glyph quads, drawn opaque-ish (alpha-to-coverage, see
@@ -1418,30 +1098,37 @@ impl ViewportResources {
         // Envelopes and halos over the finished opaque scene and isosurfaces.
         self.draw_envelopes(render_pass);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
-        if let Some((buffer, count)) = &self.halo_instances {
-            render_pass.set_pipeline(&self.atom_halo_pipeline);
-            render_pass.set_vertex_buffer(0, buffer.slice(..));
-            render_pass.draw(0..6, 0..*count);
-        }
+        self.draw_spheres(render_pass, &self.atom_halo_pipeline, &self.halo_instances);
 
         // Highlight overlays last, alpha-blended on top of the opaque pass.
-        if let Some((buffer, count)) = &self.bond_highlight_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(&self.cylinder_highlight_pipeline);
-                render_pass.set_vertex_buffer(0, self.cylinder_vertex_buffer.slice(..));
-                render_pass.set_vertex_buffer(1, buffer.slice(..));
-                render_pass.set_index_buffer(self.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..self.cylinder_index_count, 0, 0..*count);
-            }
-        }
+        self.draw_cylinders(render_pass, &self.cylinder_highlight_pipeline, &self.bond_highlight_instances);
+        self.draw_spheres(render_pass, &self.atom_highlight_pipeline, &self.atom_highlight_instances);
+    }
 
-        if let Some((buffer, count)) = &self.atom_highlight_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(&self.atom_highlight_pipeline);
-                render_pass.set_vertex_buffer(0, buffer.slice(..));
-                render_pass.draw(0..6, 0..*count);
-            }
+    /// Draws cylinder instances (bonds, measurement lines, their
+    /// highlights): the shared unit cylinder mesh, once per instance.
+    fn draw_cylinders(&self, render_pass: &mut wgpu::RenderPass<'_>, pipeline: &wgpu::RenderPipeline, instances: &Option<(wgpu::Buffer, u32)>) {
+        let Some((buffer, count)) = instances else { return };
+        if *count == 0 {
+            return;
         }
+        render_pass.set_pipeline(pipeline);
+        render_pass.set_vertex_buffer(0, self.cylinder_vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, buffer.slice(..));
+        render_pass.set_index_buffer(self.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.draw_indexed(0..self.cylinder_index_count, 0, 0..*count);
+    }
+
+    /// Draws sphere instances (atoms, halos, highlights): one impostor quad
+    /// (6 vertices, no vertex buffer) per instance.
+    fn draw_spheres(&self, render_pass: &mut wgpu::RenderPass<'_>, pipeline: &wgpu::RenderPipeline, instances: &Option<(wgpu::Buffer, u32)>) {
+        let Some((buffer, count)) = instances else { return };
+        if *count == 0 {
+            return;
+        }
+        render_pass.set_pipeline(pipeline);
+        render_pass.set_vertex_buffer(0, buffer.slice(..));
+        render_pass.draw(0..6, 0..*count);
     }
 
     /// Value labels, over everything: drawn after the scene and after
@@ -1458,32 +1145,25 @@ impl ViewportResources {
         render_pass.draw(0..6, 0..*count);
     }
 
-    /// The ambient-occlusion G-buffer draw sequence — atoms, bonds, and the
+    /// The depth+normal G-buffer pre-pass (for ambient occlusion and depth
+    /// of field) into `normal_view`/`depth_view` — atoms, bonds, and the
     /// isosurface (text and highlights still don't participate: text is a
     /// billboard overlay with no meaningful occlusion contribution, and
     /// highlights are a flat translucent tint drawn on top of everything
     /// else, not real geometry), using the `fs_gbuffer` pipelines instead
     /// of the normal shaded ones.
-    fn draw_gbuffer_pass(&self, render_pass: &mut wgpu::RenderPass<'_>) {
+    fn run_gbuffer_pass(&self, encoder: &mut wgpu::CommandEncoder, normal_view: &wgpu::TextureView, depth_view: &wgpu::TextureView) {
+        let mut render_pass = begin_pass(
+            encoder,
+            "gbuffer_pass",
+            normal_view,
+            None,
+            wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+            Some((depth_view, wgpu::StoreOp::Store)),
+        );
         render_pass.set_bind_group(0, &self.bind_group, &[]);
-
-        if let Some((buffer, count)) = &self.bond_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(&self.cylinder_gbuffer_pipeline);
-                render_pass.set_vertex_buffer(0, self.cylinder_vertex_buffer.slice(..));
-                render_pass.set_vertex_buffer(1, buffer.slice(..));
-                render_pass.set_index_buffer(self.cylinder_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..self.cylinder_index_count, 0, 0..*count);
-            }
-        }
-
-        if let Some((buffer, count)) = &self.atom_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(&self.atom_gbuffer_pipeline);
-                render_pass.set_vertex_buffer(0, buffer.slice(..));
-                render_pass.draw(0..6, 0..*count);
-            }
-        }
+        self.draw_cylinders(&mut render_pass, &self.cylinder_gbuffer_pipeline, &self.bond_instances);
+        self.draw_spheres(&mut render_pass, &self.atom_gbuffer_pipeline, &self.atom_instances);
 
         // Isosurface — see `isosurface.wgsl`'s `fs_gbuffer` doc for why
         // this participates too. `isosurface_gbuffer_pipeline` reuses the
@@ -1534,26 +1214,7 @@ impl ViewportResources {
         // `AoSampleUniforms::offset`.
         sample_offset: [f32; 2],
     ) -> wgpu::BindGroup {
-        {
-            let mut gbuffer_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("ao_gbuffer_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: gbuffer_normal_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: gbuffer_depth_view,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            self.draw_gbuffer_pass(&mut gbuffer_pass);
-        }
+        self.run_gbuffer_pass(encoder, gbuffer_normal_view, gbuffer_depth_view);
 
         let ao_uniforms = AoUniforms::new(view_proj.inverse(), view_proj, camera_eye, width, height, sample_count, ao_settings);
         let ao_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1571,24 +1232,7 @@ impl ViewportResources {
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(gbuffer_normal_view) },
             ],
         });
-        {
-            let mut ssao_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("ao_ssao_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: ao_raw_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::WHITE), store: wgpu::StoreOp::Store },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            ssao_pass.set_pipeline(&self.ssao_pipeline);
-            ssao_pass.set_bind_group(0, &ssao_bind_group, &[]);
-            ssao_pass.draw(0..3, 0..1);
-        }
+        fullscreen_pass(encoder, "ao_ssao_pass", ao_raw_view, wgpu::Color::WHITE, &self.ssao_pipeline, &ssao_bind_group);
 
         // Separable depth-aware blur: two passes (horizontal, then
         // vertical) — a render pass can't read and write the same
@@ -1611,22 +1255,7 @@ impl ViewportResources {
                     wgpu::BindGroupEntry { binding: 3, resource: ao_uniform_buffer.as_entire_binding() },
                 ],
             });
-            let mut blur_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("ao_blur_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: output_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::WHITE), store: wgpu::StoreOp::Store },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            blur_pass.set_pipeline(&self.blur_pipeline);
-            blur_pass.set_bind_group(0, &blur_bind_group, &[]);
-            blur_pass.draw(0..3, 0..1);
+            fullscreen_pass(encoder, "ao_blur_pass", output_view, wgpu::Color::WHITE, &self.blur_pipeline, &blur_bind_group);
         };
         run_blur_pass(encoder, [1.0, 0.0], ao_raw_view, blur_h_view);
         run_blur_pass(encoder, [0.0, 1.0], blur_h_view, blur_v_view);
@@ -1648,6 +1277,65 @@ impl ViewportResources {
         })
     }
 
+    /// Runs depth of field over an already rendered scene: a separable
+    /// blur of `targets.sharp` — plain Gaussian, not depth-aware (see
+    /// `dof.rs`'s module doc for why it should bleed across depth edges,
+    /// unlike AO's own blur) — then a composite into `targets.output`
+    /// mixing sharp and fully blurred per pixel by world-space distance
+    /// from the focal plane. Shared by the live view and export.
+    #[allow(clippy::too_many_arguments)]
+    fn run_dof_passes(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        targets: &DofTargets<'_>,
+        width: u32,
+        height: u32,
+        view_proj: glam::Mat4,
+        camera_eye: glam::Vec3,
+        focus_distance: f32,
+        dof_settings: &DofSettings,
+        clear_color: wgpu::Color,
+    ) {
+        let run_blur = |encoder: &mut wgpu::CommandEncoder, direction: [f32; 2], input_view: &wgpu::TextureView, output_view: &wgpu::TextureView| {
+            let blur_uniforms = DofBlurUniforms::new(direction, width, height, dof_settings.strength);
+            let blur_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("dof_blur_uniform_buffer"),
+                contents: bytemuck::bytes_of(&blur_uniforms),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+            let blur_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("dof_blur_bind_group"),
+                layout: &self.dof_blur_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: blur_uniform_buffer.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(input_view) },
+                ],
+            });
+            fullscreen_pass(encoder, "dof_blur_pass", output_view, wgpu::Color::TRANSPARENT, &self.dof_blur_pipeline, &blur_bind_group);
+        };
+        run_blur(encoder, [1.0, 0.0], targets.sharp, targets.blur_h);
+        run_blur(encoder, [0.0, 1.0], targets.blur_h, targets.blur_v);
+
+        let composite_uniforms = DofCompositeUniforms::new(view_proj.inverse(), camera_eye, focus_distance, width, height, dof_settings);
+        let composite_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("dof_composite_uniform_buffer"),
+            contents: bytemuck::bytes_of(&composite_uniforms),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let composite_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("dof_composite_bind_group"),
+            layout: &self.dof_composite_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: composite_uniform_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(targets.depth) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(targets.sharp) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(targets.blur_v) },
+            ],
+        });
+        fullscreen_pass(encoder, "dof_composite_pass", targets.output, clear_color, &self.dof_composite_pipeline, &composite_bind_group);
+    }
+
     /// (Re)creates the live view's persistent G-buffer/AO textures if
     /// they don't exist yet or the viewport was resized — cheap to check,
     /// only actually reallocates on a real size change. Unlike export
@@ -1661,22 +1349,9 @@ impl ViewportResources {
                 return;
             }
         }
-        const GBUFFER_NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-        const AO_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
         let make_texture = |label: &str, format: wgpu::TextureFormat| {
-            device
-                .create_texture(&wgpu::TextureDescriptor {
-                    label: Some(label),
-                    size,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                })
-                .create_view(&wgpu::TextureViewDescriptor::default())
+            render_texture(device, label, size, format, 1, wgpu::TextureUsages::TEXTURE_BINDING).create_view(&wgpu::TextureViewDescriptor::default())
         };
 
         let gbuffer_normal_view = make_texture("ao_live_gbuffer_normal", GBUFFER_NORMAL_FORMAT);
@@ -1778,24 +1453,11 @@ impl ViewportResources {
                 return;
             }
         }
-        const GBUFFER_NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-        const AO_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
         let color_format = self.target_format;
 
         let make_texture = |label: &str, format: wgpu::TextureFormat, sample_count: u32, extra_usage: wgpu::TextureUsages| {
-            device
-                .create_texture(&wgpu::TextureDescriptor {
-                    label: Some(label),
-                    size,
-                    mip_level_count: 1,
-                    sample_count,
-                    dimension: wgpu::TextureDimension::D2,
-                    format,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT | extra_usage,
-                    view_formats: &[],
-                })
-                .create_view(&wgpu::TextureViewDescriptor::default())
+            render_texture(device, label, size, format, sample_count, extra_usage).create_view(&wgpu::TextureViewDescriptor::default())
         };
 
         let scene_msaa_color_view = make_texture("dof_live_scene_msaa_color", color_format, MSAA_SAMPLES, wgpu::TextureUsages::empty());
@@ -1884,121 +1546,31 @@ impl ViewportResources {
             // shading — a bare depth+normal prepass, the same pipelines
             // AO's own G-buffer pass uses, just without the SSAO/blur that
             // would otherwise follow it.
-            let mut gbuffer_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("dof_gbuffer_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &live.gbuffer_normal_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &live.gbuffer_depth_view,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            self.draw_gbuffer_pass(&mut gbuffer_pass);
+            self.run_gbuffer_pass(encoder, &live.gbuffer_normal_view, &live.gbuffer_depth_view);
             None
         };
 
         let clear_color = wgpu::Color { r: background[0] as f64, g: background[1] as f64, b: background[2] as f64, a: 1.0 };
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("dof_scene_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &live.scene_msaa_color_view,
-                    resolve_target: Some(&live.scene_resolve_view),
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear_color), store: wgpu::StoreOp::Store },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &live.scene_msaa_depth_view,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+            let mut render_pass = begin_pass(
+                encoder,
+                "dof_scene_pass",
+                &live.scene_msaa_color_view,
+                Some(&live.scene_resolve_view),
+                wgpu::LoadOp::Clear(clear_color),
+                Some((&live.scene_msaa_depth_view, wgpu::StoreOp::Discard)),
+            );
             self.draw_into_pass(&mut render_pass, ao_bind_group.as_ref());
         }
 
-        // Separable blur of the resolved scene color — plain Gaussian, not
-        // depth-aware (see `dof.rs`'s module doc for why it should bleed
-        // across depth edges, unlike AO's own blur).
-        let run_blur = |encoder: &mut wgpu::CommandEncoder, direction: [f32; 2], input_view: &wgpu::TextureView, output_view: &wgpu::TextureView| {
-            let blur_uniforms = DofBlurUniforms::new(direction, width, height, dof_settings.strength);
-            let blur_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("dof_blur_uniform_buffer"),
-                contents: bytemuck::bytes_of(&blur_uniforms),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
-            let blur_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("dof_blur_bind_group"),
-                layout: &self.dof_blur_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: blur_uniform_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(input_view) },
-                ],
-            });
-            let mut blur_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("dof_blur_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: output_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            blur_pass.set_pipeline(&self.dof_blur_pipeline);
-            blur_pass.set_bind_group(0, &blur_bind_group, &[]);
-            blur_pass.draw(0..3, 0..1);
+        let targets = DofTargets {
+            sharp: &live.scene_resolve_view,
+            depth: &live.gbuffer_depth_view,
+            blur_h: &live.dof_blur_h_view,
+            blur_v: &live.dof_blur_v_view,
+            output: &live.dof_output_view,
         };
-        run_blur(encoder, [1.0, 0.0], &live.scene_resolve_view, &live.dof_blur_h_view);
-        run_blur(encoder, [0.0, 1.0], &live.dof_blur_h_view, &live.dof_blur_v_view);
-
-        // Composite: sharp + fully-blurred, mixed per pixel by
-        // world-space distance from the focal plane.
-        let composite_uniforms = DofCompositeUniforms::new(view_proj.inverse(), camera_eye, focus_distance, width, height, dof_settings);
-        let composite_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("dof_composite_uniform_buffer"),
-            contents: bytemuck::bytes_of(&composite_uniforms),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-        let composite_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("dof_composite_bind_group"),
-            layout: &self.dof_composite_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: composite_uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&live.gbuffer_depth_view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&live.scene_resolve_view) },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&live.dof_blur_v_view) },
-            ],
-        });
-        let mut composite_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("dof_composite_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &live.dof_output_view,
-                resolve_target: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear_color), store: wgpu::StoreOp::Store },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        composite_pass.set_pipeline(&self.dof_composite_pipeline);
-        composite_pass.set_bind_group(0, &composite_bind_group, &[]);
-        composite_pass.draw(0..3, 0..1);
+        self.run_dof_passes(device, encoder, &targets, width, height, view_proj, camera_eye, focus_distance, dof_settings, clear_color);
     }
 
     /// The live view's current-frame DoF composite, if `run_live_dof_pass`
@@ -2052,45 +1624,25 @@ impl ViewportResources {
 
         let size = wgpu::Extent3d { width: render_width, height: render_height, depth_or_array_layers: 1 };
 
-        let msaa_color = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("export_msaa_color"),
-            size,
-            mip_level_count: 1,
-            sample_count: MSAA_SAMPLES,
-            dimension: wgpu::TextureDimension::D2,
-            format: target_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let msaa_view = msaa_color.create_view(&wgpu::TextureViewDescriptor::default());
+        let msaa_view = render_texture(device, "export_msaa_color", size, target_format, MSAA_SAMPLES, wgpu::TextureUsages::empty())
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         // `TEXTURE_BINDING` is only actually needed when depth of field is
         // on (it becomes the "sharp" input to the DoF blur/composite
         // passes) — harmless to always request, and simpler than branching
         // the descriptor on `settings.depth_of_field`.
-        let resolve_color = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("export_resolve_color"),
+        let resolve_color = render_texture(
+            device,
+            "export_resolve_color",
             size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: target_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
+            target_format,
+            1,
+            wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::TEXTURE_BINDING,
+        );
         let resolve_view = resolve_color.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("export_depth"),
-            size,
-            mip_level_count: 1,
-            sample_count: MSAA_SAMPLES,
-            dimension: wgpu::TextureDimension::D2,
-            format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let depth_view = render_texture(device, "export_depth", size, DEPTH_FORMAT, MSAA_SAMPLES, wgpu::TextureUsages::empty())
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         let clear_color = settings.background.map_or(wgpu::Color::TRANSPARENT, |[r, g, b, a]| wgpu::Color {
             r: r as f64,
@@ -2101,24 +1653,13 @@ impl ViewportResources {
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("export_encoder") });
 
-        const GBUFFER_NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-        const AO_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
         // Returns the texture too, not just its view — most call sites
         // only need the view, but the final DoF-composite output needs
         // the underlying `wgpu::Texture` for the readback copy below
         // (hence `COPY_SRC` on every texture this makes — harmless to
         // request even where unused).
         let make_texture = |label: &str, format: wgpu::TextureFormat| -> (wgpu::Texture, wgpu::TextureView) {
-            let texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some(label),
-                size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
-                view_formats: &[],
-            });
+            let texture = render_texture(device, label, size, format, 1, wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC);
             let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
             (texture, view)
         };
@@ -2162,23 +1703,14 @@ impl ViewportResources {
         };
 
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("export_render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &msaa_view,
-                    resolve_target: Some(&resolve_view),
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear_color), store: wgpu::StoreOp::Store },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_view,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+            let mut render_pass = begin_pass(
+                &mut encoder,
+                "export_render_pass",
+                &msaa_view,
+                Some(&resolve_view),
+                wgpu::LoadOp::Clear(clear_color),
+                Some((&depth_view, wgpu::StoreOp::Discard)),
+            );
             self.draw_into_pass(&mut render_pass, ao_bind_group.as_ref());
             if settings.depth_of_field.is_none() {
                 self.draw_overlay_labels(&mut render_pass, false);
@@ -2193,25 +1725,7 @@ impl ViewportResources {
             let dof_depth_view = ao_gbuffer_depth_view.unwrap_or_else(|| {
                 let normal_view = make_view("export_dof_gbuffer_normal", GBUFFER_NORMAL_FORMAT);
                 let depth_view = make_view("export_dof_gbuffer_depth", DEPTH_FORMAT);
-                let mut gbuffer_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("export_dof_gbuffer_pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &normal_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &depth_view,
-                        depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                self.draw_gbuffer_pass(&mut gbuffer_pass);
-                drop(gbuffer_pass);
+                self.run_gbuffer_pass(&mut encoder, &normal_view, &depth_view);
                 depth_view
             });
 
@@ -2219,90 +1733,23 @@ impl ViewportResources {
             let blur_v_view = make_view("export_dof_blur_v", target_format);
             let (dof_output_texture, dof_output_view) = make_texture("export_dof_output", target_format);
 
-            let run_blur = |encoder: &mut wgpu::CommandEncoder, direction: [f32; 2], input_view: &wgpu::TextureView, output_view: &wgpu::TextureView| {
-                let blur_uniforms = DofBlurUniforms::new(direction, render_width, render_height, dof_settings.strength);
-                let blur_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("export_dof_blur_uniform_buffer"),
-                    contents: bytemuck::bytes_of(&blur_uniforms),
-                    usage: wgpu::BufferUsages::UNIFORM,
-                });
-                let blur_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("export_dof_blur_bind_group"),
-                    layout: &self.dof_blur_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry { binding: 0, resource: blur_uniform_buffer.as_entire_binding() },
-                        wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(input_view) },
-                    ],
-                });
-                let mut blur_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("export_dof_blur_pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: output_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                blur_pass.set_pipeline(&self.dof_blur_pipeline);
-                blur_pass.set_bind_group(0, &blur_bind_group, &[]);
-                blur_pass.draw(0..3, 0..1);
-            };
-            run_blur(&mut encoder, [1.0, 0.0], &resolve_view, &blur_h_view);
-            run_blur(&mut encoder, [0.0, 1.0], &blur_h_view, &blur_v_view);
-
-            let composite_uniforms =
-                DofCompositeUniforms::new(view_proj.inverse(), camera_eye, settings.dof_focus_distance, render_width, render_height, dof_settings);
-            let composite_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("export_dof_composite_uniform_buffer"),
-                contents: bytemuck::bytes_of(&composite_uniforms),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
-            let composite_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("export_dof_composite_bind_group"),
-                layout: &self.dof_composite_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: composite_uniform_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&dof_depth_view) },
-                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&resolve_view) },
-                    wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&blur_v_view) },
-                ],
-            });
-            let mut composite_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("export_dof_composite_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &dof_output_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear_color), store: wgpu::StoreOp::Store },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            composite_pass.set_pipeline(&self.dof_composite_pipeline);
-            composite_pass.set_bind_group(0, &composite_bind_group, &[]);
-            composite_pass.draw(0..3, 0..1);
-            drop(composite_pass);
+            let targets =
+                DofTargets { sharp: &resolve_view, depth: &dof_depth_view, blur_h: &blur_h_view, blur_v: &blur_v_view, output: &dof_output_view };
+            self.run_dof_passes(
+                device,
+                &mut encoder,
+                &targets,
+                render_width,
+                render_height,
+                view_proj,
+                camera_eye,
+                settings.dof_focus_distance,
+                dof_settings,
+                clear_color,
+            );
 
             // Value labels, sharp, over the blurred image.
-            let mut label_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("export_overlay_label_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &dof_output_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+            let mut label_pass = begin_pass(&mut encoder, "export_overlay_label_pass", &dof_output_view, None, wgpu::LoadOp::Load, None);
             self.draw_overlay_labels(&mut label_pass, true);
             drop(label_pass);
 
