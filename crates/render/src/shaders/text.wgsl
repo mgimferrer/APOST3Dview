@@ -1,15 +1,6 @@
-struct SceneUniforms {
-    view_proj: mat4x4<f32>,
-    camera_eye: vec4<f32>,
-    camera_right: vec4<f32>,
-    camera_up: vec4<f32>,
-    light_dir: vec4<f32>,
-    material: vec4<f32>,
-    style: vec4<f32>,
-};
-
-@group(0) @binding(0)
-var<uniform> scene: SceneUniforms;
+// Labels: camera-facing glyph quads sampling the signed-distance-field
+// atlas. Assembled after `common.wgsl` and `scene.wgsl` (see
+// `shaders.rs`).
 
 @group(1) @binding(0)
 var glyph_texture: texture_2d<f32>;

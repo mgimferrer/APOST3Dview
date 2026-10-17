@@ -4,9 +4,9 @@
 // `textureLoad` (exact texel fetch) rather than `textureSample` — nothing
 // here is filtered, so no sampler is bound anywhere in this file. The
 // result (a blurred occlusion texture + the G-buffer depth) is sampled
-// back inside the atom/cylinder shaders themselves (`apply_ao` in
-// `sphere.wgsl`/`cylinder.wgsl`) rather than composited here — see the
-// module doc in `ao.rs` for why.
+// back inside the shaded passes themselves (`apply_ao`, `ao_sample.wgsl`)
+// rather than composited here — see the module doc in `ao.rs` for why.
+// Assembled after `common.wgsl` and `fullscreen.wgsl` (see `shaders.rs`).
 
 const KERNEL_SIZE: u32 = 160u;
 
@@ -23,30 +23,11 @@ struct AoUniforms {
     kernel: array<vec4<f32>, KERNEL_SIZE>,
 };
 
-struct FullscreenOutput {
-    @builtin(position) clip_position: vec4<f32>,
-};
-
-@vertex
-fn vs_fullscreen(@builtin(vertex_index) vertex_index: u32) -> FullscreenOutput {
-    let x = f32((vertex_index << 1u) & 2u);
-    let y = f32(vertex_index & 2u);
-    var out: FullscreenOutput;
-    out.clip_position = vec4<f32>(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
-    return out;
-}
-
 // ---- SSAO ------------------------------------------------------------
 
 @group(0) @binding(0) var<uniform> ao: AoUniforms;
 @group(0) @binding(1) var ao_gbuffer_depth: texture_depth_2d;
 @group(0) @binding(2) var ao_gbuffer_normal: texture_2d<f32>;
-
-fn reconstruct_world(pixel_uv: vec2<f32>, depth: f32) -> vec3<f32> {
-    let ndc = vec4<f32>(pixel_uv.x * 2.0 - 1.0, 1.0 - pixel_uv.y * 2.0, depth, 1.0);
-    let world4 = ao.inv_view_proj * ndc;
-    return world4.xyz / world4.w;
-}
 
 @fragment
 fn fs_ssao(@builtin(position) frag_coord: vec4<f32>) -> @location(0) f32 {
@@ -57,7 +38,7 @@ fn fs_ssao(@builtin(position) frag_coord: vec4<f32>) -> @location(0) f32 {
     }
 
     let uv = frag_coord.xy / ao.screen.xy;
-    let world_pos = reconstruct_world(uv, d0);
+    let world_pos = world_from_depth(ao.inv_view_proj, uv, d0);
     let normal = normalize(textureLoad(ao_gbuffer_normal, pixel, 0).xyz);
 
     // Per-pixel pseudo-random rotation of the kernel — avoids needing a
@@ -91,7 +72,7 @@ fn fs_ssao(@builtin(position) frag_coord: vec4<f32>) -> @location(0) f32 {
         if (actual_d >= 0.9999) {
             continue;
         }
-        let actual_world = reconstruct_world(sample_uv, actual_d);
+        let actual_world = world_from_depth(ao.inv_view_proj, sample_uv, actual_d);
         let candidate_dist = length(candidate_world - ao.camera_eye.xyz);
         let actual_dist = length(actual_world - ao.camera_eye.xyz);
         let range_check = smoothstep(0.0, 1.0, radius / max(length(actual_world - candidate_world), 0.0001));
@@ -119,12 +100,6 @@ struct BlurUniforms {
 // comparison, not raw non-linear NDC depth.
 @group(0) @binding(3) var<uniform> blur_ao_uniforms: AoUniforms;
 
-fn blur_reconstruct_world(pixel_uv: vec2<f32>, depth: f32) -> vec3<f32> {
-    let ndc = vec4<f32>(pixel_uv.x * 2.0 - 1.0, 1.0 - pixel_uv.y * 2.0, depth, 1.0);
-    let world4 = blur_ao_uniforms.inv_view_proj * ndc;
-    return world4.xyz / world4.w;
-}
-
 @fragment
 fn fs_blur(@builtin(position) frag_coord: vec4<f32>) -> @location(0) f32 {
     let pixel = vec2<i32>(frag_coord.xy);
@@ -136,7 +111,7 @@ fn fs_blur(@builtin(position) frag_coord: vec4<f32>) -> @location(0) f32 {
     let width = i32(blur.screen.x);
     let height = i32(blur.screen.y);
     let center_uv = frag_coord.xy / blur.screen.xy;
-    let center_world = blur_reconstruct_world(center_uv, center_depth);
+    let center_world = world_from_depth(blur_ao_uniforms.inv_view_proj, center_uv, center_depth);
     let center_dist = length(center_world - blur_ao_uniforms.camera_eye.xyz);
 
     var sum = 0.0;
@@ -160,7 +135,7 @@ fn fs_blur(@builtin(position) frag_coord: vec4<f32>) -> @location(0) f32 {
             continue;
         }
         let p_uv = vec2<f32>(p) / blur.screen.xy;
-        let p_world = blur_reconstruct_world(p_uv, d);
+        let p_world = world_from_depth(blur_ao_uniforms.inv_view_proj, p_uv, d);
         let p_dist = length(p_world - blur_ao_uniforms.camera_eye.xyz);
         // Angstrom-scale falloff — neighbors within a fraction of an
         // angstrom of the center pixel's own depth blend fully; a real

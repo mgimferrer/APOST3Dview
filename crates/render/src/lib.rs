@@ -14,6 +14,7 @@ pub mod label;
 pub mod material;
 pub mod mesh;
 pub mod picking;
+mod shaders;
 pub mod turntable;
 pub mod uniforms;
 pub mod viewport;

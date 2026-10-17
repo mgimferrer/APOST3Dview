@@ -2,24 +2,10 @@
 // aware separable blur, unlike ambient occlusion's — see `dof.rs`'s module
 // doc for why DoF's blur should bleed across depth edges) plus a composite
 // pass that mixes the sharp and blurred scene textures per pixel based on
-// how far that pixel sits from the focal plane. `vs_fullscreen` is the same
-// "oversized triangle" trick as `ao.wgsl`'s — duplicated rather than shared
-// since each `include_str!`'d shader module is compiled standalone.
+// how far that pixel sits from the focal plane. Assembled after
+// `common.wgsl` and `fullscreen.wgsl` (see `shaders.rs`).
 // Everything reads via `textureLoad` (exact texel fetch); no sampler is
 // bound anywhere in this file, matching `ao.wgsl`.
-
-struct FullscreenOutput {
-    @builtin(position) clip_position: vec4<f32>,
-};
-
-@vertex
-fn vs_fullscreen(@builtin(vertex_index) vertex_index: u32) -> FullscreenOutput {
-    let x = f32((vertex_index << 1u) & 2u);
-    let y = f32(vertex_index & 2u);
-    var out: FullscreenOutput;
-    out.clip_position = vec4<f32>(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
-    return out;
-}
 
 // ---- Separable Gaussian blur ------------------------------------------
 
@@ -76,12 +62,6 @@ struct DofCompositeUniforms {
 @group(0) @binding(2) var dof_sharp: texture_2d<f32>;
 @group(0) @binding(3) var dof_blurred: texture_2d<f32>;
 
-fn dof_reconstruct_world(pixel_uv: vec2<f32>, depth: f32) -> vec3<f32> {
-    let ndc = vec4<f32>(pixel_uv.x * 2.0 - 1.0, 1.0 - pixel_uv.y * 2.0, depth, 1.0);
-    let world4 = dof.inv_view_proj * ndc;
-    return world4.xyz / world4.w;
-}
-
 @fragment
 fn fs_composite(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
     let pixel = vec2<i32>(frag_coord.xy);
@@ -95,7 +75,7 @@ fn fs_composite(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f
     }
 
     let uv = frag_coord.xy / dof.screen.xy;
-    let world_pos = dof_reconstruct_world(uv, depth);
+    let world_pos = world_from_depth(dof.inv_view_proj, uv, depth);
     let dist = length(world_pos - dof.camera_eye.xyz);
 
     let focus_distance = dof.params.x;

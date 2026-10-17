@@ -18,6 +18,7 @@ use crate::isosurface_mesh::{IsosurfaceMaterial, IsosurfaceVertex};
 use crate::label::GlyphInstance;
 use crate::material::Material;
 use crate::mesh::{build_unit_cylinder, CylinderVertex};
+use crate::shaders;
 use crate::uniforms::SceneUniforms;
 
 fn atom_instance_attributes() -> [wgpu::VertexAttribute; 3] {
@@ -273,11 +274,11 @@ impl ViewportResources {
 
         let sphere_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sphere_impostor_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/sphere.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::SPHERE.into()),
         });
         let cylinder_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("cylinder_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/cylinder.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::CYLINDER.into()),
         });
 
         let atom_instance_layout = wgpu::VertexBufferLayout {
@@ -521,7 +522,7 @@ impl ViewportResources {
         });
         let text_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("text_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/text.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::TEXT.into()),
         });
         let glyph_instance_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<GlyphInstance>() as u64,
@@ -678,7 +679,7 @@ impl ViewportResources {
         });
         let isosurface_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("isosurface_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/isosurface.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::ISOSURFACE.into()),
         });
         let isosurface_vertex_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<IsosurfaceVertex>() as u64,
@@ -695,7 +696,7 @@ impl ViewportResources {
         // nor darken what is inside them.
         let envelope_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("envelope_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/envelope.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::ENVELOPE.into()),
         });
         let envelope_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("envelope_pipeline_layout"),
@@ -888,7 +889,7 @@ impl ViewportResources {
 
         let ao_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ao_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/ao.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::AO.into()),
         });
         let fullscreen_vertex = |entry_point: &'static str| wgpu::VertexState {
             module: &ao_shader,
@@ -981,7 +982,7 @@ impl ViewportResources {
         // plane, then (live view only) a blit into the shared window pass.
         let dof_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("dof_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/dof.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::DOF.into()),
         });
         let dof_fullscreen_vertex = |entry_point: &'static str| wgpu::VertexState {
             module: &dof_shader,
