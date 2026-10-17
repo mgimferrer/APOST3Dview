@@ -13,7 +13,7 @@ use glam::Vec3;
 
 use crate::app::App;
 use crate::names::fragment_name_by_id;
-use crate::results::{fragment_color, fragment_swatches};
+use crate::results::fragment_swatches;
 
 /// An orbital set found next to a structure's results.
 pub(crate) struct LoadedOrbitalSet {
@@ -125,7 +125,7 @@ pub(crate) fn fragment_tint(results: &ApostResults, molecule: &Molecule, label: 
         .iter()
         .filter_map(|&id| fragments.iter().position(|f| f.id == id).map(|position| (position, &fragments[position])))
         .flat_map(|(position, fragment)| {
-            let color = fragment_color(position).map(|c| c as f32 / 255.0);
+            let color = crate::results_view::fragment_rgb(position);
             fragment.atoms.iter().filter_map(move |&a| molecule.positions.get(a - 1).map(|p| (*p, color)))
         })
         .collect()

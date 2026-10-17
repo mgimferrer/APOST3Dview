@@ -3,9 +3,8 @@
 //! ourselves (Phase 3), rather than requiring an external `cubegen`/
 //! Multiwfn/APOST-3D step to produce a `.cube` file first.
 //!
-//! Deliberately a separate parse from `fchk::parse_fchk_geometry`, which
-//! stops reading as soon as it has the geometry (near the top of the
-//! file) for speed — the basis-set/MO blocks sit much further in and can
+//! Deliberately a separate parse from `fchk::parse_fchk_summary`, which
+//! stops reading before the MO blocks for speed — the basis-set/MO blocks sit much further in and can
 //! be large, so a caller that only wants geometry (the common case, e.g.
 //! opening a `.fchk` to look at the molecule) shouldn't pay for reading
 //! them. This parser doesn't need geometry at all, in fact: each shell's
@@ -26,13 +25,14 @@
 //! multiplicity > 1 while still sharing one alpha=beta orbital set, so
 //! multiplicity alone isn't a reliable signal).
 
+use crate::invalid_data;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
 use glam::DVec3;
 
-use crate::fchk::{parse_header, read_array_tokens, HeaderKind};
+use crate::fchk::{parse_header, read_array_tokens, scalar_value, HeaderKind};
 
 /// One contracted shell — already split out of Gaussian's combined "SP"
 /// (`L`) shell type into separate pure-S and pure-P shells at parse time
@@ -138,16 +138,8 @@ impl Wavefunction {
     }
 }
 
-fn invalid_data(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message.into())
-}
-
-fn parse_f64_tokens(tokens: &[String], what: &str) -> io::Result<Vec<f64>> {
-    tokens.iter().map(|t| t.parse::<f64>().map_err(|_| invalid_data(format!("malformed {what} value '{t}' in .fchk")))).collect()
-}
-
-fn parse_usize_tokens(tokens: &[String], what: &str) -> io::Result<Vec<usize>> {
-    tokens.iter().map(|t| t.parse::<usize>().map_err(|_| invalid_data(format!("malformed {what} value '{t}' in .fchk")))).collect()
+fn parse_tokens<T: std::str::FromStr>(tokens: &[String], what: &str) -> io::Result<Vec<T>> {
+    tokens.iter().map(|t| t.parse::<T>().map_err(|_| invalid_data(format!("malformed {what} value '{t}' in .fchk")))).collect()
 }
 
 pub fn parse_fchk_wavefunction(path: &Path) -> io::Result<Wavefunction> {
@@ -177,53 +169,50 @@ pub fn parse_fchk_wavefunction(path: &Path) -> io::Result<Wavefunction> {
 
         match (header.label.as_str(), &header.kind) {
             ("Number of basis functions", HeaderKind::Scalar) => {
-                num_basis_functions = line.split_whitespace().last().and_then(|t| t.parse().ok());
+                num_basis_functions = scalar_value(&line);
             }
             ("Number of alpha electrons", HeaderKind::Scalar) => {
-                num_alpha_electrons = line.split_whitespace().last().and_then(|t| t.parse().ok());
+                num_alpha_electrons = scalar_value(&line);
             }
             ("Number of beta electrons", HeaderKind::Scalar) => {
-                num_beta_electrons = line.split_whitespace().last().and_then(|t| t.parse().ok());
+                num_beta_electrons = scalar_value(&line);
             }
             ("Shell types", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
-                let values: Vec<i64> = tokens
-                    .iter()
-                    .map(|t| t.parse::<i64>().map_err(|_| invalid_data(format!("malformed shell type '{t}'"))))
-                    .collect::<io::Result<_>>()?;
+                let values: Vec<i64> = parse_tokens(&tokens, "shell type")?;
                 shell_types = Some(values);
             }
             ("Number of primitives per shell", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
-                primitives_per_shell = Some(parse_usize_tokens(&tokens, "primitives-per-shell")?);
+                primitives_per_shell = Some(parse_tokens::<usize>(&tokens, "primitives-per-shell")?);
             }
             ("Primitive exponents", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
-                primitive_exponents = Some(parse_f64_tokens(&tokens, "primitive exponent")?);
+                primitive_exponents = Some(parse_tokens::<f64>(&tokens, "primitive exponent")?);
             }
             ("Contraction coefficients", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
-                contraction_coefficients = Some(parse_f64_tokens(&tokens, "contraction coefficient")?);
+                contraction_coefficients = Some(parse_tokens::<f64>(&tokens, "contraction coefficient")?);
             }
             ("P(S=P) Contraction coefficients", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
-                sp_contraction_coefficients = Some(parse_f64_tokens(&tokens, "SP contraction coefficient")?);
+                sp_contraction_coefficients = Some(parse_tokens::<f64>(&tokens, "SP contraction coefficient")?);
             }
             ("Coordinates of each shell", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
-                shell_coordinates = Some(parse_f64_tokens(&tokens, "shell coordinate")?);
+                shell_coordinates = Some(parse_tokens::<f64>(&tokens, "shell coordinate")?);
             }
             ("Alpha Orbital Energies", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
-                alpha_orbital_energies = Some(parse_f64_tokens(&tokens, "orbital energy")?);
+                alpha_orbital_energies = Some(parse_tokens::<f64>(&tokens, "orbital energy")?);
             }
             ("Beta Orbital Energies", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
-                beta_orbital_energies = Some(parse_f64_tokens(&tokens, "beta orbital energy")?);
+                beta_orbital_energies = Some(parse_tokens::<f64>(&tokens, "beta orbital energy")?);
             }
             ("Alpha MO coefficients", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
-                alpha_mo_coefficients = Some(parse_f64_tokens(&tokens, "MO coefficient")?);
+                alpha_mo_coefficients = Some(parse_tokens::<f64>(&tokens, "MO coefficient")?);
                 // Gaussian writes alpha energies, beta energies, alpha
                 // coefficients, beta coefficients, in that order. With the
                 // alpha energies already read and no beta energies, this
@@ -238,7 +227,7 @@ pub fn parse_fchk_wavefunction(path: &Path) -> io::Result<Wavefunction> {
             }
             ("Beta MO coefficients", HeaderKind::Array(count)) => {
                 let tokens = read_array_tokens(&mut lines, *count)?;
-                beta_mo_coefficients = Some(parse_f64_tokens(&tokens, "beta MO coefficient")?);
+                beta_mo_coefficients = Some(parse_tokens::<f64>(&tokens, "beta MO coefficient")?);
             }
             (_, HeaderKind::Array(count)) => {
                 read_array_tokens(&mut lines, *count)?;

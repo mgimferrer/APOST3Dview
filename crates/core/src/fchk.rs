@@ -1,20 +1,14 @@
-//! Gaussian formatted checkpoint (.fchk) parsing. Phase 1 only needs atomic
-//! numbers and Cartesian coordinates, so this streams the file line-by-line
-//! and stops as soon as both are found — both sections sit near the top of
-//! the file, well before the (potentially huge) basis-set/MO-coefficient
-//! blocks, so this stays fast regardless of overall file size.
+//! Formatted checkpoint (.fchk) parsing: the header/array reading shared
+//! with `wavefunction.rs`, and the fast summary (geometry, basis size, SCF
+//! energy) that opening a file and checking APOST-3D results both use. It
+//! streams the file and stops before the (potentially huge) MO blocks, so
+//! it stays fast regardless of the file's size.
 
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Lines};
 use std::path::Path;
 
-use crate::units::ANGSTROM_PER_BOHR;
-
-pub struct FchkGeometry {
-    pub atomic_numbers: Vec<u32>,
-    /// Angstrom.
-    pub positions: Vec<[f32; 3]>,
-}
+use crate::invalid_data;
 
 pub(crate) enum HeaderKind {
     Scalar,
@@ -24,6 +18,11 @@ pub(crate) enum HeaderKind {
 pub(crate) struct Header {
     pub(crate) label: String,
     pub(crate) kind: HeaderKind,
+}
+
+/// The value of a scalar header line ("Number of basis functions   I   58").
+pub(crate) fn scalar_value<T: std::str::FromStr>(line: &str) -> Option<T> {
+    line.split_whitespace().last()?.parse().ok()
 }
 
 pub(crate) fn parse_header(line: &str) -> Option<Header> {
@@ -54,65 +53,6 @@ pub(crate) fn read_array_tokens(lines: &mut Lines<BufReader<File>>, count: usize
     }
     tokens.truncate(count);
     Ok(tokens)
-}
-
-pub fn parse_fchk_geometry(path: &Path) -> io::Result<FchkGeometry> {
-    let file = File::open(path)?;
-    let mut lines = BufReader::new(file).lines();
-
-    let mut atomic_numbers: Option<Vec<u32>> = None;
-    let mut coordinates: Option<Vec<f64>> = None;
-
-    while let Some(line) = lines.next() {
-        let line = line?;
-        let Some(header) = parse_header(&line) else { continue };
-        let HeaderKind::Array(count) = header.kind else { continue };
-
-        match header.label.as_str() {
-            "Atomic numbers" => {
-                let tokens = read_array_tokens(&mut lines, count)?;
-                atomic_numbers = Some(tokens.iter().map(|t| t.parse().unwrap_or(0)).collect());
-            }
-            "Current cartesian coordinates" => {
-                let tokens = read_array_tokens(&mut lines, count)?;
-                coordinates = Some(tokens.iter().map(|t| t.parse().unwrap_or(0.0)).collect());
-            }
-            _ => {
-                // Not a section we need — still have to consume its data so
-                // the next header line is read at the right position.
-                read_array_tokens(&mut lines, count)?;
-            }
-        }
-
-        if atomic_numbers.is_some() && coordinates.is_some() {
-            break;
-        }
-    }
-
-    let atomic_numbers = atomic_numbers
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "fchk missing 'Atomic numbers' section"))?;
-    let coordinates = coordinates
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "fchk missing 'Current cartesian coordinates' section"))?;
-
-    if coordinates.len() != atomic_numbers.len() * 3 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "fchk coordinate count doesn't match 3x atom count",
-        ));
-    }
-
-    let positions = coordinates
-        .chunks_exact(3)
-        .map(|c| {
-            [
-                (c[0] * ANGSTROM_PER_BOHR) as f32,
-                (c[1] * ANGSTROM_PER_BOHR) as f32,
-                (c[2] * ANGSTROM_PER_BOHR) as f32,
-            ]
-        })
-        .collect();
-
-    Ok(FchkGeometry { atomic_numbers, positions })
 }
 
 /// What the APOST-3D results consistency check compares against (see
@@ -147,10 +87,9 @@ pub fn parse_fchk_summary(path: &Path) -> io::Result<FchkSummary> {
         let Some(header) = parse_header(&line) else { continue };
         match header.kind {
             HeaderKind::Scalar => {
-                let value = line.split_whitespace().last().unwrap_or("");
                 match header.label.as_str() {
-                    "Number of basis functions" => n_basis_functions = value.parse().ok(),
-                    "SCF Energy" => scf_energy = value.parse().ok(),
+                    "Number of basis functions" => n_basis_functions = scalar_value(&line),
+                    "SCF Energy" => scf_energy = scalar_value(&line),
                     _ => {}
                 }
             }
@@ -162,7 +101,8 @@ pub fn parse_fchk_summary(path: &Path) -> io::Result<FchkSummary> {
                 let tokens = read_array_tokens(&mut lines, count)?;
                 match header.label.as_str() {
                     "Atomic numbers" => atomic_numbers = Some(tokens.iter().map(|t| t.parse().unwrap_or(0)).collect()),
-                    "Current cartesian coordinates" => coordinates = Some(tokens.iter().map(|t| t.parse().unwrap_or(0.0)).collect()),
+                    // The first block: Q-Chem repeats it (frequency jobs).
+                    "Current cartesian coordinates" if coordinates.is_none() => coordinates = Some(tokens.iter().map(|t| t.parse().unwrap_or(0.0)).collect()),
                     _ => {}
                 }
             }
@@ -172,12 +112,10 @@ pub fn parse_fchk_summary(path: &Path) -> io::Result<FchkSummary> {
         }
     }
 
-    let atomic_numbers = atomic_numbers
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "fchk missing 'Atomic numbers' section"))?;
-    let coordinates = coordinates
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "fchk missing 'Current cartesian coordinates' section"))?;
+    let atomic_numbers = atomic_numbers.ok_or_else(|| invalid_data("fchk missing 'Atomic numbers' section"))?;
+    let coordinates = coordinates.ok_or_else(|| invalid_data("fchk missing 'Current cartesian coordinates' section"))?;
     if coordinates.len() != atomic_numbers.len() * 3 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "fchk coordinate count doesn't match 3x atom count"));
+        return Err(invalid_data("fchk coordinate count doesn't match 3x atom count"));
     }
     let coordinates_bohr = coordinates.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
 

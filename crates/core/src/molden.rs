@@ -24,6 +24,8 @@
 //! is per-file, so that mixing isn't representable here (not a concern for
 //! PySCF's own output, which is always uniformly one or the other).
 
+use crate::invalid_data;
+use crate::units::angstrom_from_bohr;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
@@ -32,16 +34,6 @@ use glam::DVec3;
 
 use crate::units::ANGSTROM_PER_BOHR;
 use crate::wavefunction::{BasisSet, MolecularOrbitals, Shell, Wavefunction};
-
-pub struct MoldenGeometry {
-    pub atomic_numbers: Vec<u32>,
-    /// Angstrom.
-    pub positions: Vec<[f32; 3]>,
-}
-
-fn invalid_data(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message.into())
-}
 
 /// A Fortran-style `D`/`d` exponent (`1.23D-05`) alongside PySCF's own
 /// plain `e`-notation — cheap to normalize unconditionally, so a stray
@@ -296,16 +288,16 @@ fn parse_mo_section(sec: &Section, num_basis_functions: usize) -> io::Result<Vec
 }
 
 /// Fast geometry-only parse — stops right after `[Atoms]`, same reasoning
-/// as `fchk::parse_fchk_geometry` staying separate from
-/// `parse_fchk_wavefunction`.
-pub fn parse_molden_geometry(path: &Path) -> io::Result<MoldenGeometry> {
+/// as `fchk::parse_fchk_summary` staying separate from
+/// `parse_fchk_wavefunction`. Atomic numbers and positions in angstrom.
+pub fn parse_molden_geometry(path: &Path) -> io::Result<(Vec<u32>, Vec<glam::Vec3>)> {
     let file = File::open(path)?;
     let sections = read_sections(BufReader::new(file), true)?;
     let atoms_section = sections.iter().find(|s| s.tag == "ATOMS").ok_or_else(|| invalid_data(".molden file missing [Atoms] section"))?;
     let atoms = parse_atoms_section(atoms_section)?;
     let atomic_numbers = atoms.iter().map(|a| a.atomic_number).collect();
-    let positions = atoms.iter().map(|a| (a.position_bohr * ANGSTROM_PER_BOHR).as_vec3().to_array()).collect();
-    Ok(MoldenGeometry { atomic_numbers, positions })
+    let positions = atoms.iter().map(|a| angstrom_from_bohr(a.position_bohr.to_array())).collect();
+    Ok((atomic_numbers, positions))
 }
 
 /// Full parse — basis set + MO coefficients, ready for

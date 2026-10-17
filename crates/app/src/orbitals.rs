@@ -241,8 +241,7 @@ impl App {
         done.extend(densities.iter().map(|&spin| if spin { "the spin density".to_string() } else { "the total density".to_string() }));
         self.add_surfaces(active, surfaces, true);
         let text = done.join(" and ");
-        let mut chars = text.chars();
-        let text = chars.next().map(|c| c.to_uppercase().chain(chars).collect::<String>()).unwrap_or_default();
+        let text = crate::util::capitalize(&text);
         self.show_status(format!("{text} generated"));
     }
 

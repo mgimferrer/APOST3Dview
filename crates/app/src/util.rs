@@ -1,6 +1,6 @@
 //! Small helpers shared by several windows.
 
-use apost3dview_core::{element_data, LengthUnit, MeasurementKind, Molecule};
+use apost3dview_core::{LengthUnit, MeasurementKind, Molecule};
 use apost3dview_render::OrbitCamera;
 use egui::Color32;
 use glam::{Vec3, Vec4};
@@ -37,7 +37,7 @@ pub(crate) fn format_measurement(kind: MeasurementKind, value: f32, unit: Length
 pub(crate) fn format_measurement_atoms(molecule: &Molecule, kind: MeasurementKind) -> String {
     kind.atoms()
         .iter()
-        .map(|&i| format!("{}{}", element_data(molecule.atomic_numbers[i]).symbol, i + 1))
+        .map(|&i| crate::names::atom_name(&molecule.atomic_numbers, i))
         .collect::<Vec<_>>()
         .join("-")
 }
@@ -66,6 +66,22 @@ pub(crate) fn project_to_screen(camera: &OrbitCamera, aspect_ratio: f32, rect: e
 
 pub(crate) fn color32_to_rgb(color: Color32) -> [f32; 3] {
     [color.r() as f32 / 255.0, color.g() as f32 / 255.0, color.b() as f32 / 255.0]
+}
+
+/// A path's file name for messages and labels ("" if it has none).
+pub(crate) fn file_display_name(path: &std::path::Path) -> String {
+    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// "Bond order" from "bond order".
+pub(crate) fn capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
+}
+
+/// An atom's drawn radius: its van der Waals radius times the atom size.
+pub(crate) fn drawn_radius(atomic_number: u32, atom_scale: f32) -> f32 {
+    apost3dview_core::element_data(atomic_number).vdw_radius * atom_scale
 }
 
 /// The reverse: an sRGB color in [0, 1] as an egui color.

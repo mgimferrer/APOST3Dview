@@ -2,7 +2,6 @@
 
 use apost3dview_core::{element_data, measure};
 use apost3dview_render::{glyph_scale_for_font_size, glyph_scale_for_world_size, pick_atom, pick_bond, ray_from_ndc, GlyphInstance, ViewportCallback};
-use egui::Color32;
 use glam::Vec2;
 
 use crate::app::App;
@@ -23,11 +22,7 @@ impl App {
         let rect = ui.max_rect();
 
         let background = self.material.background;
-        let bg_color = Color32::from_rgb(
-            (background[0] * 255.0) as u8,
-            (background[1] * 255.0) as u8,
-            (background[2] * 255.0) as u8,
-        );
+        let bg_color = crate::util::rgb_to_color32(background);
         ui.painter().rect_filled(rect, 0.0, bg_color);
 
         let Some(active) = self.active_structure else {
@@ -179,12 +174,12 @@ impl App {
                 // they grow and shrink with zoom exactly like the
                 // atom they're attached to, rather than holding a
                 // constant on-screen size the way a 2D overlay would.
-                let radius = element_data(z).vdw_radius * self.material.atom_scale;
+                let radius = crate::util::drawn_radius(z, self.material.atom_scale);
                 let scale = glyph_scale_for_world_size(radius * self.atom_label_style.relative_size);
                 let text = match self.atom_label_mode {
                     AtomLabelMode::Number => format!("{}", index + 1),
                     AtomLabelMode::Type => element_data(z).symbol.to_string(),
-                    AtomLabelMode::NumberType => format!("{}{}", element_data(z).symbol, index + 1),
+                    AtomLabelMode::NumberType => crate::names::atom_name(&structure.molecule.atomic_numbers, index),
                     AtomLabelMode::None => unreachable!(),
                 };
                 // The label anchor starts at the atom's own 3D

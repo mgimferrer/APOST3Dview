@@ -27,12 +27,17 @@ pub use coordinates::{format_coordinates, CoordinateFormat};
 pub use cube::{parse_cube, CubeFile, ScalarGrid};
 pub use envelope::{envelope_mesh, sphere_mesh, unit_sphere};
 pub use fchk::{parse_fchk_summary, FchkSummary};
+
+/// The error of every parser here for a file that isn't what it claims.
+pub(crate) fn invalid_data(message: impl Into<String>) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, message.into())
+}
 pub use element::{atomic_number_from_symbol, element_data, hill_formula, ElementData};
 pub use gto::{evaluate_basis_functions, evaluate_mo, generate_density_grid, generate_mo_grids};
 pub use interpolation::refine_grid;
 pub use isosurface::{extract_isosurface, IsosurfaceMesh};
 pub use measurement::{measure, MeasurementKind};
-pub use molden::{parse_molden_geometry, parse_molden_wavefunction, MoldenGeometry};
+pub use molden::{parse_molden_geometry, parse_molden_wavefunction};
 pub use molecule::{Bond, Molecule};
 pub use units::LengthUnit;
 pub use wavefunction::{parse_fchk_wavefunction, BasisSet, MolecularOrbitals, Shell, Wavefunction};

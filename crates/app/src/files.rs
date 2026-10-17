@@ -66,7 +66,10 @@ impl FileKind {
 }
 
 fn file_label(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled".into())
+    match crate::util::file_display_name(path) {
+        name if name.is_empty() => "untitled".into(),
+        name => name,
+    }
 }
 
 /// Some programs write Molden files as `.inp`, which is also the extension

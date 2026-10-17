@@ -6,7 +6,7 @@ use egui::{Color32, RichText};
 
 use crate::app::App;
 use crate::names::atom_name;
-use crate::util::swatch;
+use crate::util::{capitalize, swatch};
 use crate::results::{fragment_color, ApostAttachment, FRAGMENT_PALETTE, UNASSIGNED_COLOR};
 use crate::results_view::focus_target;
 
@@ -27,11 +27,6 @@ fn banner(ui: &mut egui::Ui, fill: Color32, title: &str, text: &str) {
 
 fn or_dash(value: Option<String>) -> String {
     value.unwrap_or_else(|| "-".to_string())
-}
-
-fn capitalized(text: &str) -> String {
-    let mut chars = text.chars();
-    chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
 }
 
 /// "2026-10-13T14:05:31+02:00" -> "2026-10-13 14:05 (UTC+02:00)"; any
@@ -87,7 +82,7 @@ fn show_run_summary(ui: &mut egui::Ui, attachment: &ApostAttachment, results: &A
 
         ui.label("Wavefunction");
         let method = wavefunction.and_then(|w| w.method.clone());
-        let formalism = wavefunction.and_then(|w| w.formalism.as_deref().map(capitalized));
+        let formalism = wavefunction.and_then(|w| w.formalism.as_deref().map(capitalize));
         ui.label(or_dash(Some([method, formalism].into_iter().flatten().collect::<Vec<_>>().join(", ")).filter(|s| !s.is_empty())));
         ui.end_row();
 
@@ -235,7 +230,7 @@ fn show_fragments(ui: &mut egui::Ui, results: &ApostResults, atomic_numbers: &[u
 /// at a time, since a large system's report runs to many thousands of lines.
 fn show_report(ui: &mut egui::Ui, attachment: &mut ApostAttachment) {
     let Some(path) = &attachment.report_path else { return };
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = crate::util::file_display_name(&path);
     let response = egui::CollapsingHeader::new(format!("Text report ({name})")).id_salt("apost_report").show(ui, |ui| {
         match &attachment.report_lines {
             Some(Ok(lines)) => {
@@ -343,7 +338,7 @@ impl App {
             summary.push(d);
         }
         if let Some(w) = &results.wavefunction {
-            summary.push([w.method.clone(), w.formalism.as_deref().map(capitalized)].into_iter().flatten().collect::<Vec<_>>().join(", "));
+            summary.push([w.method.clone(), w.formalism.as_deref().map(capitalize)].into_iter().flatten().collect::<Vec<_>>().join(", "));
         }
         let n = results.fragments().len();
         if n > 0 {

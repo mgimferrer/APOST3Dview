@@ -11,12 +11,13 @@
 
 use std::collections::BTreeMap;
 
-use apost3dview_core::{element_data, envelope_mesh, ApostResults, IndexEntry, IsosurfaceMesh, MatrixObject, Molecule, Quantity, QuantityKind};
+use apost3dview_core::{envelope_mesh, ApostResults, IndexEntry, IsosurfaceMesh, MatrixObject, Molecule, Quantity, QuantityKind};
 use apost3dview_render::{format_signed, AtomInstance, ColorScale, EnvelopeRange, IsosurfaceVertex, Legend};
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 use crate::names::{atom_name, fragment_name};
+use crate::util::capitalize;
 use crate::results::fragment_color;
 
 /// What is shown on the molecule.
@@ -242,7 +243,7 @@ pub(crate) fn enpart_term_name(term: &str) -> &'static str {
 /// The index entry a view shows, if it is a quantity this file has.
 pub(crate) fn shown_entry<'a>(results: &'a ApostResults, view: &ResultsView) -> Option<&'a IndexEntry> {
     match &view.shown {
-        Shown::Quantity(id) => results.index.iter().find(|e| &e.id == id),
+        Shown::Quantity(id) => results.entry(id),
         _ => None,
     }
 }
@@ -258,7 +259,7 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
     match &view.shown {
         Shown::Nothing => {}
         Shown::Fragments => {
-            scene.envelopes = (0..n_fragments).map(|f| (f, rgb(fragment_color(f)))).collect();
+            scene.envelopes = (0..n_fragments).map(|f| (f, fragment_rgb(f))).collect();
         }
         Shown::Quantity(_) => {
             let Some(entry) = shown_entry(results, view) else { return scene };
@@ -355,18 +356,14 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
     scene
 }
 
-fn capitalize(text: &str) -> String {
-    let mut chars = text.chars();
-    chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
-}
-
-fn rgb(c: [u8; 3]) -> [f32; 3] {
-    c.map(|v| v as f32 / 255.0)
+/// A fragment's palette color as sRGB in [0, 1].
+pub(crate) fn fragment_rgb(position: usize) -> [f32; 3] {
+    fragment_color(position).map(|v| v as f32 / 255.0)
 }
 
 /// The drawn radius of atom `i`, as the renderer draws it.
 pub(crate) fn drawn_radius(molecule: &Molecule, i: usize, atom_scale: f32) -> f32 {
-    element_data(molecule.atomic_numbers[i]).vdw_radius * atom_scale
+    crate::util::drawn_radius(molecule.atomic_numbers[i], atom_scale)
 }
 
 /// One envelope mesh per fragment, around its visible atoms. Kept until
@@ -418,7 +415,7 @@ pub(crate) fn halo_instances(scene: &ResultsScene, molecule: &Molecule, atom_sca
 /// Bond thickness from APOST-3D's atomic bond orders (one scale per
 /// bond of `molecule`), when the run has them.
 pub(crate) fn bond_scales(results: &ApostResults, molecule: &Molecule) -> Option<Vec<f32>> {
-    let entry = results.index.iter().find(|e| e.id == "bond_orders.atoms.matrix")?;
+    let entry = results.entry("bond_orders.atoms.matrix")?;
     let Ok(Quantity::Matrix(m)) = results.quantity(entry) else { return None };
     Some(
         molecule
@@ -482,7 +479,7 @@ pub(crate) fn grouped_entries(results: &ApostResults, include_comparison: bool) 
     // (APOST-3D's advice, brief 09).
     let iqa: Vec<&IndexEntry> = ["enpart.total.fragments", "enpart.total.atoms"]
     .iter()
-    .filter_map(|id| results.index.iter().find(|e| e.id == *id))
+    .filter_map(|id| results.entry(id))
     .collect();
     groups.push(("Energy decomposition (IQA)", iqa));
     groups.retain(|(_, entries)| !entries.is_empty());

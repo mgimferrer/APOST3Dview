@@ -51,12 +51,12 @@ impl App {
                 if structure.hidden_atoms.contains(&index) {
                     continue;
                 }
-                let radius = element_data(z).vdw_radius * self.material.atom_scale;
+                let radius = crate::util::drawn_radius(z, self.material.atom_scale);
                 let scale = glyph_scale_for_world_size(radius * self.atom_label_style.relative_size);
                 let text = match self.atom_label_mode {
                     AtomLabelMode::Number => format!("{}", index + 1),
                     AtomLabelMode::Type => element_data(z).symbol.to_string(),
-                    AtomLabelMode::NumberType => format!("{}{}", element_data(z).symbol, index + 1),
+                    AtomLabelMode::NumberType => crate::names::atom_name(&structure.molecule.atomic_numbers, index),
                     AtomLabelMode::None => unreachable!(),
                 };
                 let to_camera = (camera.eye() - position).normalize_or_zero();

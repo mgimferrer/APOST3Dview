@@ -1189,24 +1189,6 @@ impl ViewportResources {
         self.bond_instances = Some((bond_buffer, bond_data.len() as u32));
     }
 
-    /// Uploads atom and bond instances built by the caller — for displays
-    /// that change bonds beyond hide/style (thickness by bond order, extra
-    /// links between atoms that perception did not connect).
-    pub fn update_geometry_instances(&mut self, device: &wgpu::Device, atoms: &[AtomInstance], bonds: &[BondInstance]) {
-        let atom_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("atom_instance_buffer"),
-            contents: bytemuck::cast_slice(atoms),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let bond_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("bond_instance_buffer"),
-            contents: bytemuck::cast_slice(bonds),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        self.atom_instances = Some((atom_buffer, atoms.len() as u32));
-        self.bond_instances = Some((bond_buffer, bonds.len() as u32));
-    }
-
     /// Rebuilds the small overlay buffers for the current selection.
     pub fn update_highlights(
         &mut self,

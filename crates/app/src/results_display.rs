@@ -2,8 +2,8 @@
 //! labels, legend, bond thickness (see `results_view` for what is shown).
 
 use apost3dview_core::Quantity;
-use apost3dview_render::{glyph_scale_for_font_size, layout_label, GlyphInstance, Halo, Legend, OrbitCamera, ViewportResources};
-use egui::{Color32, Pos2, Rect};
+use apost3dview_render::{glyph_scale_for_font_size, layout_label, GlyphInstance, Halo, Legend, OrbitCamera};
+use egui::{Pos2, Rect};
 
 use crate::app::App;
 use crate::results_view::{
@@ -82,12 +82,10 @@ impl App {
                 }
             }
         }
-        let mut renderer = self.render_state.renderer.write();
-        if let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() {
+        self.with_resources(|resources| {
             resources.update_envelopes(&self.render_state.device, &vertices, &ranges);
             resources.update_halos(&self.render_state.device, &halos);
-
-        }
+        });
     }
 
     /// Value labels for the active structure, sized for a view
@@ -145,7 +143,7 @@ impl App {
     pub(crate) fn paint_legend(&self, painter: &egui::Painter, rect: Rect) {
         let Some(legend) = self.results_legend() else { return };
         let ink = self.label_colors().0;
-        let ink = Color32::from_rgb((ink[0] * 255.0) as u8, (ink[1] * 255.0) as u8, (ink[2] * 255.0) as u8);
+        let ink = crate::util::rgb_to_color32(ink);
         let (bar_w, bar_h) = (240.0, 11.0);
         let origin = Pos2::new(rect.left() + 24.0, rect.bottom() - 52.0);
         let mut mesh = egui::Mesh::default();
@@ -217,7 +215,7 @@ impl App {
         view.shown = match what {
             "nothing" => crate::results_view::Shown::Nothing,
             "fragments" => crate::results_view::Shown::Fragments,
-            id if results.index.iter().any(|e| e.id == id) => crate::results_view::Shown::Quantity(id.to_string()),
+            id if results.entry(id).is_some() => crate::results_view::Shown::Quantity(id.to_string()),
             _ => return false,
         };
         view.focus = 0;

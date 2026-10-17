@@ -76,7 +76,7 @@ impl ApostAttachment {
     }
 
     pub(crate) fn file_name(&self) -> String {
-        self.results_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+        crate::util::file_display_name(&self.results_path)
     }
 
     pub(crate) fn load_report(&mut self) {
@@ -96,7 +96,7 @@ impl App {
     /// explained rather than silently ignored.
     pub(crate) fn attach_results(&mut self, index: usize, results_path: &Path) {
         let Some(structure) = self.structures.get(index) else { return };
-        let results_name = results_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let results_name = crate::util::file_display_name(&results_path);
         let fchk_name = structure.label.clone();
 
         let results = load_apost_results(results_path)

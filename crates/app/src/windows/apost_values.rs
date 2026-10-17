@@ -15,7 +15,7 @@ fn shown_label(results: &ApostResults, shown: &Shown) -> String {
     match shown {
         Shown::Nothing => "Nothing".to_string(),
         Shown::Fragments => "Fragments".to_string(),
-        Shown::Quantity(id) => results.index.iter().find(|e| &e.id == id).map(|e| e.title.clone()).unwrap_or_else(|| id.clone()),
+        Shown::Quantity(id) => results.entry(id).map(|e| e.title.clone()).unwrap_or_else(|| id.clone()),
     }
 }
 
@@ -71,7 +71,7 @@ impl App {
         // IQA: the term shown, between the same atoms or fragments.
         if let Some((term, on_fragments)) = shown_entry(results, view).and_then(|e| enpart_term(&e.id)).map(|(t, f)| (t.to_string(), f)) {
             let level = if on_fragments { "fragments" } else { "atoms" };
-            let terms: Vec<String> = results.enpart().map(|e| e.terms).unwrap_or_default().into_iter().filter(|t| results.index.iter().any(|e| e.id == format!("enpart.{t}.{level}"))).collect();
+            let terms: Vec<String> = results.enpart().map(|e| e.terms).unwrap_or_default().into_iter().filter(|t| results.entry(&format!("enpart.{t}.{level}")).is_some()).collect();
             ui.horizontal(|ui| {
                 ui.label("Term");
                 egui::ComboBox::from_id_salt("results_iqa_term").width(250.0).selected_text(enpart_term_name(&term)).show_ui(ui, |ui| {
@@ -167,7 +167,7 @@ impl App {
             }
         }
 
-        if results.index.iter().any(|e| e.id == "bond_orders.atoms.matrix") {
+        if results.entry("bond_orders.atoms.matrix").is_some() {
             ui.checkbox(&mut view.bond_thickness, "Bond thickness from bond orders")
                 .on_hover_text("Bonds drawn thicker for larger bond orders; off: all bonds equal, usually nicer for figures");
         }

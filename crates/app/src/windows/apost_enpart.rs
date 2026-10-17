@@ -77,7 +77,7 @@ fn warnings(enpart: &Enpart) -> Vec<&'static str> {
 
 /// One table row per atom (or fragment): name, self-energy, additive energy.
 fn energy_rows(results: &ApostResults, level: &str, names: &[String]) -> Option<Vec<(String, Option<f64>, Option<f64>)>> {
-    let vector = |key: &str| match results.index.iter().find(|e| e.id == format!("enpart.atomic_energies.{level}.{key}")).map(|e| results.quantity(e)) {
+    let vector = |key: &str| match results.entry(&format!("enpart.atomic_energies.{level}.{key}")).map(|e| results.quantity(e)) {
         Some(Ok(Quantity::Vector(v))) => Some(v),
         _ => None,
     };

@@ -1,10 +1,11 @@
 use std::io;
+use crate::units::angstrom_from_bohr;
 use std::path::Path;
 
 use glam::Vec3;
 
 use crate::element::element_data;
-use crate::fchk::parse_fchk_geometry;
+use crate::fchk::parse_fchk_summary;
 
 #[derive(Clone)]
 pub struct Bond {
@@ -48,15 +49,13 @@ impl Molecule {
     }
 
     pub fn from_fchk(path: &Path) -> io::Result<Self> {
-        let geometry = parse_fchk_geometry(path)?;
-        let positions: Vec<Vec3> = geometry.positions.iter().map(|&p| Vec3::from(p)).collect();
-        Ok(Self::from_atoms(geometry.atomic_numbers, positions))
+        let summary = parse_fchk_summary(path)?;
+        Ok(Self::from_atoms(summary.atomic_numbers, summary.coordinates_bohr.into_iter().map(angstrom_from_bohr).collect()))
     }
 
     pub fn from_molden(path: &Path) -> io::Result<Self> {
-        let geometry = crate::molden::parse_molden_geometry(path)?;
-        let positions: Vec<Vec3> = geometry.positions.iter().map(|&p| Vec3::from(p)).collect();
-        Ok(Self::from_atoms(geometry.atomic_numbers, positions))
+        let (atomic_numbers, positions) = crate::molden::parse_molden_geometry(path)?;
+        Ok(Self::from_atoms(atomic_numbers, positions))
     }
 
     pub fn bounding_sphere(&self) -> (Vec3, f32) {

@@ -1,8 +1,8 @@
 //! Measure window: distances, angles and dihedrals, drawn as labeled
 //! dashed lines in the view.
 
-use apost3dview_core::{element_data, measure, LengthUnit, MeasurementKind};
-use egui::{Color32, RichText, Slider};
+use apost3dview_core::{measure, LengthUnit, MeasurementKind};
+use egui::{RichText, Slider};
 
 use crate::app::App;
 use crate::state::Measurement;
@@ -36,7 +36,7 @@ impl App {
                 let picks = self.structures[active].selected_atoms.clone();
                 let picks_summary = picks
                     .iter()
-                    .map(|&i| format!("{}{}", element_data(self.structures[active].molecule.atomic_numbers[i]).symbol, i + 1))
+                    .map(|&i| crate::names::atom_name(&self.structures[active].molecule.atomic_numbers, i))
                     .collect::<Vec<_>>()
                     .join(", ");
                 let what = match picks.len() {
@@ -100,15 +100,10 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.label("Text color:");
                         ui.color_edit_button_srgba(&mut self.measurement_style.text_color);
-                        let mut line_color = Color32::from_rgb(
-                            (self.measurement_style.line_color[0] * 255.0) as u8,
-                            (self.measurement_style.line_color[1] * 255.0) as u8,
-                            (self.measurement_style.line_color[2] * 255.0) as u8,
-                        );
+                        let mut line_color = crate::util::rgb_to_color32(self.measurement_style.line_color);
                         ui.label("Line color:");
                         if ui.color_edit_button_srgba(&mut line_color).changed() {
-                            self.measurement_style.line_color =
-                                [line_color.r() as f32 / 255.0, line_color.g() as f32 / 255.0, line_color.b() as f32 / 255.0];
+                            self.measurement_style.line_color = crate::util::color32_to_rgb(line_color);
                             self.rebuild_measurements();
                         }
                     });

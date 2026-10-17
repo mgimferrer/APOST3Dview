@@ -23,13 +23,11 @@
 
 use std::path::{Path, PathBuf};
 
-use glam::Vec3;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::fchk::FchkSummary;
 use crate::molecule::Molecule;
-use crate::units::ANGSTROM_PER_BOHR;
 
 pub const RESULTS_SCHEMA: &str = "apost3d-results";
 /// The only schema major version this viewer understands.
@@ -394,6 +392,11 @@ impl ApostResults {
     }
 
     /// Index entries of one kind, in file order.
+    /// The index entry with this id.
+    pub fn entry(&self, id: &str) -> Option<&IndexEntry> {
+        self.index.iter().find(|e| e.id == id)
+    }
+
     pub fn entries(&self, kind: QuantityKind) -> impl Iterator<Item = &IndexEntry> {
         self.index.iter().filter(move |e| e.kind == kind)
     }
@@ -402,11 +405,7 @@ impl ApostResults {
     /// bonds), for when the results file is opened without its `.fchk`.
     pub fn molecule(&self) -> Option<Molecule> {
         let block = self.molecule.as_ref()?;
-        let positions = block
-            .coordinates_bohr
-            .iter()
-            .map(|c| Vec3::new((c[0] * ANGSTROM_PER_BOHR) as f32, (c[1] * ANGSTROM_PER_BOHR) as f32, (c[2] * ANGSTROM_PER_BOHR) as f32))
-            .collect();
+        let positions = block.coordinates_bohr.iter().map(|&c| crate::units::angstrom_from_bohr(c)).collect();
         Some(Molecule::from_atoms(block.atomic_numbers.clone(), positions))
     }
 
@@ -978,7 +977,7 @@ mod tests {
         assert!(r.analysis_names().is_empty());
         let molecule = r.molecule().unwrap();
         assert_eq!(molecule.atomic_numbers.len(), 6);
-        assert!((molecule.positions[0].x as f64 - -2.62015629 * ANGSTROM_PER_BOHR).abs() < 1e-5);
+        assert!((molecule.positions[0].x as f64 - -2.62015629 * crate::units::ANGSTROM_PER_BOHR).abs() < 1e-5);
     }
 
     #[test]

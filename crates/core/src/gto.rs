@@ -272,12 +272,9 @@ fn grid_box(basis: &BasisSet, spacing_bohr: f64, padding_bohr: f64) -> Result<(D
 
 /// A grid in angstrom with `values`, from a box in bohr.
 fn grid_in_angstrom(min: DVec3, dims: [usize; 3], spacing_bohr: f64, values: Vec<f32>) -> crate::cube::ScalarGrid {
-    let to_angstrom = |v: DVec3| -> Vec3 {
-        Vec3::new((v.x * crate::units::ANGSTROM_PER_BOHR) as f32, (v.y * crate::units::ANGSTROM_PER_BOHR) as f32, (v.z * crate::units::ANGSTROM_PER_BOHR) as f32)
-    };
     let step = (spacing_bohr * crate::units::ANGSTROM_PER_BOHR) as f32;
     let steps = [Vec3::new(step, 0.0, 0.0), Vec3::new(0.0, step, 0.0), Vec3::new(0.0, 0.0, step)];
-    crate::cube::ScalarGrid { origin: to_angstrom(min), dims, steps, values }
+    crate::cube::ScalarGrid { origin: crate::units::angstrom_from_bohr(min.to_array()), dims, steps, values }
 }
 
 /// A density on a grid, rho(r) = sum over the channels' orbitals of

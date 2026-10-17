@@ -343,7 +343,7 @@ impl App {
         };
         match self.save_session_to(&path) {
             Ok(()) => {
-                self.show_status(format!("Session saved as {}", path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()));
+                self.show_status(format!("Session saved as {}", crate::util::file_display_name(&path)));
                 self.session_path = Some(path);
             }
             Err(err) => self.show_warning(format!("Could not save the session: {err}")),
@@ -352,7 +352,7 @@ impl App {
 
     /// Replaces everything open with the session in `path`.
     pub(crate) fn open_session(&mut self, path: &Path) {
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = crate::util::file_display_name(&path);
         let session: SessionFile = match std::fs::read_to_string(path).map_err(|e| e.to_string()).and_then(|t| toml::from_str(&t).map_err(|e| e.to_string())) {
             Ok(session) => session,
             Err(err) => {

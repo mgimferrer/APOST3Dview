@@ -45,6 +45,7 @@
 //!   below repairs this (and the `D`-exponent variant some Fortran codes
 //!   use instead of `E`) before falling back to a normal float parse.
 
+use crate::invalid_data;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -192,10 +193,6 @@ impl ScalarGrid {
 pub struct CubeFile {
     pub molecule: Molecule,
     pub grid: ScalarGrid,
-}
-
-fn invalid_data(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
 
 /// Parses a float the way Rust's own `str::parse` does, but also repairs

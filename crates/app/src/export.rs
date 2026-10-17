@@ -229,13 +229,13 @@ impl App {
     /// (same name, `.a3dview`) when "Also save the session" is ticked, so
     /// every figure keeps the exact setup that produced it.
     fn report_saved_image(&mut self, image: &std::path::Path) {
-        let image_name = image.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let image_name = crate::util::file_display_name(&image);
         if !self.render_export.save_session_with_image {
             self.show_status(format!("Saved {image_name}"));
             return;
         }
         let session = image.with_extension(SESSION_EXTENSION);
-        let session_name = session.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let session_name = crate::util::file_display_name(&session);
         match self.save_session_to(&session) {
             Ok(()) => self.show_status(format!("Saved {image_name} and its session {session_name}")),
             Err(err) => self.show_warning(format!("Saved {image_name}, but not its session: {err}")),

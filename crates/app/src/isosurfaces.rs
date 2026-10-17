@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use apost3dview_core::{extract_isosurface, refine_grid, IsosurfaceMesh, ScalarGrid};
-use apost3dview_render::{push_isosurface_vertices, IsosurfaceVertex, ViewportResources};
+use apost3dview_render::{push_isosurface_vertices, IsosurfaceVertex};
 use egui::Color32;
 
 use crate::app::App;
@@ -272,10 +272,10 @@ impl App {
                 surface.push_vertices(&mut vertices);
             }
         }
-        let mut renderer = self.render_state.renderer.write();
-        if let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() {
+        let material = self.ao_render_isosurface_material();
+        self.with_resources(|resources| {
             resources.update_isosurface(&self.render_state.device, &vertices);
-            resources.update_isosurface_material(&self.render_state.queue, &self.ao_render_isosurface_material());
-        }
+            resources.update_isosurface_material(&self.render_state.queue, &material);
+        });
     }
 }

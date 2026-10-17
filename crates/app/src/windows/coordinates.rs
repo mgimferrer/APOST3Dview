@@ -46,7 +46,7 @@ impl App {
 
                 if let Some(target) = &export_target {
                     ui.add_space(4.0);
-                    let file_name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    let file_name = crate::util::file_display_name(&target);
                     if ui
                         .add_sized([ui.available_width(), 28.0], egui::Button::new(format!("Save coordinates as {file_name}")))
                         .on_hover_text(target.display().to_string())

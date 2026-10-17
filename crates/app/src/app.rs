@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use apost3dview_core::{element_data, CoordinateFormat, LengthUnit};
+use apost3dview_core::{CoordinateFormat, LengthUnit};
 use apost3dview_render::{AoSettings, DofSettings, GlyphAtlas, IsosurfaceMaterial, Material, OrbitCamera, ViewportResources};
 use egui::{Color32, RichText};
 use glam::Vec2;
@@ -246,8 +246,7 @@ impl App {
         let Some(active) = self.active_structure else { return };
         let Some(structure) = self.structures.get(active) else { return };
         let bond_scales = self.bond_scales(structure);
-        let mut renderer = self.render_state.renderer.write();
-        if let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() {
+        self.with_resources(|resources| {
             resources.update_geometry(
                 &self.render_state.device,
                 &structure.molecule,
@@ -257,26 +256,26 @@ impl App {
                 None,
                 bond_scales.as_deref(),
             );
-        }
+        });
+    }
+
+    /// Runs `f` on the viewport's GPU resources, if the renderer has them.
+    pub(crate) fn with_resources<R>(&self, f: impl FnOnce(&mut ViewportResources) -> R) -> Option<R> {
+        let mut renderer = self.render_state.renderer.write();
+        renderer.callback_resources.get_mut::<ViewportResources>().map(f)
     }
 
     pub(crate) fn rebuild_highlights(&self) {
         let Some(active) = self.active_structure else { return };
         let Some(structure) = self.structures.get(active) else { return };
-        let mut renderer = self.render_state.renderer.write();
-        if let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() {
-            resources.update_highlights(&self.render_state.device, &structure.molecule, &structure.selected_atoms, &structure.selected_bonds);
-        }
+        self.with_resources(|resources| resources.update_highlights(&self.render_state.device, &structure.molecule, &structure.selected_atoms, &structure.selected_bonds));
     }
 
     pub(crate) fn rebuild_measurements(&self) {
         let Some(active) = self.active_structure else { return };
         let Some(structure) = self.structures.get(active) else { return };
         let segments: Vec<(usize, usize)> = structure.measurements.iter().flat_map(|m| m.kind.segments()).collect();
-        let mut renderer = self.render_state.renderer.write();
-        if let Some(resources) = renderer.callback_resources.get_mut::<ViewportResources>() {
-            resources.update_measurements(&self.render_state.device, &structure.molecule, &segments, self.measurement_style.line_color);
-        }
+        self.with_resources(|resources| resources.update_measurements(&self.render_state.device, &structure.molecule, &segments, self.measurement_style.line_color));
     }
 
     pub(crate) fn show_warning(&mut self, message: impl Into<String>) {
@@ -481,7 +480,7 @@ impl App {
                     if selected > 0 {
                         ui.separator();
                         let names: Vec<String> =
-                            structure.selected_atoms.iter().map(|&i| format!("{}{}", element_data(structure.molecule.atomic_numbers[i]).symbol, i + 1)).collect();
+                            structure.selected_atoms.iter().map(|&i| crate::names::atom_name(&structure.molecule.atomic_numbers, i)).collect();
                         let mut text = format!("Selected: {}", if names.len() > 6 { format!("{} atoms", names.len()) } else { names.join(", ") });
                         if !structure.selected_bonds.is_empty() {
                             text.push_str(&format!(" + {} bond(s)", structure.selected_bonds.len()));
