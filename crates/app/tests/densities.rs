@@ -43,6 +43,60 @@ fn total_and_spin_density_of_a_triplet() {
     assert_eq!(harness.state().surface_labels(), vec![("Total density".to_string(), false), ("Spin density".to_string(), true)]);
 }
 
+/// The total density starts translucent, the spin density opaque; the
+/// Translucent checkbox switches either, Default goes back to the
+/// density's own look, and none of it carries over to the next orbitals,
+/// which start opaque.
+#[test]
+fn densities_start_translucent_and_switch_with_one_checkbox() {
+    let mut harness = app_with(vec![testdata("H2O-T-ccpVTZ.fchk")]);
+    harness.get_by_label("Surfaces").click();
+    harness.run_steps(2);
+    harness.get_by_label("Clear").click();
+    harness.get_by_label("Total density").click();
+    harness.get_by_label("Spin density").click();
+    harness.run_steps(2);
+    harness.get_by_label("Generate 2 surface(s)").click_accesskit();
+    harness.run_steps(4);
+    assert_eq!(harness.state().surface_opacities(), vec![0.35, 1.0]);
+
+    // The total density (selected) made opaque, then translucent again.
+    harness.get_by_label("Translucent").click_accesskit();
+    harness.run_steps(2);
+    assert_eq!(harness.state().surface_opacities(), vec![1.0, 1.0]);
+    harness.get_by_label("Translucent").click_accesskit();
+    harness.run_steps(2);
+    assert_eq!(harness.state().surface_opacities(), vec![0.35, 1.0]);
+    // Opaque again; Default brings back the density's translucency.
+    harness.get_by_label("Translucent").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("Default").click_accesskit();
+    harness.run_steps(2);
+    assert_eq!(harness.state().surface_opacities(), vec![0.35, 1.0]);
+
+    // The spin density made translucent the same way.
+    harness.get_all_by_label("Spin density").last().unwrap().click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("Translucent").click_accesskit();
+    harness.run_steps(2);
+    assert_eq!(harness.state().surface_opacities(), vec![0.35, 0.35]);
+
+    // Orbitals generated afterwards are opaque, and translucent at 0.5.
+    // (The generation checkboxes come first; the surface list repeats the names.)
+    harness.get_all_by_label("Total density").next().unwrap().click();
+    harness.get_all_by_label("Spin density").next().unwrap().click();
+    harness.get_by_label("HOMO/LUMO").click();
+    harness.run_steps(2);
+    harness.get_by_label_contains("Generate 4").click_accesskit();
+    harness.run_steps(4);
+    let opacities = harness.state().surface_opacities();
+    assert_eq!(opacities.len(), 6, "{:?}", harness.state().surface_labels());
+    assert_eq!(&opacities[2..], &[1.0, 1.0, 1.0, 1.0]);
+    harness.get_by_label("Translucent").click_accesskit();
+    harness.run_steps(2);
+    assert_eq!(harness.state().surface_opacities()[2], 0.5);
+}
+
 #[test]
 fn a_closed_shell_offers_no_spin_density() {
     let mut harness = app_with(vec![testdata("H2O-631G.fchk")]);

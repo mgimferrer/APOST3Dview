@@ -114,12 +114,11 @@ fn fs_main_ao(in: VertexOutput) -> @location(0) vec4<f32> {
 
 // Ambient-occlusion G-buffer pass: outputs world-space normal instead of
 // shaded color, exactly like the atom/cylinder `fs_gbuffer` entry points,
-// so the isosurface participates in AO as both an occluder (atoms/bonds
-// wrapped by a lobe correctly darken) and a receiver (`fs_main_ao` above).
-// Depth write behaves the same as `fs_main`'s (real rasterized depth, no
-// override) — for G-buffer purposes a translucent lobe is treated as an
-// opaque occluder, the same simplification any screen-space AO scheme
-// makes for every occluder, translucent or not.
+// so an opaque isosurface participates in AO as both an occluder
+// (atoms/bonds wrapped by a lobe correctly darken) and a receiver
+// (`fs_main_ao` above). Translucent surfaces are drawn with `fs_main` only
+// and never reach this pass: the occlusion and outline at a translucent
+// pixel would belong to whatever lies behind it (see `viewport.rs`).
 @fragment
 fn fs_gbuffer(in: VertexOutput) -> @location(0) vec4<f32> {
     let normal = facing_normal(in.normal, in.world_position);

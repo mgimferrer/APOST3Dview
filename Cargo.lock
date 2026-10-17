@@ -221,6 +221,7 @@ dependencies = [
  "image",
  "imgref",
  "pollster 1.0.1",
+ "rayon",
  "rgb",
  "serde",
  "wgpu",

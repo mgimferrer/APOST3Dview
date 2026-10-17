@@ -6,7 +6,6 @@
 use egui::{RichText, Slider};
 
 use crate::app::App;
-use crate::isosurfaces::SurfaceSettings;
 use crate::orbital_sets::show_set_checklist;
 use crate::orbitals::{show_mo_checklist, OrbitalAccuracyPreset};
 use crate::state::LoadedStructure;
@@ -362,6 +361,9 @@ impl App {
         };
         let surface_count = structure.surfaces.len();
         let surface = &mut structure.surfaces[index];
+        let own_defaults = surface.default_settings();
+        let translucent_opacity = surface.translucent_opacity();
+        let is_density = surface.density().is_some();
 
         ui.add_space(6.0);
         ui.separator();
@@ -376,8 +378,12 @@ impl App {
                 ui.selectable_value(&mut s.refinement, factor, format!("{factor}x"));
             }
         });
+        ui.checkbox(&mut s.both_signs, "Both signs (+/-)");
         ui.horizontal(|ui| {
-            ui.checkbox(&mut s.both_signs, "Both signs (+/-)");
+            let mut translucent = s.opacity < 1.0;
+            if ui.checkbox(&mut translucent, "Translucent").on_hover_text("See the atoms and the other surfaces through this one").changed() {
+                s.opacity = if translucent { translucent_opacity } else { 1.0 };
+            }
             ui.add(Slider::new(&mut s.opacity, 0.05..=1.0).text("opacity"));
         });
         if surface.fragment_tint.is_some() {
@@ -404,14 +410,18 @@ impl App {
             }
         });
         if reset {
-            *s = SurfaceSettings::default();
+            *s = own_defaults;
         }
         let settings = *s;
         if apply_to_all {
             structure.surfaces.iter_mut().for_each(|other| other.settings = settings);
         }
         if settings != before || apply_to_all {
-            self.surface_defaults = settings;
+            // A density's settings (its isovalue, its translucency) mean
+            // nothing for the next orbitals.
+            if !is_density {
+                self.surface_defaults = settings;
+            }
             self.rebuild_isosurface();
         }
     }

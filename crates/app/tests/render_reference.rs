@@ -73,7 +73,7 @@ fn orbital(orbital: usize, opacity: f32, refinement: usize, set: Option<&str>, b
     )
 }
 
-/// The total or spin density, with the app's default look for each.
+/// The total or spin density (opaque; see `translucent`).
 fn density(spin: bool) -> String {
     let (isovalue, both, positive) = if spin { (0.01, true, "[60, 90, 230, 255]") } else { (0.1, false, "[120, 160, 210, 255]") };
     format!(
@@ -81,6 +81,18 @@ fn density(spin: bool) -> String {
          positive_color = {positive}\nnegative_color = [220, 70, 60, 255]\nopacity = 1.0\nby_fragment = false\n\
          kind = \"density\"\nspin_density = {spin}\ngrid_spacing_bohr = 0.28\nbox_padding_bohr = 4.0\n"
     )
+}
+
+/// `surface` (from `orbital` or `density`) at `opacity`, with other colors
+/// if given.
+fn translucent(surface: String, opacity: f32, colors: Option<(&str, &str)>) -> String {
+    let surface = surface.replace("opacity = 1.0", &format!("opacity = {opacity}")).replace("opacity = 1\n", &format!("opacity = {opacity}\n"));
+    match colors {
+        Some((positive, negative)) => surface
+            .replace("positive_color = [60, 90, 230, 255]", &format!("positive_color = {positive}"))
+            .replace("negative_color = [220, 70, 60, 255]", &format!("negative_color = {negative}")),
+        None => surface,
+    }
 }
 
 /// An APOST-3D results view showing `id` (focus 0-based).
@@ -126,6 +138,22 @@ fn scenes() -> Vec<Scene> {
         far(2.4, scene("h2o-lumo-ao-dof", H2O, &format!("{AO_DOF}[[structures]]\n{}", orbital(6, 1.0, 2, None, false)))),
         // Densities of an open shell.
         far(2.6, scene("triplet-densities", H2O_T, &format!("{AO}[[structures]]\n{}{}", density(false), density(true)))),
+        // Translucent surfaces, sorted farthest first: two orbitals that
+        // intersect, and the total density as it is first drawn (with
+        // depth of field, which focuses through it).
+        far(
+            2.4,
+            scene(
+                "h2o-homo-lumo-translucent",
+                H2O,
+                &format!(
+                    "{AO}[[structures]]\n{}{}",
+                    translucent(orbital(5, 1.0, 1, None, false), 0.5, None),
+                    translucent(orbital(6, 1.0, 1, None, false), 0.5, Some(("[60, 170, 90, 255]", "[235, 165, 40, 255]")))
+                ),
+            ),
+        ),
+        far(1.6, scene("triplet-total-density", H2O_T, &format!("{AO_DOF}[[structures]]\n{}", translucent(density(false), 0.35, None)))),
         // APOST-3D: fragment envelopes (the default view), with and
         // without depth of field (the value labels take another path).
         scene("fe-fragments-ao-dof", FE, AO_DOF),
@@ -145,6 +173,7 @@ fn scenes() -> Vec<Scene> {
         ("window-bi-ao-dof", BI, AO_DOF.to_string()),
         ("window-h2o-homo-ao", H2O, format!("{AO}[[structures]]\n{}", orbital(5, 1.0, 1, None, false))),
         ("window-fe-fragments", FE, AO_DOF.to_string()),
+        ("window-h2o-homo-translucent", H2O, format!("{AO}[[structures]]\n{}", translucent(orbital(5, 1.0, 1, None, false), 0.5, None))),
     ] {
         let zoom_out = if files == H2O { 2.4 } else { 1.0 };
         list.push(Scene { window: true, zoom_out, ..scene(name, files, &patch) });

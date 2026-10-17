@@ -14,7 +14,7 @@ use crate::instances::{
     build_atom_highlight_instances, build_atom_instances, build_bond_highlight_instances, build_bond_instances,
     build_measurement_instances, AtomInstance, BondInstance, BondVisualStyle,
 };
-use crate::isosurface_mesh::{IsosurfaceMaterial, IsosurfaceVertex};
+use crate::isosurface_mesh::{is_translucent, sort_back_to_front, IsosurfaceMaterial, IsosurfaceVertex};
 use crate::label::GlyphInstance;
 use crate::material::Material;
 use crate::mesh::{build_unit_cylinder, CylinderVertex};
@@ -286,18 +286,24 @@ pub struct ViewportResources {
     bond_highlight_instances: Option<(wgpu::Buffer, u32)>,
     measurement_instances: Option<(wgpu::Buffer, u32)>,
 
-    // Isosurfaces (Phase 2, .cube orbitals/densities): an ordinary
-    // rasterized/lit triangle mesh (marching tetrahedra output), not a
-    // raymarched impostor like atoms/bonds — translucent, alpha-blended,
-    // no depth write (so several overlapping lobes/kept surfaces layer
-    // without fighting each other), and its own material uniform kept
-    // entirely separate from the atom/bond one.
+    // Isosurfaces (orbitals, densities, cube files): an ordinary
+    // rasterized/lit triangle mesh (Surface Nets output), not a raymarched
+    // impostor like atoms/bonds, with its own material uniform kept
+    // entirely separate from the atom/bond one. Opaque surfaces
+    // (`isosurface_vertices`) write depth and take part in ambient
+    // occlusion like atoms; translucent ones (opacity below 1) are drawn
+    // after them, without writing depth, their triangles re-sorted
+    // farthest first whenever the camera moves, so every layer blends in
+    // the right order.
     isosurface_pipeline: wgpu::RenderPipeline,
     isosurface_pipeline_ao: wgpu::RenderPipeline,
     isosurface_gbuffer_pipeline: wgpu::RenderPipeline,
     isosurface_material_buffer: wgpu::Buffer,
     isosurface_material_bind_group: wgpu::BindGroup,
     isosurface_vertices: Option<(wgpu::Buffer, u32)>,
+    translucent_pipeline: wgpu::RenderPipeline,
+    translucent_vertices: Option<(wgpu::Buffer, u32)>,
+    translucent_cpu: Mutex<TranslucentTriangles>,
 
     // Ambient occlusion (see `ao.rs`): a depth+normal G-buffer pre-pass
     // reusing the atom/cylinder geometry, then two full-screen passes
@@ -329,6 +335,14 @@ pub struct ViewportResources {
     dof_blit_bind_group_layout: wgpu::BindGroupLayout,
     dof_blit_pipeline: wgpu::RenderPipeline,
     dof_live: Option<DofLiveTextures>,
+}
+
+/// The translucent surfaces' triangles, and the camera position they were
+/// last sorted for (sorting again only when it moves).
+#[derive(Default)]
+struct TranslucentTriangles {
+    triangles: Vec<IsosurfaceVertex>,
+    sorted_for: Option<[f32; 3]>,
 }
 
 /// Persistent, resize-aware G-buffer/AO textures for the live view —
@@ -607,19 +621,13 @@ impl ViewportResources {
 
         // Isosurfaces: an ordinary rasterized/lit triangle mesh, not a
         // raymarched impostor, so no custom fragment depth override is
-        // needed. Depth *write* is deliberately on, even though the
-        // surface is translucent — with no back-face culling, a closed
-        // lobe's front and back both rasterize at the same pixels, and
-        // without depth write there's no guaranteed order between them:
-        // alpha blending isn't order-independent, so wherever the GPU
-        // happens to process back-before-front (varying essentially per
-        // pixel) the blend comes out visibly different, showing up as
-        // fine mottled/speckled noise with no relation to mesh quality.
-        // Writing depth lets the depth test consistently pick whichever
-        // layer (front of this lobe, a different kept surface, ...) is
-        // actually nearest, the same simplification most real-time
-        // viewers (VMD included) use for translucent isosurfaces rather
-        // than full order-independent transparency.
+        // needed. Opaque surfaces write depth like any solid object.
+        // Translucent ones don't: their triangles are blended farthest
+        // first instead (`sort_back_to_front`), so both walls of a lobe and
+        // every surface behind it show, in the right order. Writing depth
+        // there with unsorted triangles (as before 2026-10-17) let the GPU's
+        // arbitrary triangle order decide which layers survived, pixel by
+        // pixel, which showed as mottled patches.
         let isosurface_depth = depth_state(true, wgpu::CompareFunction::Less);
 
         let isosurface_material_layout = create_bind_group_layout(device, "isosurface_material_bind_group_layout", &[uniform_entry(0)]);
@@ -661,10 +669,16 @@ impl ViewportResources {
         let envelope_mesh = VertexSource { module: &envelope_shader, entry: "vs_main", buffers: &mesh_buffers };
         let envelope_pipeline_layout = create_pipeline_layout(device, "envelope_pipeline_layout", &[&bind_group_layout]);
         let envelope_pipeline =
-            shaded("envelope_pipeline", &envelope_pipeline_layout, &envelope_mesh, "fs_main", alpha_blend, translucent_depth).build(device);
+            shaded("envelope_pipeline", &envelope_pipeline_layout, &envelope_mesh, "fs_main", alpha_blend, translucent_depth.clone()).build(device);
 
         let isosurface_pipeline =
             shaded("isosurface_pipeline", &isosurface_pipeline_layout, &isosurface_mesh, "fs_main", alpha_blend, isosurface_depth.clone())
+                .build(device);
+        // Translucent surfaces: no ambient-occlusion variant, since they
+        // neither cast nor receive it (the occlusion and outline at a
+        // translucent pixel belong to whatever lies behind it).
+        let translucent_pipeline =
+            shaded("translucent_pipeline", &isosurface_pipeline_layout, &isosurface_mesh, "fs_main", alpha_blend, translucent_depth.clone())
                 .build(device);
 
         // AO-sampling variant of the isosurface pipeline — same shape as
@@ -832,6 +846,9 @@ impl ViewportResources {
             isosurface_material_buffer,
             isosurface_material_bind_group,
             isosurface_vertices: None,
+            translucent_pipeline,
+            translucent_vertices: None,
+            translucent_cpu: Mutex::new(TranslucentTriangles::default()),
             atom_pipeline_ao,
             cylinder_pipeline_ao,
             ao_sample_bind_group_layout,
@@ -1010,17 +1027,24 @@ impl ViewportResources {
     /// it's shown at all, or the "kept" surfaces list. `vertices` is
     /// already the full combined set (live + kept) — see
     /// `crate::isosurface_mesh::push_isosurface_vertices`.
+    /// Uploads every shown surface (a triangle soup), split into the
+    /// opaque ones and the translucent ones; the latter are sorted for the
+    /// camera at the next `write_uniforms`.
     pub fn update_isosurface(&mut self, device: &wgpu::Device, vertices: &[IsosurfaceVertex]) {
-        if vertices.is_empty() {
-            self.isosurface_vertices = None;
-            return;
-        }
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("isosurface_vertex_buffer"),
-            contents: bytemuck::cast_slice(vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        self.isosurface_vertices = Some((buffer, vertices.len() as u32));
+        let (translucent, opaque): (Vec<IsosurfaceVertex>, Vec<IsosurfaceVertex>) = vertices.iter().partition(|v| is_translucent(v));
+        let upload = |label: &str, vertices: &[IsosurfaceVertex], usage: wgpu::BufferUsages| {
+            (!vertices.is_empty()).then(|| {
+                let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(label),
+                    contents: bytemuck::cast_slice(vertices),
+                    usage: wgpu::BufferUsages::VERTEX | usage,
+                });
+                (buffer, vertices.len() as u32)
+            })
+        };
+        self.isosurface_vertices = upload("isosurface_vertex_buffer", &opaque, wgpu::BufferUsages::empty());
+        self.translucent_vertices = upload("translucent_vertex_buffer", &translucent, wgpu::BufferUsages::COPY_DST);
+        *self.translucent_cpu.lock().unwrap() = TranslucentTriangles { triangles: translucent, sorted_for: None };
     }
 
     pub fn update_isosurface_material(&self, queue: &wgpu::Queue, material: &IsosurfaceMaterial) {
@@ -1033,13 +1057,23 @@ impl ViewportResources {
     pub fn write_uniforms(&self, queue: &wgpu::Queue, uniforms: &SceneUniforms) {
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniforms));
         let e = uniforms.camera_eye;
-        *self.envelope_eye.lock().unwrap() = [e[0], e[1], e[2]];
+        let e3 = [e[0], e[1], e[2]];
+        *self.envelope_eye.lock().unwrap() = e3;
         // Halos farthest first, for this camera.
         if let Some((buffer, _)) = &self.halo_instances {
             let mut halos = self.halo_cpu.lock().unwrap();
             let distance = |h: &AtomInstance| (0..3).map(|i| (h.center[i] - e[i]).powi(2)).sum::<f32>();
             halos.sort_by(|a, b| distance(b).total_cmp(&distance(a)));
             queue.write_buffer(buffer, 0, bytemuck::cast_slice(&halos));
+        }
+        // Translucent surface triangles farthest first, for this camera.
+        if let Some((buffer, _)) = &self.translucent_vertices {
+            let mut translucent = self.translucent_cpu.lock().unwrap();
+            if translucent.sorted_for != Some(e3) {
+                let sorted = sort_back_to_front(&translucent.triangles, glam::Vec3::from_array(e3));
+                queue.write_buffer(buffer, 0, bytemuck::cast_slice(&sorted));
+                translucent.sorted_for = Some(e3);
+            }
         }
     }
 
@@ -1093,6 +1127,14 @@ impl ViewportResources {
                 render_pass.set_vertex_buffer(0, buffer.slice(..));
                 render_pass.draw(0..*count, 0..1);
             }
+        }
+        // Translucent surfaces over everything opaque, already sorted
+        // farthest first (`write_uniforms`).
+        if let Some((buffer, count)) = &self.translucent_vertices {
+            render_pass.set_pipeline(&self.translucent_pipeline);
+            render_pass.set_bind_group(1, &self.isosurface_material_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, buffer.slice(..));
+            render_pass.draw(0..*count, 0..1);
         }
 
         // Envelopes and halos over the finished opaque scene and isosurfaces.

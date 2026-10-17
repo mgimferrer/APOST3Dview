@@ -21,9 +21,20 @@ use crate::util::color32_to_rgb;
 pub(crate) const DEFAULT_ISOSURFACE_ISOVALUE: f32 = 0.075;
 /// Fully opaque by default — tried translucent (0.5, then 0.75) first,
 /// but a real hands-on check (2026-08-29) came back preferring solid
-/// lobes; the opacity slider is still there for anyone who wants to see
-/// through them.
+/// lobes, and Martí confirmed it once translucency was drawn correctly
+/// (2026-10-17); the Translucent checkbox and the opacity slider are
+/// there for anyone who wants to see through them.
 pub(crate) const DEFAULT_ISOSURFACE_OPACITY: f32 = 1.0;
+/// What the Translucent checkbox sets for an orbital or a cube: enough to
+/// see the atoms inside and the lobes behind, while the lobes keep their
+/// shape (chosen from comparison renders, 2026-10-17).
+pub(crate) const TRANSLUCENT_ORBITAL_OPACITY: f32 = 0.5;
+/// The total density's default, and what its Translucent checkbox sets: it
+/// wraps every atom, so it stays lighter than an orbital — at 0.35 its
+/// shape reads clearly while the atoms keep their colors; from 0.45 up
+/// everything inside takes a blue cast (comparison renders of water and
+/// the Bi complex, 2026-10-17).
+pub(crate) const TRANSLUCENT_DENSITY_OPACITY: f32 = 0.35;
 
 /// How a surface is drawn: everything about it except its data.
 #[derive(Clone, Copy, PartialEq)]
@@ -86,17 +97,23 @@ pub(crate) enum SurfaceSource {
 }
 
 /// How a density is first drawn, chosen from comparison renders (H2O
-/// triplet, BiCl3): total at 0.1 e/bohr^3, opaque, light blue (lower
-/// isovalues swallow the molecule; translucent shows the same layering
-/// artifacts as translucent orbitals); spin at +/-0.01 with both signs
-/// (alpha excess positive, beta excess negative). Not the last-used orbital
-/// settings, whose isovalues mean nothing for a density.
+/// triplet, BiCl3): total at 0.1 e/bohr^3, light blue, translucent
+/// (`TRANSLUCENT_DENSITY_OPACITY`, so the molecule shows inside; lower
+/// isovalues swallow the molecule); spin at +/-0.01 with both signs (alpha
+/// excess positive, beta excess negative), opaque. Not the last-used
+/// orbital settings, whose isovalues mean nothing for a density.
 pub(crate) fn density_settings(spin: bool) -> SurfaceSettings {
     let defaults = SurfaceSettings::default();
     if spin {
         SurfaceSettings { isovalue: 0.01, both_signs: true, ..defaults }
     } else {
-        SurfaceSettings { isovalue: 0.1, both_signs: false, positive_color: Color32::from_rgb(120, 160, 210), ..defaults }
+        SurfaceSettings {
+            isovalue: 0.1,
+            both_signs: false,
+            positive_color: Color32::from_rgb(120, 160, 210),
+            opacity: TRANSLUCENT_DENSITY_OPACITY,
+            ..defaults
+        }
     }
 }
 
@@ -120,6 +137,29 @@ pub(crate) struct Surface {
 impl Surface {
     pub(crate) fn new(label: String, grid: ScalarGrid, settings: SurfaceSettings, source: SurfaceSource) -> Self {
         Self { label, source, grid, visible: false, settings, fragment_tint: None, positive: None, negative: None, extracted_with: None }
+    }
+
+    /// A total or spin density, which has its own defaults
+    /// (`density_settings`) rather than the orbitals' ones.
+    pub(crate) fn density(&self) -> Option<bool> {
+        match self.source {
+            SurfaceSource::Density { spin, .. } => Some(spin),
+            _ => None,
+        }
+    }
+
+    /// What the Default button goes back to.
+    pub(crate) fn default_settings(&self) -> SurfaceSettings {
+        self.density().map_or_else(SurfaceSettings::default, density_settings)
+    }
+
+    /// What the Translucent checkbox sets.
+    pub(crate) fn translucent_opacity(&self) -> f32 {
+        if self.density().is_some() {
+            TRANSLUCENT_DENSITY_OPACITY
+        } else {
+            TRANSLUCENT_ORBITAL_OPACITY
+        }
     }
 
     fn extraction_key(&self) -> ExtractionKey {

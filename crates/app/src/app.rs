@@ -310,6 +310,12 @@ impl App {
         self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.surfaces.iter().map(|x| (x.label.clone(), x.visible)).collect()).unwrap_or_default()
     }
 
+    /// The active structure's surfaces' opacities (1 = opaque), in list
+    /// order — for tests.
+    pub fn surface_opacities(&self) -> Vec<f32> {
+        self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.surfaces.iter().map(|x| x.settings.opacity).collect()).unwrap_or_default()
+    }
+
     /// Ticks exactly these orbitals (0-based) of the active structure's
     /// current analysis set — for tests.
     pub fn select_set_orbitals(&mut self, alpha: &[usize], beta: &[usize]) {
