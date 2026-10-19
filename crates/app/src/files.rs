@@ -217,6 +217,13 @@ impl App {
                         structure.selected_beta_mos.insert(beta.homo_index() - 1);
                     }
                 }
+                if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("fchk")) {
+                    let (densities, problems) = crate::natural::load_densities(path, &wfn);
+                    structure.densities = densities;
+                    for problem in problems {
+                        self.show_warning(format!("{label}: {problem}"));
+                    }
+                }
                 structure.wavefunction = Some(wfn);
                 if max_angular_momentum > 4 {
                     self.show_warning(format!("{label}: the basis set includes h (or higher) shells, orbital generation isn't supported yet for this file."));

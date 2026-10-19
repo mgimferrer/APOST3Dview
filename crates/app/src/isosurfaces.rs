@@ -92,8 +92,10 @@ pub(crate) enum SurfaceSource {
         set: Option<String>,
     },
     /// The electron density (or, `spin`, the spin density) of the
-    /// structure's wavefunction, from its occupied orbitals.
-    Density { spin: bool, spacing_bohr: f64, padding_bohr: f64 },
+    /// structure's wavefunction: from its occupied orbitals (`natural`
+    /// `None`), or from the natural orbitals of the `.fchk`'s density
+    /// matrix of that kind ("MP2", "SCF" for a correlated 1-RDM).
+    Density { spin: bool, spacing_bohr: f64, padding_bohr: f64, natural: Option<String> },
 }
 
 /// How a density is first drawn, chosen from comparison renders (H2O

@@ -11,6 +11,7 @@ mod isosurfaces;
 mod label_layout;
 mod labels;
 mod names;
+mod natural;
 mod orbital_sets;
 mod orbitals;
 mod presets;

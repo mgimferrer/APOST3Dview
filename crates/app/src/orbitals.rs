@@ -6,7 +6,9 @@ use apost3dview_core::{generate_density_grid, generate_mo_grids, ApostResults, M
 
 use crate::app::App;
 use crate::isosurfaces::{density_settings, Surface, SurfaceSettings, SurfaceSource};
+use crate::natural::{Densities, NaturalOrbitals};
 use crate::orbital_sets::{fragment_tint, LoadedOrbitalSet};
+use crate::state::LoadedStructure;
 
 /// One spin channel's tick-box list in the "Generate orbitals" section —
 /// factored out since alpha and beta need identical rendering, just
@@ -130,18 +132,33 @@ fn orbital_label(wfn: &Wavefunction, choice: OrbitalChoice) -> String {
     format!("{tag}{spin}")
 }
 
-/// Evaluates the chosen orbitals on grids and returns them as surfaces
-/// drawn with `settings`. All of them in one batched `generate_mo_grids`
-/// call: the basis functions (the expensive part, hundreds of shells on a
-/// real molecule) are computed once per grid point and shared, rather
-/// than once per orbital.
-/// The total (or spin) density of `wfn` as a surface, "Total density" or
-/// "Spin density", first drawn with `density_settings`.
-pub(crate) fn density_surface(wfn: &Wavefunction, spin: bool, spacing_bohr: f64, padding_bohr: f64) -> Result<Surface, String> {
-    let terms = if spin { wfn.spin_density_weights().ok_or("a closed shell has no spin density")? } else { wfn.total_density_weights() };
+/// The total (or spin) density of `wfn` as a surface, first drawn with
+/// `density_settings`: from the occupied orbitals ("Total density",
+/// "Spin density"), or from the natural orbitals of a correlated density
+/// matrix of the file ("Total density (MP2)").
+pub(crate) fn density_surface(wfn: &Wavefunction, spin: bool, spacing_bohr: f64, padding_bohr: f64, natural: Option<&NaturalOrbitals>) -> Result<Surface, String> {
+    let terms = match natural {
+        Some(set) => set.density_weights(spin).ok_or_else(|| format!("the {} density has no spin part", set.name))?,
+        None if spin => wfn.spin_density_weights().ok_or("a closed shell has no spin density")?,
+        None => wfn.total_density_weights(),
+    };
     let grid = generate_density_grid(&wfn.basis, &terms, spacing_bohr, padding_bohr)?;
-    let label = if spin { "Spin density" } else { "Total density" };
-    Ok(Surface::new(label.to_string(), grid, density_settings(spin), SurfaceSource::Density { spin, spacing_bohr, padding_bohr }))
+    let base = if spin { "Spin density" } else { "Total density" };
+    let label = match natural {
+        Some(set) => format!("{base} ({})", set.name),
+        None => base.to_string(),
+    };
+    let source = SurfaceSource::Density { spin, spacing_bohr, padding_bohr, natural: natural.map(|set| set.kind.clone()) };
+    Ok(Surface::new(label, grid, density_settings(spin), source))
+}
+
+/// Whether the structure's densities include a spin density: from the
+/// chosen natural orbitals' spin block, or from the occupied orbitals.
+pub(crate) fn has_spin_density(structure: &LoadedStructure) -> bool {
+    match structure.densities.as_ref().and_then(Densities::chosen) {
+        Some(set) => set.spin.is_some(),
+        None => structure.wavefunction.as_ref().is_some_and(|w| w.spin_density_weights().is_some()),
+    }
 }
 
 /// For orbitals of an analysis set: what labels and colors them.
@@ -151,13 +168,26 @@ pub(crate) struct SetContext<'a> {
     pub(crate) molecule: &'a Molecule,
 }
 
+/// How generated orbitals are named: the SCF ones "HOMO"/"MO 12", an
+/// analysis set's from its tables, natural orbitals "NO 5 (MP2)".
+pub(crate) enum OrbitalNames<'a> {
+    Scf,
+    Set(&'a SetContext<'a>),
+    Natural(&'a NaturalOrbitals),
+}
+
+/// Evaluates the chosen orbitals on grids and returns them as surfaces
+/// drawn with `settings`. All of them in one batched `generate_mo_grids`
+/// call: the basis functions (the expensive part, hundreds of shells on a
+/// real molecule) are computed once per grid point and shared, rather
+/// than once per orbital.
 pub(crate) fn orbital_surfaces(
     wfn: &Wavefunction,
     choices: &[OrbitalChoice],
     spacing_bohr: f64,
     padding_bohr: f64,
     settings: SurfaceSettings,
-    context: Option<&SetContext>,
+    names: OrbitalNames,
 ) -> Result<Vec<Surface>, String> {
     let mut requests: Vec<(&MolecularOrbitals, usize)> = Vec::new();
     for choice in choices {
@@ -172,14 +202,14 @@ pub(crate) fn orbital_surfaces(
         .into_iter()
         .zip(choices)
         .map(|(grid, &choice)| {
-            let set = context.map(|c| c.set.set.key());
-            let source = SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set };
-            let label = match context {
-                Some(c) => App::set_orbital_label(c.set, choice.beta, choice.mo_index, c.results, c.molecule),
-                None => orbital_label(wfn, choice),
+            let (label, set) = match &names {
+                OrbitalNames::Scf => (orbital_label(wfn, choice), None),
+                OrbitalNames::Set(c) => (App::set_orbital_label(c.set, choice.beta, choice.mo_index, c.results, c.molecule), Some(c.set.set.key())),
+                OrbitalNames::Natural(n) => (format!("NO {} ({})", choice.mo_index + 1, n.name), Some(n.key())),
             };
+            let source = SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set };
             let mut surface = Surface::new(label, grid, settings, source);
-            if let Some(c) = context {
+            if let OrbitalNames::Set(c) = &names {
                 surface.fragment_tint = c.set.labels(choice.beta).get(choice.mo_index).and_then(Option::as_ref).map(|l| fragment_tint(c.results, c.molecule, l));
             }
             surface
@@ -196,7 +226,8 @@ impl App {
         let Some(active) = self.active_structure else { return };
         let Some(structure) = self.structures.get(active) else { return };
         let Some(wfn) = &structure.wavefunction else { return };
-        let densities: Vec<bool> = [(structure.selected_total_density, false), (structure.selected_spin_density && wfn.spin_density_weights().is_some(), true)]
+        let natural = structure.densities.as_ref().and_then(Densities::chosen);
+        let densities: Vec<bool> = [(structure.selected_total_density, false), (structure.selected_spin_density && has_spin_density(structure), true)]
             .into_iter()
             .filter(|(ticked, _)| *ticked)
             .map(|(_, spin)| spin)
@@ -216,7 +247,7 @@ impl App {
         let padding = self.orbital_generation.padding_bohr;
         let mut surfaces = Vec::new();
         if !choices.is_empty() {
-            match orbital_surfaces(wfn, &choices, spacing, padding, self.surface_defaults, None) {
+            match orbital_surfaces(wfn, &choices, spacing, padding, self.surface_defaults, OrbitalNames::Scf) {
                 Ok(s) => surfaces = s,
                 Err(err) => {
                     self.show_warning(format!("Orbitals could not be generated: {err}"));
@@ -225,7 +256,7 @@ impl App {
             }
         }
         for &spin in &densities {
-            match density_surface(wfn, spin, spacing, padding) {
+            match density_surface(wfn, spin, spacing, padding, natural) {
                 Ok(s) => surfaces.push(s),
                 Err(err) => {
                     self.show_warning(format!("The density could not be generated: {err}"));
@@ -243,6 +274,33 @@ impl App {
         let text = done.join(" and ");
         let text = crate::util::capitalize(&text);
         self.show_status(format!("{text} generated"));
+    }
+
+    /// Generates the ticked natural orbitals of the listed correlated
+    /// density ("NO 5 (MP2)").
+    pub(crate) fn generate_natural_orbitals(&mut self) {
+        let Some(active) = self.active_structure else { return };
+        let Some(densities) = self.structures[active].densities.as_ref() else { return };
+        let Some(set) = densities.listed.and_then(|i| densities.natural.get(i)) else { return };
+        let mut choices: Vec<OrbitalChoice> = densities.selected.iter().map(|&mo_index| OrbitalChoice { beta: false, mo_index }).collect();
+        choices.sort_unstable_by_key(|c| c.mo_index);
+        if choices.is_empty() {
+            self.show_warning("No orbitals selected");
+            return;
+        }
+        let spacing = self.orbital_generation.resolve_spacing_bohr();
+        let padding = self.orbital_generation.padding_bohr;
+        let surfaces = match orbital_surfaces(&set.orbitals, &choices, spacing, padding, self.surface_defaults, OrbitalNames::Natural(set)) {
+            Ok(surfaces) => surfaces,
+            Err(err) => {
+                self.show_warning(format!("Orbitals could not be generated: {err}"));
+                return;
+            }
+        };
+        let count = surfaces.len();
+        let text = format!("{count} {} natural orbital{} generated", set.name, if count == 1 { "" } else { "s" });
+        self.add_surfaces(active, surfaces, true);
+        self.show_status(text);
     }
 
     /// Loads the active structure's orbital set `index` (0-based in
@@ -287,7 +345,7 @@ impl App {
         }
         let (Some(Ok(wfn)), Some(Ok(results))) = (&set.wavefunction, structure.apost.as_ref().map(|a| &a.results)) else { return };
         let context = SetContext { set, results, molecule: &structure.molecule };
-        let surfaces = match orbital_surfaces(wfn, &choices, spacing, padding, self.surface_defaults, Some(&context)) {
+        let surfaces = match orbital_surfaces(wfn, &choices, spacing, padding, self.surface_defaults, OrbitalNames::Set(&context)) {
             Ok(surfaces) => surfaces,
             Err(err) => {
                 self.show_warning(format!("Orbitals could not be generated: {err}"));

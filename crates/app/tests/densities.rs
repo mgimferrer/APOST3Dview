@@ -4,7 +4,7 @@
 
 mod common;
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{By, Queryable};
 
 use common::{app_with, fixtures_dir, repo_dir, scratch_dir, screenshot, toasts};
 
@@ -112,11 +112,91 @@ fn a_closed_shell_offers_no_spin_density() {
     assert!(toasts(&harness).iter().any(|m| m == "The total density generated"), "{:?}", toasts(&harness));
 }
 
+/// Opens the menu showing `value` and picks `option`.
+fn choose(harness: &mut egui_kittest::Harness<'_, apost3dview::App>, value: &str, option: &str) {
+    harness
+        .get_all(By::new().role(egui::accesskit::Role::ComboBox))
+        .find(|n| n.value().as_deref() == Some(value))
+        .unwrap_or_else(|| panic!("no menu showing {value}"))
+        .click_accesskit();
+    harness.run_steps(2);
+    harness.get_all_by_label(option).last().unwrap().click_accesskit();
+    harness.run_steps(2);
+}
+
+/// A CASSCF 1-RDM written by apost3d.py into "Total SCF Density": the
+/// density comes from it (through its natural orbitals), not from the
+/// file's orbitals; no spin density for the singlet (its spin block is
+/// zero); the natural orbitals are a set of their own in the Orbitals
+/// menu, the two either side of the occupied ones ticked; sessions keep
+/// both.
 #[test]
-fn a_correlated_wavefunction_is_noted() {
+fn a_correlated_density_and_its_natural_orbitals() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("H2O-CAS44.apost.json")]);
+    let scratch = scratch_dir("natural-orbitals-session");
+    let session = scratch.join("cas.a3dview");
+    {
+        let mut harness = app_with(vec![dir.join("H2O-CAS44.fchk")]);
+        harness.get_by_label("Surfaces").click_accesskit();
+        harness.run_steps(2);
+        harness.get_by_label("The CASSCF density of the .fchk, through its natural orbitals.");
+        harness.get_by_label_contains("This file stores no orbital energies");
+        assert_eq!(harness.query_all_by_label("Spin density").count(), 0);
+        harness.get_by_label("Clear").click_accesskit();
+        harness.get_by_label("Total density").click_accesskit();
+        harness.run_steps(2);
+        harness.get_by_label("Generate 1 surface(s)").click_accesskit();
+        harness.run_steps(4);
+        assert_eq!(harness.state().surface_labels(), vec![("Total density (CASSCF)".to_string(), true)]);
+        screenshot(&mut harness, "density-casscf");
+
+        choose(&mut harness, "Orbitals of the file", "Natural orbitals (CASSCF)");
+        harness.get_by_label_contains("NO 1  occupation 2.0000");
+        harness.get_by_label("Generate 2 orbital(s)").click_accesskit();
+        harness.run_steps(4);
+        let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
+        assert_eq!(labels, vec!["Total density (CASSCF)", "NO 5 (CASSCF)", "NO 6 (CASSCF)"]);
+        assert!(toasts(&harness).iter().any(|m| m == "2 CASSCF natural orbitals generated"), "{:?}", toasts(&harness));
+        screenshot(&mut harness, "natural-orbital-casscf");
+        harness.state_mut().save_session_to(&session).unwrap();
+    }
+    let text = std::fs::read_to_string(&session).unwrap();
+    assert!(text.contains("density_matrix = \"SCF\"") && text.contains("orbital_set = \"natural-SCF\""), "{text}");
+    let harness = app_with(vec![session]);
+    let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
+    assert_eq!(labels, vec!["Total density (CASSCF)", "NO 5 (CASSCF)", "NO 6 (CASSCF)"]);
+    assert_eq!(toasts(&harness), vec!["Session cas.a3dview opened".to_string()]);
+}
+
+/// Gaussian's MP2 density ("Total MP2 Density") is the default; the SCF
+/// one (from the occupied orbitals) is a choice away, and both can be
+/// shown together.
+#[test]
+fn mp2_or_scf_density() {
+    let Some(dir) = fixtures_dir() else { return };
+    let mut harness = app_with(vec![dir.join("H2O-MP2-DENS2.fchk")]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label_contains("For this CASSCF wavefunction, the density is that of the occupied orbitals");
+    harness.get_by_label("Clear").click_accesskit();
+    harness.get_by_label("Total density").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("Generate 1 surface(s)").click_accesskit();
+    harness.run_steps(4);
+    choose(&mut harness, "MP2", "SCF");
+    harness.get_by_label("Generate 1 surface(s)").click_accesskit();
+    harness.run_steps(4);
+    let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
+    assert_eq!(labels, vec!["Total density (MP2)", "Total density"]);
+    // The SCF orbitals stay SCF orbitals.
+    harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).find(|n| n.value().as_deref() == Some("SCF orbitals")).expect("Orbitals menu");
+}
+
+/// A mean-field file offers no density choice and no natural orbitals.
+#[test]
+fn a_mean_field_file_has_no_density_choice() {
+    let mut harness = app_with(vec![testdata("H2O-T-ccpVTZ.fchk")]);
+    harness.get_by_label("Surfaces").click_accesskit();
+    harness.run_steps(2);
+    assert_eq!(harness.query_all(By::new().role(egui::accesskit::Role::ComboBox)).filter(|n| n.value().as_deref() == Some("SCF")).count(), 0);
+    assert_eq!(harness.query_all_by_label_contains("Natural orbitals").count(), 0);
 }

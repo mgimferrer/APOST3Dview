@@ -116,7 +116,9 @@ pub fn scan_fchk_densities(path: &Path) -> io::Result<FchkDensities> {
             skip_lines(&mut lines, array_lines(&line, count))?;
         }
     }
-    let correlated_scf = cas_fields || matches!(method.as_str(), "CASSCF" | "CCSD");
+    // "CASSCF" (pySCF through apost3d.py, Gaussian), "CCSD" (apost3d.py;
+    // Gaussian's CC jobs are "RCCSD" with a "Total CC Density" of its own).
+    let correlated_scf = cas_fields || method.contains("CAS") || method == "CCSD";
     Ok(FchkDensities { method, kinds, correlated_scf })
 }
 

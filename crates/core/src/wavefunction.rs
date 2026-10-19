@@ -38,6 +38,7 @@ use crate::fchk::{parse_header, read_array_tokens, scalar_value, HeaderKind};
 /// (`L`) shell type into separate pure-S and pure-P shells at parse time
 /// (see `parse_fchk_wavefunction`), so everything downstream only ever
 /// has to handle a single angular momentum per shell, never a composite.
+#[derive(Clone)]
 pub struct Shell {
     /// 0=S, 1=P, 2=D, 3=F (magnitude only — `is_pure` carries the other
     /// bit of information the sign encodes in the raw `.fchk` shell-type
@@ -59,6 +60,7 @@ pub struct Shell {
     pub contraction_coefficients: Vec<f64>,
 }
 
+#[derive(Clone)]
 pub struct BasisSet {
     pub shells: Vec<Shell>,
 }
@@ -66,6 +68,7 @@ pub struct BasisSet {
 /// One spin channel's worth of MOs — either the alpha channel (always
 /// present) or the beta channel (only for a genuinely unrestricted
 /// calculation; identical to alpha and so omitted otherwise).
+#[derive(Clone)]
 pub struct MolecularOrbitals {
     pub num_basis_functions: usize,
     pub orbital_energies: Vec<f64>,
@@ -109,6 +112,7 @@ impl MolecularOrbitals {
     }
 }
 
+#[derive(Clone)]
 pub struct Wavefunction {
     pub basis: BasisSet,
     pub alpha: MolecularOrbitals,

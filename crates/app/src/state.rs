@@ -8,6 +8,7 @@ use apost3dview_render::BondVisualStyle;
 use egui::Color32;
 
 use crate::isosurfaces::Surface;
+use crate::natural::Densities;
 use crate::orbital_sets::LoadedOrbitalSet;
 use crate::results::ApostAttachment;
 
@@ -105,6 +106,9 @@ pub(crate) struct LoadedStructure {
     /// `wavefunction.beta` is itself `Some` only for an unrestricted
     /// (open-shell) file — see `parse_fchk_wavefunction`.
     pub(crate) wavefunction: Option<Wavefunction>,
+    /// The correlated densities of a `.fchk` and their natural orbitals
+    /// (`None` for a mean-field file, a `.molden`, or no wavefunction).
+    pub(crate) densities: Option<Densities>,
     /// Which MOs are ticked in the "Generate orbitals" picker — 0-based,
     /// only meaningful when `wavefunction` is `Some`. Beta is only ever
     /// populated for an unrestricted file (see above); it stays empty,
@@ -145,6 +149,7 @@ impl LoadedStructure {
             surfaces: Vec::new(),
             selected_surface: None,
             wavefunction: None,
+            densities: None,
             selected_alpha_mos: HashSet::new(),
             selected_total_density: false,
             selected_spin_density: false,

@@ -39,7 +39,10 @@ impl App {
                 .default_open(true)
                 .show(ui, |ui| {
                     self.show_orbital_set_selector(ui, active);
-                    if self.structures[active].active_orbital_set == 0 {
+                    let natural_listed = self.structures[active].densities.as_ref().is_some_and(|d| d.listed.is_some());
+                    if self.structures[active].active_orbital_set == 0 && natural_listed {
+                        self.show_generate_natural_orbitals(ui, active);
+                    } else if self.structures[active].active_orbital_set == 0 {
                         self.show_generate_orbitals(ui, active);
                     } else {
                         self.show_generate_set_orbitals(ui, active);
@@ -50,35 +53,95 @@ impl App {
         self.show_surface_list(ui, active);
     }
 
-    /// Which orbitals to generate from: the SCF ones of the open file, or
-    /// one of the analysis sets APOST-3D wrote next to its results.
+    /// Which orbitals to generate from: the SCF ones of the open file, the
+    /// natural orbitals of a correlated density of it, or one of the
+    /// analysis sets APOST-3D wrote next to its results.
     fn show_orbital_set_selector(&mut self, ui: &mut egui::Ui, active: usize) {
         let structure = &mut self.structures[active];
-        if structure.orbital_sets.is_empty() {
+        let natural_names: Vec<String> = structure.densities.as_ref().map(|d| d.natural.iter().map(|n| format!("Natural orbitals ({})", n.name)).collect()).unwrap_or_default();
+        if structure.orbital_sets.is_empty() && natural_names.is_empty() {
             return;
         }
-        let name = |sets: &[crate::orbital_sets::LoadedOrbitalSet], i: usize| if i == 0 { "SCF orbitals".to_string() } else { sets[i - 1].set.title().to_string() };
-        let current = name(&structure.orbital_sets, structure.active_orbital_set);
+        // A correlated 1-RDM stored as "SCF": the file's MOs aren't SCF ones.
+        let file_orbitals = if structure.densities.as_ref().is_some_and(|d| d.info.correlated_scf) { "Orbitals of the file" } else { "SCF orbitals" };
+        // (set, natural): (0, None) the file's orbitals, (0, Some(i)) natural set i, (i, None) analysis set i - 1.
+        let mut options: Vec<((usize, Option<usize>), String)> = Vec::new();
+        if structure.wavefunction.is_some() {
+            options.push(((0, None), file_orbitals.to_string()));
+            options.extend(natural_names.into_iter().enumerate().map(|(i, name)| ((0, Some(i)), name)));
+        }
+        options.extend(structure.orbital_sets.iter().enumerate().map(|(i, s)| ((i + 1, None), s.set.title().to_string())));
+        let listed = structure.densities.as_ref().and_then(|d| d.listed);
+        let mut current = (structure.active_orbital_set, if structure.active_orbital_set == 0 { listed } else { None });
+        if !options.iter().any(|(o, _)| *o == current) {
+            current = options[0].0;
+        }
+        let current_name = options.iter().find(|(o, _)| *o == current).map(|(_, n)| n.clone()).unwrap_or_default();
+        let mut chosen = current;
         ui.horizontal(|ui| {
             ui.label("Orbitals:");
             egui::ComboBox::from_id_salt("orbital_set")
-                .selected_text(current)
+                .selected_text(current_name)
                 .show_ui(ui, |ui| {
-                    if structure.wavefunction.is_some() {
-                        ui.selectable_value(&mut structure.active_orbital_set, 0, name(&structure.orbital_sets, 0));
-                    }
-                    for i in 1..=structure.orbital_sets.len() {
-                        let label = name(&structure.orbital_sets, i);
-                        ui.selectable_value(&mut structure.active_orbital_set, i, label);
+                    for (option, name) in &options {
+                        ui.selectable_value(&mut chosen, *option, name);
                     }
                 })
                 .response
-                .on_hover_text("SCF orbitals come from the open file; the others are APOST-3D's analysis orbitals, labeled with their fragments.");
+                .on_hover_text(
+                    "The orbitals of the open file; natural orbitals diagonalize a correlated density matrix stored in it (occupations 2 to 0); \
+                     the others are APOST-3D's analysis orbitals, labeled with their fragments.",
+                );
         });
-        if structure.wavefunction.is_none() && structure.active_orbital_set == 0 {
-            structure.active_orbital_set = 1;
+        structure.active_orbital_set = chosen.0;
+        if let Some(densities) = structure.densities.as_mut().filter(|d| d.listed != chosen.1) {
+            if let Some(set) = chosen.1.and_then(|i| densities.natural.get(i)) {
+                densities.selected = crate::natural::frontier(set);
+            }
+            densities.listed = chosen.1;
         }
         ui.add_space(2.0);
+    }
+
+    /// The natural orbitals of a correlated density, by occupation.
+    fn show_generate_natural_orbitals(&mut self, ui: &mut egui::Ui, active: usize) {
+        let Some(densities) = &mut self.structures[active].densities else { return };
+        let Some(set) = densities.listed.and_then(|i| densities.natural.get(i)) else { return };
+        let orbitals = &set.orbitals.alpha;
+        ui.label(
+            RichText::new(format!("The orbitals that diagonalize the {} density matrix of the file, largest occupation first.", set.name))
+                .small()
+                .weak(),
+        );
+        ui.horizontal(|ui| {
+            if ui.button("Frontier").on_hover_text("The last natural orbital with occupation above 1 and the first below").clicked() {
+                densities.selected = crate::natural::frontier(set);
+            }
+            if ui.button("Fractional").on_hover_text("Every natural orbital with occupation between 0.02 and 1.98").clicked() {
+                densities.selected = orbitals.occupations.iter().enumerate().filter(|(_, n)| **n > 0.02 && **n < 1.98).map(|(i, _)| i).collect();
+            }
+            if ui.button("Clear").clicked() {
+                densities.selected.clear();
+            }
+        });
+        egui::ScrollArea::vertical().id_salt("natural_checklist").max_height(160.0).show(ui, |ui| {
+            for (index, &occupation) in orbitals.occupations.iter().enumerate() {
+                let mut checked = densities.selected.contains(&index);
+                if ui.checkbox(&mut checked, format!("NO {}  occupation {occupation:.4}", index + 1)).changed() {
+                    if checked {
+                        densities.selected.insert(index);
+                    } else {
+                        densities.selected.remove(&index);
+                    }
+                }
+            }
+        });
+        let selected_count = densities.selected.len();
+        self.show_grid_controls(ui);
+        ui.add_space(4.0);
+        if ui.add_sized([ui.available_width(), 26.0], egui::Button::new(format!("Generate {selected_count} orbital(s)"))).clicked() {
+            self.generate_natural_orbitals();
+        }
     }
 
     /// The orbitals of an analysis set: only those the tables describe,
@@ -173,7 +236,7 @@ impl App {
         });
 
         // The densities, generated with the orbitals.
-        let has_spin = self.structures[active].wavefunction.as_ref().unwrap().spin_density_weights().is_some();
+        let has_spin = crate::orbitals::has_spin_density(&self.structures[active]);
         let correlated = self.structures[active]
             .apost
             .as_ref()
@@ -190,7 +253,34 @@ impl App {
                     .on_hover_text("Alpha minus beta density: positive where alpha electrons are in excess");
             }
         });
-        if let Some(method) = correlated {
+        // Which density matrix: the occupied orbitals' (mean field) or a
+        // correlated one of the file, through its natural orbitals.
+        if let Some(densities) = &mut self.structures[active].densities {
+            let mut options: Vec<(Option<usize>, String)> = Vec::new();
+            if densities.offers_mean_field() {
+                options.push((None, "SCF".to_string()));
+            }
+            options.extend(densities.natural.iter().enumerate().map(|(i, n)| (Some(i), n.name.clone())));
+            let name = |chosen: Option<usize>| options.iter().find(|(o, _)| *o == chosen).map(|(_, n)| n.clone()).unwrap_or_default();
+            if options.len() > 1 {
+                ui.horizontal(|ui| {
+                    ui.label("Density:");
+                    egui::ComboBox::from_id_salt("density_matrix")
+                        .selected_text(name(densities.chosen))
+                        .show_ui(ui, |ui| {
+                            for (option, label) in &options {
+                                ui.selectable_value(&mut densities.chosen, *option, label);
+                            }
+                        })
+                        .response
+                        .on_hover_text("SCF: from the occupied orbitals. A correlated density: from the density matrix in the .fchk, through its natural orbitals.");
+                });
+            } else if let Some(set) = densities.chosen() {
+                ui.label(RichText::new(format!("The {} density of the .fchk, through its natural orbitals.", set.name)).small().weak());
+            }
+        }
+        let natural_density = self.structures[active].densities.as_ref().is_some_and(|d| d.chosen.is_some());
+        if let Some(method) = correlated.filter(|_| !natural_density) {
             ui.label(
                 RichText::new(format!(
                     "For this {method} wavefunction, the density is that of the occupied orbitals in the .fchk, not the correlated density."
@@ -210,11 +300,15 @@ impl App {
         // the borrow checker can't prove disjoint on its own.
         let LoadedStructure {
             wavefunction,
+            densities,
             selected_alpha_mos,
             selected_beta_mos,
             ..
         } = &mut self.structures[active];
         let wfn = wavefunction.as_ref().unwrap();
+        if densities.as_ref().is_some_and(|d| d.info.correlated_scf) && wfn.alpha.orbital_energies.iter().all(|&e| e == 0.0) {
+            ui.label(RichText::new("This file stores no orbital energies (0 below); its natural orbitals carry the occupations.").small().weak());
+        }
         show_mo_checklist(ui, &wfn.alpha, selected_alpha_mos, "alpha", list_height);
         if let Some(beta) = &wfn.beta {
             show_mo_checklist(ui, beta, selected_beta_mos, "beta", list_height);

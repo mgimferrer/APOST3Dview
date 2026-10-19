@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::App;
 use crate::isosurfaces::{Surface, SurfaceSettings, SurfaceSource};
-use crate::orbitals::{density_surface, orbital_surfaces, OrbitalChoice, SetContext};
+use crate::orbitals::{density_surface, orbital_surfaces, OrbitalChoice, OrbitalNames, SetContext};
 use crate::results_view::ResultsView;
 use crate::state::{AtomLabelMode, Measurement};
 use crate::util::find_bond_between;
@@ -137,12 +137,22 @@ enum SurfaceOrigin {
         orbital: usize,
         grid_spacing_bohr: f64,
         box_padding_bohr: f64,
-        /// The analysis set ("eos", "geos", "oslo"); absent for SCF orbitals.
+        /// The analysis set ("eos", "geos", "oslo") or the natural orbitals
+        /// of a density matrix ("natural-MP2"); absent for SCF orbitals.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         orbital_set: Option<String>,
     },
     /// The total or spin density, recomputed from the wavefunction.
-    Density { spin_density: bool, grid_spacing_bohr: f64, box_padding_bohr: f64 },
+    Density {
+        spin_density: bool,
+        grid_spacing_bohr: f64,
+        box_padding_bohr: f64,
+        /// The `.fchk` density matrix it comes from ("MP2"; "SCF" for a
+        /// correlated 1-RDM), through its natural orbitals; absent for the
+        /// density of the occupied orbitals.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        density_matrix: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
@@ -232,9 +242,12 @@ impl App {
                     .map(|surface| {
                         let origin = match &surface.source {
                             SurfaceSource::Cube(file) => SurfaceOrigin::Cube { file: relative_path(base, file), file_absolute: file.to_string_lossy().into_owned() },
-                            SurfaceSource::Density { spin, spacing_bohr, padding_bohr } => {
-                                SurfaceOrigin::Density { spin_density: *spin, grid_spacing_bohr: *spacing_bohr, box_padding_bohr: *padding_bohr }
-                            }
+                            SurfaceSource::Density { spin, spacing_bohr, padding_bohr, natural } => SurfaceOrigin::Density {
+                                spin_density: *spin,
+                                grid_spacing_bohr: *spacing_bohr,
+                                box_padding_bohr: *padding_bohr,
+                                density_matrix: natural.clone(),
+                            },
                             SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set } => SurfaceOrigin::Orbital {
                                 spin: if choice.beta { Spin::Beta } else { Spin::Alpha },
                                 orbital: choice.mo_index + 1,
@@ -532,16 +545,22 @@ impl App {
                     Some((Err(_), _)) => problems.push(format!("{} could not be read", file_name(file))),
                     None => problems.push(format!("{} was not found", file_name(file))),
                 },
-                SurfaceOrigin::Density { spin_density, grid_spacing_bohr, box_padding_bohr } => match &self.structures[index].wavefunction {
-                    Some(wfn) => match density_surface(wfn, *spin_density, *grid_spacing_bohr, *box_padding_bohr) {
+                SurfaceOrigin::Density { spin_density, grid_spacing_bohr, box_padding_bohr, density_matrix } => {
+                    let structure = &self.structures[index];
+                    let natural = density_matrix.as_ref().map(|kind| structure.densities.as_ref().and_then(|d| d.natural.iter().find(|n| &n.kind == kind)).ok_or(kind));
+                    let generated = match (&structure.wavefunction, natural) {
+                        (None, _) => Err("no wavefunction".to_string()),
+                        (Some(_), Some(Err(kind))) => Err(format!("the file has no {kind} density matrix")),
+                        (Some(wfn), natural) => density_surface(wfn, *spin_density, *grid_spacing_bohr, *box_padding_bohr, natural.and_then(Result::ok)),
+                    };
+                    match generated {
                         Ok(mut surface) => {
                             surface.settings = settings_of(state);
                             slots[slot] = Some(surface);
                         }
                         Err(err) => problems.push(format!("the density of {name} could not be generated ({err})")),
-                    },
-                    None => problems.push(format!("the density of {name} could not be generated (no wavefunction)")),
-                },
+                    }
+                }
                 SurfaceOrigin::Orbital { spin, orbital, grid_spacing_bohr, box_padding_bohr, orbital_set } => {
                     let choice = OrbitalChoice { beta: *spin == Spin::Beta, mo_index: orbital.saturating_sub(1) };
                     groups.entry((orbital_set.clone(), grid_spacing_bohr.to_bits(), box_padding_bohr.to_bits())).or_default().push((slot, choice));
@@ -553,7 +572,11 @@ impl App {
             let generated = match &set_name {
                 None => match &self.structures[index].wavefunction {
                     None => Err("no wavefunction".to_string()),
-                    Some(wfn) => orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), None),
+                    Some(wfn) => orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), OrbitalNames::Scf),
+                },
+                Some(key) if key.starts_with("natural-") => match self.structures[index].densities.as_ref().and_then(|d| d.by_key(key)) {
+                    None => Err(format!("the file has no {} density matrix", &key["natural-".len()..])),
+                    Some(set) => orbital_surfaces(&set.orbitals, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), OrbitalNames::Natural(set)),
                 },
                 Some(analysis) => match self.structures[index].orbital_sets.iter().position(|s| &s.set.key() == analysis) {
                     None => Err(format!("its {analysis} orbital file was not found")),
@@ -564,7 +587,7 @@ impl App {
                         match (&set.wavefunction, structure.apost.as_ref().map(|a| &a.results)) {
                             (Some(Ok(wfn)), Some(Ok(results))) => {
                                 let context = SetContext { set, results, molecule: &structure.molecule };
-                                orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), Some(&context))
+                                orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), OrbitalNames::Set(&context))
                             }
                             _ => Err("no results".to_string()),
                         }
