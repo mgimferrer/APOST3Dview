@@ -129,6 +129,9 @@ pub(crate) struct Surface {
     /// For an analysis orbital: its fragments' atoms and colors, to color
     /// the surface by fragment (blended across space for a shared one).
     pub(crate) fragment_tint: Option<Vec<(Vec3, [f32; 3])>>,
+    /// A caveat shown with the surface's settings (an EFO whose orbital in
+    /// the `.fchk` is only an approximate fit).
+    pub(crate) note: Option<String>,
     positive: Option<IsosurfaceMesh>,
     negative: Option<IsosurfaceMesh>,
     /// What `positive`/`negative` were extracted with; `None` before the
@@ -138,7 +141,7 @@ pub(crate) struct Surface {
 
 impl Surface {
     pub(crate) fn new(label: String, grid: ScalarGrid, settings: SurfaceSettings, source: SurfaceSource) -> Self {
-        Self { label, source, grid, visible: false, settings, fragment_tint: None, positive: None, negative: None, extracted_with: None }
+        Self { label, source, grid, visible: false, settings, fragment_tint: None, note: None, positive: None, negative: None, extracted_with: None }
     }
 
     /// A total or spin density, which has its own defaults
@@ -148,6 +151,13 @@ impl Surface {
             SurfaceSource::Density { spin, .. } => Some(spin),
             _ => None,
         }
+    }
+
+    /// "0.075", "±0.01": the isovalue as the surface list shows it.
+    pub(crate) fn isovalue_text(&self) -> String {
+        let value = format!("{:.4}", self.settings.isovalue);
+        let value = value.trim_end_matches('0').trim_end_matches('.');
+        if self.settings.both_signs { format!("\u{b1}{value}") } else { value.to_string() }
     }
 
     /// What the Default button goes back to.

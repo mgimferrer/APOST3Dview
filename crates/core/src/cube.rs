@@ -254,6 +254,10 @@ pub fn parse_cube(path: &Path) -> io::Result<CubeFile> {
 
     let mut dims = [0usize; 3];
     let mut steps = [Vec3::ZERO; 3];
+    // A negative point count means the file is in angstrom, not bohr
+    // (Gaussian's convention; APOST-3D always writes bohr). Everything is
+    // read as bohr first and scaled back afterwards.
+    let mut in_angstrom = false;
     for axis in 0..3 {
         let line = next_line(&all_lines, &mut line_index).ok_or_else(|| invalid_data("truncated .cube file (missing grid dimension line)"))?;
         let mut fields = line.split_whitespace();
@@ -263,6 +267,7 @@ pub fn parse_cube(path: &Path) -> io::Result<CubeFile> {
             .parse()
             .map_err(|_| invalid_data("malformed grid point count in .cube file"))?;
         dims[axis] = count.unsigned_abs() as usize;
+        in_angstrom |= count < 0;
         steps[axis] = parse_vec3_bohr(&mut fields, "grid step vector")?;
     }
     if dims.iter().any(|&d| d == 0) {
@@ -320,6 +325,12 @@ pub fn parse_cube(path: &Path) -> io::Result<CubeFile> {
         }
     }
 
+    let (origin, steps, positions) = if in_angstrom {
+        let unit = 1.0 / ANGSTROM_PER_BOHR as f32;
+        (origin * unit, steps.map(|s| s * unit), positions.into_iter().map(|p| p * unit).collect())
+    } else {
+        (origin, steps, positions)
+    };
     let molecule = Molecule::from_atoms(atomic_numbers, positions);
     let grid = ScalarGrid { origin, dims, steps, values };
     Ok(CubeFile { molecule, grid })
@@ -337,6 +348,39 @@ fn parse_vec3_bohr<'a>(fields: &mut impl Iterator<Item = &'a str>, what: &str) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The same cube written in bohr (positive counts) and in angstrom
+    /// (negative counts) gives the same grid and atoms.
+    #[test]
+    fn negative_counts_mean_angstrom() {
+        let bohr = 1.0 / ANGSTROM_PER_BOHR;
+        let write = |name: &str, unit: f64, sign: i32| {
+            let v = |x: f64| x * unit;
+            let text = format!(
+                "comment\ncomment\n    1 {:.6} {:.6} {:.6}\n{:5} {:.6} 0.0 0.0\n{:5} 0.0 {:.6} 0.0\n{:5} 0.0 0.0 {:.6}\n    8 8.0 {:.6} {:.6} {:.6}\n 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0\n",
+                v(-1.0), v(-2.0), v(-3.0), 2 * sign, v(0.5), 2 * sign, v(0.5), 2 * sign, v(0.5), v(0.25), v(0.0), v(-0.75),
+            );
+            let path = std::env::temp_dir().join(format!("apost3dview-{name}-{}.cube", std::process::id()));
+            std::fs::write(&path, text).unwrap();
+            let cube = parse_cube(&path).unwrap();
+            std::fs::remove_file(&path).ok();
+            cube
+        };
+        // Lengths given in angstrom: in bohr, multiply by 1/0.529...
+        let in_bohr = write("bohr", bohr, 1);
+        let in_angstrom = write("angstrom", 1.0, -1);
+        assert_eq!(in_bohr.grid.dims, [2, 2, 2]);
+        assert_eq!(in_angstrom.grid.dims, [2, 2, 2]);
+        let close = |a: Vec3, b: Vec3| (a - b).length() < 1e-5;
+        assert!(close(in_bohr.grid.origin, in_angstrom.grid.origin), "{:?} {:?}", in_bohr.grid.origin, in_angstrom.grid.origin);
+        assert!(close(in_angstrom.grid.origin, Vec3::new(-1.0, -2.0, -3.0)));
+        for axis in 0..3 {
+            assert!(close(in_bohr.grid.steps[axis], in_angstrom.grid.steps[axis]));
+        }
+        assert!(close(in_bohr.molecule.positions[0], in_angstrom.molecule.positions[0]));
+        assert!(close(in_angstrom.molecule.positions[0], Vec3::new(0.25, 0.0, -0.75)));
+        assert_eq!(in_bohr.grid.values, in_angstrom.grid.values);
+    }
 
     #[test]
     fn parses_well_formed_scientific_notation() {

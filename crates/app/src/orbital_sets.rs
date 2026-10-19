@@ -97,6 +97,31 @@ fn fragments_text(results: &ApostResults, molecule: &Molecule, label: &OrbitalLa
     label.fragments.iter().map(|&f| fragment_name_by_id(results, &molecule.atomic_numbers, f)).collect::<Vec<_>>().join(" + ")
 }
 
+/// Below this fit, the orbital APOST-3D writes to the `.fchk` (a basis-set
+/// fit of the EFO times its fragment's weight) can show lobes the exact
+/// orbital doesn't have (APOST-3D docs, guide/visualization.md, "What the
+/// surfaces show"; checked there against the exact cubes).
+pub(crate) const APPROXIMATE_FIT_PERCENT: f64 = 60.0;
+
+/// How closely the orbital in the file reproduces the EFO: the table's
+/// word ("fit"; "recovered" for a negative GEOS EFO) and its percentage.
+fn fit_of(label: &OrbitalLabel) -> Option<(&'static str, f64)> {
+    match label.detail {
+        OrbitalDetail::Efo { negative: true, recovered_percent: Some(p), .. } => Some(("recovered", p)),
+        OrbitalDetail::Efo { negative: false, fit_percent: Some(p), .. } => Some(("fit", p)),
+        _ => None,
+    }
+}
+
+/// For an EFO the file reproduces poorly: why its surface is approximate.
+pub(crate) fn approximate_note(label: &OrbitalLabel) -> Option<String> {
+    let (_, percent) = fit_of(label).filter(|(_, p)| *p < APPROXIMATE_FIT_PERCENT)?;
+    Some(format!(
+        "Approximate shape: the orbital in the .fchk reproduces this EFO to {percent:.0}% only, and can show lobes the exact orbital doesn't have. \
+         Its cube file (CUBE in # METHOD of the APOST-3D input) holds the exact shape."
+    ))
+}
+
 /// The numbers that describe an orbital, for its row in the list.
 fn detail_text(label: &OrbitalLabel) -> String {
     let shares = if label.shares.len() > 1 { format!("shares {}", label.shares.iter().map(|s| format!("{s:.2}")).collect::<Vec<_>>().join("/")) } else { String::new() };
@@ -109,7 +134,8 @@ fn detail_text(label: &OrbitalLabel) -> String {
         }
         OrbitalDetail::Oslo { foli, .. } => foli.map(|f| format!("FOLI {f:.3}")).unwrap_or_default(),
     };
-    [text, shares].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(", ")
+    let fit = fit_of(label).map(|(word, p)| format!("{word} {p:.0}%")).unwrap_or_default();
+    [text, shares, fit].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(", ")
 }
 
 fn trim(value: f64) -> String {
@@ -162,6 +188,9 @@ pub(crate) fn show_set_checklist(ui: &mut egui::Ui, set: &mut LoadedOrbitalSet, 
                 let text = format!("{}  {}", names[k], fragments_text(results, molecule, label));
                 ui.label(if negative { RichText::new(text).italics() } else { RichText::new(text) });
                 ui.label(RichText::new(detail_text(label)).small().weak());
+                if let Some(note) = approximate_note(label) {
+                    ui.label(RichText::new("approximate").small().color(ui.visuals().warn_fg_color)).on_hover_text(note);
+                }
             });
         }
     });

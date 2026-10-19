@@ -8,6 +8,7 @@ use egui::{RichText, Slider};
 use crate::app::App;
 use crate::windows::ToolWindow;
 use crate::orbital_sets::show_set_checklist;
+use crate::isosurfaces::SurfaceSettings;
 use crate::orbitals::{show_mo_checklist, OrbitalAccuracyPreset};
 use crate::state::LoadedStructure;
 
@@ -407,6 +408,7 @@ impl App {
                     if ui.selectable_label(selected, &surface.label).on_hover_text("Show this surface alone, and edit it below").clicked() {
                         action = Some(ListAction::ShowAlone(index));
                     }
+                    ui.label(RichText::new(surface.isovalue_text()).small().weak()).on_hover_text("Isovalue");
                     if ui.small_button("\u{d7}").on_hover_text("Remove this surface").clicked() {
                         action = Some(ListAction::Remove(index));
                     }
@@ -441,8 +443,11 @@ impl App {
 
     /// Settings of the selected surface. Changes to the isovalue,
     /// refinement or signs re-extract it by themselves (`update_surfaces`);
-    /// colors and opacity apply at once. The settings last used here also
-    /// become those of the next surfaces opened or generated.
+    /// colors and opacity apply at once. New orbitals and cubes start from
+    /// the default settings, or from a surface's with "Use for new
+    /// surfaces" (never silently: an isovalue lowered for one surface made
+    /// every later one look spread out, found by the APOST-3D session
+    /// 2026-10-19).
     fn show_surface_settings(&mut self, ui: &mut egui::Ui, active: usize) {
         let structure = &mut self.structures[active];
         let Some(index) = structure.selected_surface.filter(|&i| i < structure.surfaces.len()) else {
@@ -457,6 +462,9 @@ impl App {
         ui.add_space(6.0);
         ui.separator();
         ui.label(RichText::new(&surface.label).strong());
+        if let Some(note) = &surface.note {
+            ui.label(RichText::new(note).small().color(ui.visuals().warn_fg_color));
+        }
         let before = surface.settings;
         let s = &mut surface.settings;
         ui.horizontal(|ui| {
@@ -490,9 +498,13 @@ impl App {
         });
         let mut apply_to_all = false;
         let mut reset = false;
+        let mut use_for_new = false;
         ui.horizontal(|ui| {
             if surface_count > 1 && ui.button("Apply to all surfaces").on_hover_text("Use these settings for every surface of this structure").clicked() {
                 apply_to_all = true;
+            }
+            if !is_density && ui.button("Use for new surfaces").on_hover_text("Orbitals and cubes opened or generated from now on start with these settings").clicked() {
+                use_for_new = true;
             }
             if ui.button("Default").on_hover_text("Back to the default isovalue, colors and opacity").clicked() {
                 reset = true;
@@ -505,12 +517,18 @@ impl App {
         if apply_to_all {
             structure.surfaces.iter_mut().for_each(|other| other.settings = settings);
         }
+        if use_for_new {
+            self.surface_defaults = settings;
+        }
+        if self.surface_defaults != SurfaceSettings::default() {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("New orbitals and cubes start at isovalue {}.", self.surface_defaults.isovalue)).small().weak());
+                if ui.small_button("Reset").on_hover_text("Back to the default settings for new surfaces").clicked() {
+                    self.surface_defaults = SurfaceSettings::default();
+                }
+            });
+        }
         if settings != before || apply_to_all {
-            // A density's settings (its isovalue, its translucency) mean
-            // nothing for the next orbitals.
-            if !is_density {
-                self.surface_defaults = settings;
-            }
             self.rebuild_isosurface();
         }
     }
