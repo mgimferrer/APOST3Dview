@@ -53,6 +53,12 @@ pub(crate) struct ResultsView {
     /// The unit energies are shown in (APOST-3D writes them in au).
     #[serde(default)]
     pub(crate) energy_unit: EnergyUnit,
+    /// For a matrix: its diagonal on every atom or fragment (local spin,
+    /// localization index, intra (self) energy) instead of the pairs seen
+    /// from the focus (Martí, 2026-10-19). Ignored for a matrix whose
+    /// diagonal means nothing (`diagonal_meaning`).
+    #[serde(default)]
+    pub(crate) diagonal: bool,
 }
 
 /// How energies are shown. kcal/mol by default: what chemists read
@@ -129,6 +135,7 @@ impl ResultsView {
             bond_thickness: false,
             log_scale: false,
             energy_unit: EnergyUnit::default(),
+            diagonal: false,
         }
     }
 }
@@ -279,6 +286,32 @@ pub(crate) fn matrix_meanings(entry: &IndexEntry, matrix: &MatrixObject) -> (Opt
     }
 }
 
+/// What a matrix entry's diagonal holds ("local spin", "intra-atomic
+/// (self) energy"), if anything: `None` for a vector, or a matrix whose
+/// diagonal means nothing (the classical interaction).
+pub(crate) fn diagonal_meaning(results: &ApostResults, entry: &IndexEntry) -> Option<String> {
+    match results.quantity(entry).ok()? {
+        Quantity::Matrix(m) => matrix_meanings(entry, &m).0,
+        _ => None,
+    }
+}
+
+/// Whether `view` shows its matrix's diagonal (on every atom or fragment)
+/// rather than the pairs seen from the focus.
+pub(crate) fn shows_diagonal(results: &ApostResults, view: &ResultsView) -> bool {
+    view.diagonal && shown_entry(results, view).is_some_and(|e| diagonal_meaning(results, e).is_some())
+}
+
+/// Under which name a fixed color range is kept: per quantity, and apart
+/// for a matrix's diagonal, whose values have another scale.
+pub(crate) fn range_key(entry: &IndexEntry, diagonal: bool) -> String {
+    if diagonal {
+        format!("{}/diagonal", entry.id)
+    } else {
+        entry.id.clone()
+    }
+}
+
 /// The index entry a view shows, if it is a quantity this file has.
 pub(crate) fn shown_entry<'a>(results: &'a ApostResults, view: &ResultsView) -> Option<&'a IndexEntry> {
     match &view.shown {
@@ -309,9 +342,11 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             // Energies in the chosen unit; fixed ranges are kept in au.
             let (factor, unit) = display_unit(entry, view);
             let quantity = scaled_quantity(quantity, factor);
+            let diagonal = shows_diagonal(results, view);
             let (values, focus): (Vec<f64>, Option<usize>) = match &quantity {
                 Quantity::Scalar(_) | Quantity::Table(_) => return scene,
                 Quantity::Vector(v) => (v.iter().map(|x| x.unwrap_or(0.0)).collect(), None),
+                Quantity::Matrix(m) if diagonal => ((0..m.values.len()).map(|i| m.get(i, i).unwrap_or(0.0)).collect(), None),
                 Quantity::Matrix(m) => {
                     let focus = view.focus.min(m.values.len().saturating_sub(1));
                     ((0..m.values.len()).map(|j| m.get(focus, j).unwrap_or(0.0)).collect(), Some(focus))
@@ -319,7 +354,7 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             };
             // The focused one's own (diagonal) value doesn't set the scale.
             let others: Vec<f64> = values.iter().enumerate().filter(|(i, _)| Some(*i) != focus).map(|(_, v)| *v).collect();
-            let mut scale = fixed.get(&entry.id).map(|s| s.scaled(factor)).unwrap_or_else(|| automatic_scale(entry, &others));
+            let mut scale = fixed.get(&range_key(entry, diagonal)).map(|s| s.scaled(factor)).unwrap_or_else(|| automatic_scale(entry, &others));
             if let ColorScale::Diverging { log, .. } = &mut scale {
                 *log = view.log_scale;
             }
@@ -373,15 +408,17 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
                     scene.labels.push(ValueLabel { text, anchor: anchor(i), color });
                 }
             }
+            let scheme = results.input.as_ref().and_then(|i| i.atomic_definition.as_ref()).and_then(|d| d.short_name.clone().or_else(|| d.keyword.clone()));
+            let with_scheme = |what: String| match &scheme {
+                Some(scheme) => format!("{what} ({scheme})"),
+                None => what,
+            };
             let title = match (&quantity, focus) {
                 (Quantity::Matrix(m), Some(f)) => {
                     let what = matrix_meanings(entry, m).1.unwrap_or_else(|| entry.title.clone());
-                    let scheme = results.input.as_ref().and_then(|i| i.atomic_definition.as_ref()).and_then(|d| d.short_name.clone().or_else(|| d.keyword.clone()));
-                    match scheme {
-                        Some(scheme) => format!("{} with {} ({scheme})", capitalize(&what), name(f)),
-                        None => format!("{} with {}", capitalize(&what), name(f)),
-                    }
+                    with_scheme(format!("{} with {}", capitalize(&what), name(f)))
                 }
+                (Quantity::Matrix(m), None) => with_scheme(capitalize(&matrix_meanings(entry, m).0.unwrap_or_else(|| entry.title.clone()))),
                 _ => entry.title.clone(),
             };
             let title = match unit {
@@ -548,6 +585,9 @@ pub(crate) fn grouped_entries(results: &ApostResults, include_other: bool) -> Ve
 /// or atoms (`Some(false)`): clicks then choose the focus.
 pub(crate) fn focus_target(results: &ApostResults, view: &ResultsView) -> Option<bool> {
     let entry = shown_entry(results, view)?;
+    if shows_diagonal(results, view) {
+        return None;
+    }
     match entry.kind {
         QuantityKind::FragmentMatrix => Some(true),
         QuantityKind::AtomMatrix => Some(false),

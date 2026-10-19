@@ -54,6 +54,9 @@ pub(crate) struct WindowColumn {
     resizing: Option<ToolWindow>,
     /// Windows the user dragged out of the column.
     detached: HashSet<ToolWindow>,
+    /// Changed by "Arrange windows" to give every window a fresh egui id,
+    /// so it comes back at its default size (`ToolWindow::id`).
+    pub(crate) generation: u32,
 }
 
 impl ToolWindow {
@@ -70,8 +73,8 @@ impl ToolWindow {
         }
     }
 
-    fn expanded(self, ctx: &egui::Context) -> bool {
-        egui::collapsing_header::CollapsingState::load(ctx, self.collapsing_id()).is_none_or(|s| s.is_open())
+    fn expanded(self, ctx: &egui::Context, generation: u32) -> bool {
+        egui::collapsing_header::CollapsingState::load(ctx, self.collapsing_id(generation)).is_none_or(|s| s.is_open())
     }
 }
 
@@ -82,7 +85,7 @@ impl App {
         let docked: Vec<ToolWindow> =
             ToolWindow::ALL.into_iter().filter(|w| self.window_open(*w) && !self.window_column.detached.contains(w)).collect();
         let column = &mut self.window_column;
-        let expanded: Vec<bool> = docked.iter().map(|w| w.expanded(ctx)).collect();
+        let expanded: Vec<bool> = docked.iter().map(|w| w.expanded(ctx, column.generation)).collect();
         let collapsed_height = |w: &ToolWindow| column.rects.get(w).map_or(TITLE_BAR_HEIGHT, |r| r.height().min(TITLE_BAR_HEIGHT * 1.5));
         let preferred = |w: &ToolWindow| column.preferred.get(w).copied().unwrap_or_else(|| w.default_height());
         let gaps = GAP * docked.len().saturating_sub(1) as f32;
@@ -114,6 +117,7 @@ impl App {
         // 0.36), so the column could not place it, and a drag that takes a
         // window out of the column would stop following the pointer.
         let builder = egui::Window::new(window.title())
+            .id(window.id(self.window_column.generation))
             .open(open)
             .default_width(COLUMN_WIDTH)
             .default_height(window.default_height())
@@ -141,7 +145,7 @@ impl App {
     /// the user resizing it (its new height is kept) or dragging it out of
     /// the column.
     pub(crate) fn record_column_window(&mut self, ctx: &egui::Context, window: ToolWindow, response: Option<egui::Response>) {
-        let expanded = window.expanded(ctx);
+        let expanded = window.expanded(ctx, self.window_column.generation);
         let column = &mut self.window_column;
         let Some(response) = response else {
             column.rects.remove(&window);
@@ -182,14 +186,22 @@ impl App {
         }
     }
 
-    /// Whether some window was dragged out of the column.
+    /// Whether the windows differ from the default layout: some window
+    /// dragged out of the column, or resized.
     pub(crate) fn windows_out_of_column(&self) -> bool {
-        !self.window_column.detached.is_empty()
+        let column = &self.window_column;
+        !column.detached.is_empty() || !column.preferred.is_empty() || column.rects.values().any(|r| (r.width() - COLUMN_WIDTH).abs() > 1.0)
     }
 
-    /// Puts every window back in the column.
+    /// Puts every window back in the column, at its default size.
     pub(crate) fn arrange_windows(&mut self) {
-        self.window_column.detached.clear();
+        let column = &mut self.window_column;
+        column.detached.clear();
+        column.preferred.clear();
+        column.rects.clear();
+        column.overheads.clear();
+        column.resizing = None;
+        column.generation += 1;
     }
 
     /// Where `title`'s window was last drawn — for tests.

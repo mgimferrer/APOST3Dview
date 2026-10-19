@@ -127,3 +127,30 @@ fn energies_in_kcal_per_mol_or_au() {
     assert_eq!(fixed_au.unwrap().0, "\u{2212}0.0332");
     assert_eq!(lo, "\u{2212}20.8437");
 }
+
+/// A matrix shows either its pairs seen from one atom or fragment, or its
+/// diagonal on every one of them: intra-fragment (self) energies, local
+/// spin.
+#[test]
+fn a_matrix_diagonal_on_every_atom_or_fragment() {
+    let Some(dir) = fixtures_dir() else { return };
+    let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.apost.json")]);
+    assert!(harness.state_mut().show_on_molecule("enpart.total.fragments"));
+    harness.run_steps(3);
+    harness.get_by_label("Intra-fragment (self) energy (each fragment)").click_accesskit();
+    harness.run_steps(3);
+    assert_eq!(harness.state().legend_title().as_deref(), Some("Intra-fragment (self) energy (TFVC), kcal/mol"));
+    assert!(harness.query_by_label("Seen from").is_none(), "no focus for the diagonal");
+    harness.get_by_label("Inter-fragment interaction energy").click_accesskit();
+    harness.run_steps(3);
+    assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-fragment interaction energy with 1 H2O (TFVC), kcal/mol"));
+
+    // Local spin on every atom (S^2 decomposition of a CISD run).
+    let mut harness = app_with(vec![dir.join("H2O-CISD.apost.json")]);
+    assert!(harness.state_mut().show_on_molecule("local_spin.atoms.s2"));
+    harness.run_steps(3);
+    harness.get_by_label("Local spin (each atom)").click_accesskit();
+    harness.run_steps(3);
+    assert_eq!(harness.state().legend_title().as_deref(), Some("Local spin (TFVC)"));
+    screenshot(&mut harness, "local-spin");
+}

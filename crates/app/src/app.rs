@@ -197,6 +197,11 @@ impl App {
         render_state.renderer.write().callback_resources.insert(resources);
 
         let logo_texture = load_texture(&cc.egui_ctx, "apost3d_logo", include_bytes!("../assets/logo.png"));
+        // Every launch starts with the default window layout (the column,
+        // all windows the same size): what an earlier version saved of the
+        // windows' sizes and states is dropped, and nothing is saved anymore
+        // (`persist_egui_memory`).
+        cc.egui_ctx.memory_mut(|memory| memory.data.clear());
 
         Self {
             camera: OrbitCamera::default(),
@@ -654,6 +659,12 @@ impl App {
     }
 }
 impl eframe::App for App {
+    /// Window sizes and states are not kept between launches: see
+    /// `with_options`.
+    fn persist_egui_memory(&self) -> bool {
+        false
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if self.splash {
             let dismissed = ui.input(|i| i.pointer.any_click());

@@ -249,10 +249,7 @@ fn a_selection_can_be_measured_from_the_molecule_window() {
 fn windows_asked_for_again_come_back_expanded() {
     let mut harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk")]);
     let collapse = |harness: &mut egui_kittest::Harness<'_, apost3dview::App>| {
-        let id = egui::Id::new("Surfaces").with("collapsing");
-        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(&harness.ctx, id, true);
-        state.set_open(false);
-        state.store(&harness.ctx);
+        harness.state().set_window_collapsed(&harness.ctx, "Surfaces", true);
         harness.run_steps(2);
         assert!(!harness.state().window_expanded(&harness.ctx, "Surfaces"));
     };
@@ -290,17 +287,18 @@ fn tool_windows_stack_in_a_column() {
     harness.run_steps(4);
     let rect = |harness: &egui_kittest::Harness<'_, apost3dview::App>, title: &str| harness.state().window_rect(title).unwrap();
     let screen_right = harness.ctx.content_rect().right();
+    assert!(harness.query_by_label("Arrange windows").is_none(), "the default layout");
     let (molecule, measure, apost) = (rect(&harness, "Molecule"), rect(&harness, "Measure"), rect(&harness, "APOST-3D"));
+    for r in [molecule, measure, apost] {
+        assert!((r.width() - 400.0).abs() < 1.0, "all the same width: {r:?}");
+    }
     for r in [molecule, measure, apost] {
         assert!((r.right() - (screen_right - 8.0)).abs() < 1.5, "right-aligned: {r:?}");
     }
     assert!(molecule.bottom() <= measure.top() && measure.bottom() <= apost.top(), "in order, no overlap: {molecule:?} {measure:?} {apost:?}");
 
     // Collapsing Molecule moves the others up.
-    let id = egui::Id::new("Molecule").with("collapsing");
-    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(&harness.ctx, id, true);
-    state.set_open(false);
-    state.store(&harness.ctx);
+    harness.state().set_window_collapsed(&harness.ctx, "Molecule", true);
     harness.run_steps(4);
     assert!(rect(&harness, "Measure").top() < measure.top() - 50.0, "moved up");
 
@@ -330,4 +328,23 @@ fn tool_windows_stack_in_a_column() {
     harness.run_steps(4);
     assert!((rect(&harness, "Measure").right() - (screen_right - 8.0)).abs() < 1.5, "back in the column");
     assert!(harness.query_by_label("Arrange windows").is_none());
+
+    // Widened by its left border: still in the column, wider; Arrange
+    // brings back the default width.
+    let edge = rect(&harness, "Measure").left_center();
+    harness.event(Event::PointerMoved(edge));
+    harness.event(Event::PointerButton { pos: edge, button: PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    harness.run_steps(1);
+    for step in 1..=10 {
+        harness.event(Event::PointerMoved(edge - egui::vec2(10.0 * step as f32, 0.0)));
+        harness.run_steps(1);
+    }
+    harness.event(Event::PointerButton { pos: edge - egui::vec2(100.0, 0.0), button: PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    harness.run_steps(3);
+    let widened = rect(&harness, "Measure");
+    assert!(widened.width() > 450.0, "wider: {widened:?}");
+    assert!((widened.right() - (screen_right - 8.0)).abs() < 1.5, "still in the column: {widened:?}");
+    harness.get_by_label("Arrange windows").click_accesskit();
+    harness.run_steps(4);
+    assert!((rect(&harness, "Measure").width() - 400.0).abs() < 1.0, "default width again");
 }

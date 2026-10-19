@@ -43,7 +43,7 @@ impl ToolWindow {
     pub(crate) const TOOLBAR: [ToolWindow; 6] =
         [ToolWindow::Molecule, ToolWindow::Surfaces, ToolWindow::Measure, ToolWindow::Apost, ToolWindow::Appearance, ToolWindow::Export];
 
-    /// The window's title, which is also its egui id.
+    /// The window's title.
     pub(crate) fn title(self) -> &'static str {
         match self {
             ToolWindow::Molecule => "Molecule",
@@ -56,9 +56,16 @@ impl ToolWindow {
         }
     }
 
+    /// The window's egui id: its title, and the layout generation, which
+    /// "Arrange windows" changes to start every window afresh (egui keeps
+    /// a window's size where the app cannot reset it).
+    pub(crate) fn id(self, generation: u32) -> egui::Id {
+        egui::Id::new(self.title()).with(generation)
+    }
+
     /// The id under which egui keeps whether the window is collapsed.
-    fn collapsing_id(self) -> egui::Id {
-        egui::Id::new(self.title()).with("collapsing")
+    pub(crate) fn collapsing_id(self, generation: u32) -> egui::Id {
+        self.id(generation).with("collapsing")
     }
 }
 
@@ -100,7 +107,7 @@ impl App {
 
     pub(crate) fn expand_requested_windows(&mut self, ctx: &egui::Context) {
         for window in std::mem::take(&mut self.windows_to_expand) {
-            let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ctx, window.collapsing_id(), true);
+            let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ctx, window.collapsing_id(self.window_column.generation), true);
             state.set_open(true);
             state.store(ctx);
         }
@@ -109,6 +116,14 @@ impl App {
     /// Whether `title`'s window is open and not collapsed — for tests.
     pub fn window_expanded(&self, ctx: &egui::Context, title: &str) -> bool {
         let Some(window) = ToolWindow::ALL.into_iter().find(|w| w.title() == title) else { return false };
-        self.window_open(window) && egui::collapsing_header::CollapsingState::load(ctx, window.collapsing_id()).is_none_or(|s| s.is_open())
+        self.window_open(window) && egui::collapsing_header::CollapsingState::load(ctx, window.collapsing_id(self.window_column.generation)).is_none_or(|s| s.is_open())
+    }
+
+    /// Collapses or expands `title`'s window — for tests.
+    pub fn set_window_collapsed(&self, ctx: &egui::Context, title: &str, collapsed: bool) {
+        let Some(window) = ToolWindow::ALL.into_iter().find(|w| w.title() == title) else { return };
+        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ctx, window.collapsing_id(self.window_column.generation), true);
+        state.set_open(!collapsed);
+        state.store(ctx);
     }
 }

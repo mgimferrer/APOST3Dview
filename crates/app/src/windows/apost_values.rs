@@ -8,8 +8,8 @@ use egui::{Color32, RichText, Sense};
 
 use crate::app::App;
 use crate::names::{atom_name, fragment_name};
-use crate::util::rgb_to_color32;
-use crate::results_view::{build_scene, display_unit, enpart_term, enpart_term_name, is_energy, scaled_quantity, EnergyUnit, focus_target, grouped_entries, is_secondary, matrix_meanings, shown_entry, ResultsView, Shown, FOCUS_COLOR};
+use crate::util::{capitalize, rgb_to_color32};
+use crate::results_view::{build_scene, display_unit, enpart_term, enpart_term_name, is_energy, scaled_quantity, EnergyUnit, focus_target, grouped_entries, is_secondary, matrix_meanings, diagonal_meaning, range_key, shows_diagonal, shown_entry, ResultsView, Shown, FOCUS_COLOR};
 
 fn shown_label(results: &ApostResults, shown: &Shown) -> String {
     match shown {
@@ -88,6 +88,17 @@ impl App {
 
         let entry = shown_entry(results, view).cloned();
         if let Some(entry) = &entry {
+            // A matrix: its pairs seen from one atom or fragment, or its
+            // diagonal on each of them.
+            if let (Some(diagonal), Some(Quantity::Matrix(m))) = (diagonal_meaning(results, entry), results.quantity(entry).ok()) {
+                let pairs = matrix_meanings(entry, &m).1.unwrap_or_else(|| "pairs".to_string());
+                let each = if entry.kind.on_fragments() { "each fragment" } else { "each atom" };
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Values");
+                    ui.selectable_value(&mut view.diagonal, false, capitalize(&pairs)).on_hover_text("Between pairs, seen from one atom or fragment");
+                    ui.selectable_value(&mut view.diagonal, true, format!("{} ({each})", capitalize(&diagonal))).on_hover_text("The matrix diagonal, on every atom or fragment");
+                });
+            }
             if let Some(on_fragments) = focus_target(results, view) {
                 let count = if on_fragments { results.fragments().len() } else { molecule.atomic_numbers.len() };
                 let name = |i: usize| if on_fragments { fragment_name(&results.fragments()[i], &molecule.atomic_numbers) } else { atom_name(&molecule.atomic_numbers, i) };
@@ -112,7 +123,8 @@ impl App {
             // (kept in the file's unit, shown in the chosen one).
             let (factor, _) = display_unit(entry, view);
             let automatic = build_scene(results, &molecule, &ResultsView { ..view.clone() }, &Default::default()).legend.map(|l| l.scale);
-            let mut fixed = self.color_ranges.get(&entry.id).map(|s| s.scaled(factor));
+            let key = range_key(entry, shows_diagonal(results, view));
+            let mut fixed = self.color_ranges.get(&key).map(|s| s.scaled(factor));
             ui.horizontal(|ui| {
                 ui.label("Colors");
                 if ui.selectable_label(fixed.is_none(), "Automatic").clicked() {
@@ -143,10 +155,10 @@ impl App {
             }
             match fixed {
                 Some(scale) => {
-                    self.color_ranges.insert(entry.id.clone(), scale.scaled(1.0 / factor));
+                    self.color_ranges.insert(key, scale.scaled(1.0 / factor));
                 }
                 None => {
-                    self.color_ranges.remove(&entry.id);
+                    self.color_ranges.remove(&key);
                 }
             }
 
