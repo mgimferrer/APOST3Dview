@@ -180,9 +180,10 @@ impl App {
     /// `.molden`). Parsing the wavefunction (basis set + MO coefficients) is
     /// a separate, slower full-file pass from the geometry-only one; failure
     /// there just means no orbital generation for that structure, not a
-    /// failure to open it. A `.fchk` also picks up the APOST-3D results
-    /// written next to it, if any (`look_for_results`); having none is the
-    /// normal case for a first look at a system, so it is not reported.
+    /// failure to open it. A `.fchk` is the calculation alone: APOST-3D
+    /// results written next to it are noted (`results_nearby`, offered in
+    /// the APOST-3D window) but only loaded on request, or by opening the
+    /// results file itself (Martí, 2026-10-19).
     fn open_wavefunction_file(
         &mut self,
         path: &Path,
@@ -223,13 +224,10 @@ impl App {
             }
             Err(err) => self.show_warning(format!("{label}: geometry loaded, but orbitals unavailable: {err}")),
         }
-        let index = self.push_structure(structure);
         if look_for_results {
-            if let Some(results_path) = find_results_for(path) {
-                self.attach_results(index, &results_path);
-            }
+            structure.results_nearby = find_results_for(path);
         }
-        Some(index)
+        Some(self.push_structure(structure))
     }
 
     fn open_xyz(&mut self, path: &Path) -> Option<usize> {
@@ -300,7 +298,7 @@ impl App {
     }
 }
 
-fn same_file(a: &Path, b: &Path) -> bool {
+pub(crate) fn same_file(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
         _ => a == b,

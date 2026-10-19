@@ -18,12 +18,12 @@ fn total_and_spin_density_of_a_triplet() {
     let session = scratch.join("triplet.a3dview");
     {
         let mut harness = app_with(vec![testdata("H2O-T-ccpVTZ.fchk")]);
-        harness.get_by_label("Surfaces").click();
+        harness.get_by_label("Surfaces").click_accesskit();
         harness.run_steps(2);
         // The HOMO is ticked on opening: only the densities.
-        harness.get_by_label("Clear").click();
-        harness.get_by_label("Total density").click();
-        harness.get_by_label("Spin density").click();
+        harness.get_by_label("Clear").click_accesskit();
+        harness.get_by_label("Total density").click_accesskit();
+        harness.get_by_label("Spin density").click_accesskit();
         harness.run_steps(2);
         harness.get_by_label("Generate 2 surface(s)").click_accesskit();
         harness.run_steps(4);
@@ -50,11 +50,11 @@ fn total_and_spin_density_of_a_triplet() {
 #[test]
 fn densities_start_translucent_and_switch_with_one_checkbox() {
     let mut harness = app_with(vec![testdata("H2O-T-ccpVTZ.fchk")]);
-    harness.get_by_label("Surfaces").click();
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label("Clear").click();
-    harness.get_by_label("Total density").click();
-    harness.get_by_label("Spin density").click();
+    harness.get_by_label("Clear").click_accesskit();
+    harness.get_by_label("Total density").click_accesskit();
+    harness.get_by_label("Spin density").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("Generate 2 surface(s)").click_accesskit();
     harness.run_steps(4);
@@ -83,9 +83,9 @@ fn densities_start_translucent_and_switch_with_one_checkbox() {
 
     // Orbitals generated afterwards are opaque, and translucent at 0.5.
     // (The generation checkboxes come first; the surface list repeats the names.)
-    harness.get_all_by_label("Total density").next().unwrap().click();
-    harness.get_all_by_label("Spin density").next().unwrap().click();
-    harness.get_by_label("HOMO/LUMO").click();
+    harness.get_all_by_label("Total density").next().unwrap().click_accesskit();
+    harness.get_all_by_label("Spin density").next().unwrap().click_accesskit();
+    harness.get_by_label("HOMO/LUMO").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label_contains("Generate 4").click_accesskit();
     harness.run_steps(4);
@@ -100,14 +100,14 @@ fn densities_start_translucent_and_switch_with_one_checkbox() {
 #[test]
 fn a_closed_shell_offers_no_spin_density() {
     let mut harness = app_with(vec![testdata("H2O-631G.fchk")]);
-    harness.get_by_label("Surfaces").click();
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("Total density");
     assert_eq!(harness.query_all_by_label("Spin density").count(), 0);
-    harness.get_by_label("Clear").click();
-    harness.get_by_label("Total density").click();
+    harness.get_by_label("Clear").click_accesskit();
+    harness.get_by_label("Total density").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label("Generate 1 surface(s)").click();
+    harness.get_by_label("Generate 1 surface(s)").click_accesskit();
     harness.run_steps(3);
     assert!(toasts(&harness).iter().any(|m| m == "The total density generated"), "{:?}", toasts(&harness));
 }
@@ -115,8 +115,8 @@ fn a_closed_shell_offers_no_spin_density() {
 #[test]
 fn a_correlated_wavefunction_is_noted() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("H2O-CAS44.fchk")]);
-    harness.get_by_label("Surfaces").click();
+    let mut harness = app_with(vec![dir.join("H2O-CAS44.apost.json")]);
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label_contains("For this CASSCF wavefunction, the density is that of the occupied orbitals");
 }

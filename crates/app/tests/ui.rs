@@ -43,7 +43,7 @@ fn unsupported_files_are_explained() {
 #[test]
 fn a_fchk_picks_up_its_results_and_shows_the_run() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json")]);
     assert!(toasts(&harness).iter().any(|m| m.contains("APOST-3D results loaded from FeCN5NO3--UBLYP.apost.json")));
     // The one-line summary; the details fold out under "Run".
     harness.get_by_label("LOWDIN  \u{b7}  KS-DFT, Unrestricted  \u{b7}  7 fragments");
@@ -86,7 +86,11 @@ fn results_from_another_calculation_are_refused_with_the_reason() {
     let dir = scratch_dir("mismatch");
     std::fs::copy(fixtures.join("H2O-Dimer-B3LYP.fchk"), dir.join("dimer.fchk")).unwrap();
     std::fs::copy(fixtures.join("H2O-Dimer-RHF.apost.json"), dir.join("dimer.apost.json")).unwrap();
-    let harness = app_with(vec![dir.join("dimer.fchk")]);
+    let mut harness = app_with(vec![dir.join("dimer.fchk")]);
+    harness.get_by_label("APOST-3D results...").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("Open these results").click_accesskit();
+    harness.run_steps(2);
     harness.get_by_label("Results not loaded");
     // The reason stays in the APOST-3D window, and is also in the warning.
     assert_eq!(harness.query_all_by_label_contains("dimer.apost.json does not belong to dimer.fchk").count(), 2);
@@ -96,8 +100,8 @@ fn results_from_another_calculation_are_refused_with_the_reason() {
 #[test]
 fn opening_results_for_an_open_fchk_attaches_to_it() {
     let Some(dir) = fixtures_dir() else { return };
-    // Opened together: the .fchk first (it finds its results itself), then
-    // the results file, which must not open the .fchk a second time.
+    // Opened together: the .fchk first, then its results file, which must
+    // attach to the open .fchk rather than open it a second time.
     let mut harness = app_with(vec![dir.join("CH3F.fchk"), dir.join("CH3F.apost.json")]);
     assert_eq!(harness.state().structure_labels(), vec!["CH3F.fchk"]);
     harness.get_by_label("Run").click_accesskit();
@@ -105,20 +109,45 @@ fn opening_results_for_an_open_fchk_attaches_to_it() {
     harness.get_by_label("CH3F.apost.json");
 }
 
+/// A .fchk opens as the calculation alone: results APOST-3D wrote next to
+/// it are offered in the APOST-3D window, and loaded only on request.
+#[test]
+fn a_fchk_opens_without_its_results_which_are_offered() {
+    let Some(dir) = fixtures_dir() else { return };
+    let mut harness = app_with(vec![dir.join("CH3F.fchk")]);
+    assert!(toasts(&harness).is_empty(), "{:?}", toasts(&harness));
+    assert!(!harness.state().window_expanded(&harness.ctx, "APOST-3D"), "the APOST-3D window stays closed");
+    harness.get_by_label("APOST-3D results...").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("APOST-3D results of this calculation were found next to it:");
+    harness.get_by_label("CH3F.apost.json");
+    assert!(harness.query_by_label("Fragments (2)").is_none());
+    harness.get_by_label("Open these results").click_accesskit();
+    harness.run_steps(2);
+    assert!(toasts(&harness).iter().any(|m| m == "APOST-3D results loaded from CH3F.apost.json"), "{:?}", toasts(&harness));
+    harness.get_by_label("Fragments (2)");
+
+    // Without results next to it: how to see them.
+    let mut harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk")]);
+    harness.get_by_label("APOST-3D").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("No APOST-3D results loaded.");
+}
+
 #[test]
 fn fragments_are_listed_and_select_their_atoms() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json")]);
     harness.get_by_label("Fragments (7)");
     harness.get_by_label("1  Fe   Fe1");
-    harness.get_by_label("7  NO   N12, O13").click();
+    harness.get_by_label("7  NO   N12, O13").click_accesskit();
     harness.run_steps(2);
     assert_eq!(harness.state().selected_atoms(), vec![11, 12]);
     // Cmd/Ctrl-click adds a fragment to the selection.
     harness.get_by_label("1  Fe   Fe1").click_modifiers(egui::Modifiers::COMMAND);
     harness.run_steps(2);
     assert_eq!(harness.state().selected_atoms(), vec![11, 12, 0]);
-    harness.get_by_label("1  Fe   Fe1").click();
+    harness.get_by_label("1  Fe   Fe1").click_accesskit();
     harness.run_steps(2);
     assert_eq!(harness.state().selected_atoms(), vec![0]);
 }
@@ -130,14 +159,14 @@ fn atoms_in_no_fragment_are_called_out() {
     std::fs::copy(fixtures.join("CH3F.fchk"), dir.join("CH3F.fchk")).unwrap();
     let text = std::fs::read_to_string(fixtures.join("CH3F.apost.json")).unwrap().replace("\"atoms\": [1, 3, 4, 5]", "\"atoms\": [3]");
     std::fs::write(dir.join("CH3F.apost.json"), text).unwrap();
-    let harness = app_with(vec![dir.join("CH3F.fchk")]);
+    let harness = app_with(vec![dir.join("CH3F.apost.json")]);
     harness.get_by_label("In no fragment: C1, H4, H5");
 }
 
 #[test]
 fn a_run_without_fragments_says_so() {
     let Some(dir) = fixtures_dir() else { return };
-    let harness = app_with(vec![dir.join("C2H6-B3LYP.fchk")]);
+    let harness = app_with(vec![dir.join("C2H6-B3LYP.apost.json")]);
     harness.get_by_label("Fragments (0)");
     harness.get_by_label("This run defines no fragments.");
 }
@@ -149,7 +178,7 @@ fn testdata(name: &str) -> std::path::PathBuf {
 #[test]
 fn cubes_of_one_molecule_become_surfaces_of_one_structure() {
     let mut harness = app_with(vec![testdata("H2O-ccpVDZ-HOMO.cube"), testdata("H2O-ccpVDZ-LUMO.cube")]);
-    harness.get_by_label("Surfaces").click();
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(3);
     harness.get_by_label("Surfaces (2)");
     // One structure, named after the first cube, which is the one shown.
@@ -163,7 +192,7 @@ fn cubes_of_one_molecule_become_surfaces_of_one_structure() {
 #[test]
 fn cubes_attach_to_the_fchk_they_belong_to() {
     let mut harness = app_with(vec![testdata("H2O-ccpVDZ.fchk"), testdata("H2O-ccpVDZ-HOMO.cube")]);
-    harness.get_by_label("Surfaces").click();
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(3);
     harness.get_by_label("Surfaces (1)");
     assert_eq!(harness.state().structure_labels(), vec!["H2O-ccpVDZ.fchk"]);
@@ -173,11 +202,11 @@ fn cubes_attach_to_the_fchk_they_belong_to() {
 #[test]
 fn generated_orbitals_are_surfaces_of_the_same_structure() {
     let mut harness = app_with(vec![testdata("H2O-631G.fchk")]);
-    harness.get_by_label("Surfaces").click();
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label("HOMO/LUMO").click();
+    harness.get_by_label("HOMO/LUMO").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label("Generate 2 orbital(s)").click();
+    harness.get_by_label("Generate 2 orbital(s)").click_accesskit();
     harness.run_steps(3);
     harness.get_by_label("Surfaces (2)");
     // Surfaces of the same structure, the first shown alone.
@@ -189,10 +218,10 @@ fn generated_orbitals_are_surfaces_of_the_same_structure() {
 #[test]
 fn structures_can_be_closed() {
     let mut harness = app_with(vec![testdata("H2O-631G.fchk"), testdata("H2O-ccpVDZ.fchk")]);
-    harness.get_all_by_label("\u{d7}").next().unwrap().click();
+    harness.get_all_by_label("\u{d7}").next().unwrap().click_accesskit();
     harness.run_steps(2);
     assert_eq!(harness.state().structure_labels(), vec!["H2O-ccpVDZ.fchk"]);
-    harness.get_by_label("\u{d7}").click();
+    harness.get_by_label("\u{d7}").click_accesskit();
     harness.run_steps(2);
     assert!(harness.state().structure_labels().is_empty());
     harness.get_by_label_contains("Nothing open yet");
@@ -204,11 +233,11 @@ fn structures_can_be_closed() {
 #[test]
 fn a_selection_can_be_measured_from_the_molecule_window() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("CH3F.fchk")]);
-    harness.get_by_label("2  CH3   C1, H3, H4, H5").click();
+    let mut harness = app_with(vec![dir.join("CH3F.apost.json")]);
+    harness.get_by_label("2  CH3   C1, H3, H4, H5").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("Selected: C1, H3, H4, H5");
-    harness.get_by_label("Add measurement").click();
+    harness.get_by_label("Add measurement").click_accesskit();
     harness.run_steps(3);
     harness.get_by_label_contains("C1-H3-H4-H5: ");
 }
@@ -227,22 +256,22 @@ fn windows_asked_for_again_come_back_expanded() {
         harness.run_steps(2);
         assert!(!harness.state().window_expanded(&harness.ctx, "Surfaces"));
     };
-    harness.get_by_label("Surfaces").click();
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     assert!(harness.state().window_expanded(&harness.ctx, "Surfaces"));
 
     // Collapsed, then asked for from the Molecule window's link.
     collapse(&mut harness);
-    harness.get_by_label("Orbitals...").click();
+    harness.get_by_label("Orbitals...").click_accesskit();
     harness.run_steps(2);
     assert!(harness.state().window_expanded(&harness.ctx, "Surfaces"));
 
     // Collapsed, closed from the toolbar, opened again: expanded.
     collapse(&mut harness);
-    harness.get_all_by_label("Surfaces").next().unwrap().click();
+    harness.get_all_by_label("Surfaces").next().unwrap().click_accesskit();
     harness.run_steps(2);
     assert!(!harness.state().window_expanded(&harness.ctx, "Surfaces"));
-    harness.get_all_by_label("Surfaces").next().unwrap().click();
+    harness.get_all_by_label("Surfaces").next().unwrap().click_accesskit();
     harness.run_steps(2);
     assert!(harness.state().window_expanded(&harness.ctx, "Surfaces"));
 }
@@ -257,7 +286,7 @@ fn tool_windows_stack_in_a_column() {
     use egui::{Event, PointerButton};
     let Some(dir) = fixtures_dir() else { return };
     let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json")]);
-    harness.get_by_label("Measure").click();
+    harness.get_by_label("Measure").click_accesskit();
     harness.run_steps(4);
     let rect = |harness: &egui_kittest::Harness<'_, apost3dview::App>, title: &str| harness.state().window_rect(title).unwrap();
     let screen_right = harness.ctx.content_rect().right();
@@ -297,7 +326,7 @@ fn tool_windows_stack_in_a_column() {
     assert!(moved.left() < screen_right - 600.0, "the window followed the drag: {moved:?}");
     harness.run_steps(3);
     assert_eq!(rect(&harness, "Measure"), moved, "and stays where it was put");
-    harness.get_by_label("Arrange windows").click();
+    harness.get_by_label("Arrange windows").click_accesskit();
     harness.run_steps(4);
     assert!((rect(&harness, "Measure").right() - (screen_right - 8.0)).abs() < 1.5, "back in the column");
     assert!(harness.query_by_label("Arrange windows").is_none());

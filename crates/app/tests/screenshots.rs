@@ -29,10 +29,10 @@ fn molecule_and_orbital() {
 #[test]
 fn apost3d_results() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json")]);
     harness.run_steps(4);
     assert!(has_content(&screenshot(&mut harness, "apost3d")));
-    let mut harness = app_with(vec![dir.join("FeO4-2.fchk")]);
+    let mut harness = app_with(vec![dir.join("FeO4-2.apost.json")]);
     harness.run_steps(4);
     assert!(has_content(&screenshot(&mut harness, "apost3d-fragments")));
     let mut harness = app_with(vec![dir.join("H2O-TPSS.apost.json")]);
@@ -50,17 +50,17 @@ fn fragment_envelopes_leave_the_atoms_alone() {
     std::fs::copy(dir.join("FeCN5NO3--UBLYP.fchk"), scratch.join("plain.fchk")).unwrap();
     // The same molecule with and without results, in one app: switching
     // between structures of the same geometry keeps the camera.
-    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk"), scratch.join("plain.fchk")]);
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json"), scratch.join("plain.fchk")]);
     harness.run_steps(3);
-    harness.get_all_by_label("FeCN5NO3--UBLYP.fchk").next().unwrap().click();
+    harness.get_all_by_label("FeCN5NO3--UBLYP.fchk").next().unwrap().click_accesskit();
     harness.run_steps(3);
     assert!(harness.state_mut().show_on_molecule("fragments"));
     harness.run_steps(3);
     let with_envelopes = harness.state_mut().render_image(480, 360).unwrap();
-    harness.get_all_by_label("plain.fchk").next().unwrap().click();
+    harness.get_all_by_label("plain.fchk").next().unwrap().click_accesskit();
     harness.run_steps(3);
     let plain_image = harness.state_mut().render_image(480, 360).unwrap();
-    harness.get_all_by_label("FeCN5NO3--UBLYP.fchk").next().unwrap().click();
+    harness.get_all_by_label("FeCN5NO3--UBLYP.fchk").next().unwrap().click_accesskit();
     harness.run_steps(3);
     assert!(harness.state_mut().show_on_molecule("nothing"));
     harness.run_steps(3);
@@ -82,23 +82,23 @@ fn surfaces_update_by_themselves() {
     use egui_kittest::kittest::Queryable;
     let path = |name: &str| repo_dir().join("TESTS-VISUALIZER").join(name);
     let mut harness = app_with(vec![path("H2O-ccpVDZ-HOMO.cube"), path("H2O-ccpVDZ-LUMO.cube")]);
-    harness.get_by_label("Surfaces").click();
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.remove_cursor();
     harness.run_steps(4);
     let homo = screenshot(&mut harness, "surface-homo");
 
-    harness.get_by_label("Both signs (+/-)").click();
+    harness.get_by_label("Both signs (+/-)").click_accesskit();
     harness.remove_cursor();
     harness.run_steps(4);
     let one_sign = screenshot(&mut harness, "surface-homo-one-sign");
 
-    harness.get_by_label("Both signs (+/-)").click();
-    harness.get_by_label("2x").click();
+    harness.get_by_label("Both signs (+/-)").click_accesskit();
+    harness.get_by_label("2x").click_accesskit();
     harness.remove_cursor();
     harness.run_steps(4);
     let refined = screenshot(&mut harness, "surface-homo-refined");
 
-    harness.get_by_label("H2O-ccpVDZ-LUMO.cube").click();
+    harness.get_by_label("H2O-ccpVDZ-LUMO.cube").click_accesskit();
     harness.remove_cursor();
     harness.run_steps(4);
     let lumo = screenshot(&mut harness, "surface-lumo");
@@ -114,9 +114,9 @@ fn surfaces_update_by_themselves() {
 fn every_window_open() {
     use egui_kittest::kittest::Queryable;
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("CH3F.fchk")]);
+    let mut harness = app_with(vec![dir.join("CH3F.apost.json")]);
     for name in ["Surfaces", "Measure", "Appearance", "Export"] {
-        harness.get_by_label(name).click();
+        harness.get_by_label(name).click_accesskit();
         harness.run_steps(1);
     }
     // (Through accessibility: with every window open, these are scrolled

@@ -33,7 +33,7 @@ fn choose_orbitals(harness: &mut egui_kittest::Harness<'_, apost3dview::App>, op
 #[test]
 fn oslos_are_generated_with_their_fragments() {
     let Some(dir) = orbital_fixtures() else { return };
-    let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.fchk")]);
+    let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.apost.json")]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     choose_orbitals(&mut harness, "OSLOs");
@@ -61,7 +61,7 @@ fn oslos_before_orthogonalization_are_a_set_of_their_own() {
     let scratch = scratch_dir("orbital-set-preortho");
     let session = scratch.join("preortho.a3dview");
     {
-        let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.fchk")]);
+        let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.apost.json")]);
         harness.get_by_label("Surfaces").click_accesskit();
         harness.run_steps(2);
         // The final C-C OSLO, then the same one before orthogonalization:
@@ -96,7 +96,7 @@ fn oslos_before_orthogonalization_are_a_set_of_their_own() {
 #[test]
 fn a_table_row_draws_its_orbital() {
     let Some(dir) = orbital_fixtures() else { return };
-    let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.fchk")]);
+    let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.apost.json")]);
     harness.get_by_label("Key numbers");
     harness.get_by_label("Sum of the FOLI values, total");
     harness.get_by_label("Tables (1)").click_accesskit();
@@ -114,7 +114,7 @@ fn a_table_row_draws_its_orbital() {
 #[test]
 fn geos_sets_name_paired_unpaired_and_negative_efos() {
     let Some(dir) = orbital_fixtures() else { return };
-    let mut harness = app_with(vec![dir.join("NaBH3--B3LYP-GEOS.fchk")]);
+    let mut harness = app_with(vec![dir.join("NaBH3--B3LYP-GEOS.apost.json")]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     choose_orbitals(&mut harness, "GEOS EFOs");
@@ -136,7 +136,7 @@ fn geos_sets_name_paired_unpaired_and_negative_efos() {
 #[test]
 fn a_closed_shell_eos_set_says_beta_equals_alpha() {
     let Some(dir) = orbital_fixtures() else { return };
-    let mut harness = app_with(vec![dir.join("FeCO2-PBEPBE.fchk")]);
+    let mut harness = app_with(vec![dir.join("FeCO2-PBEPBE.apost.json")]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     choose_orbitals(&mut harness, "EOS EFOs");
@@ -161,7 +161,7 @@ fn an_orbital_file_of_another_molecule_is_refused() {
     }
     // The orbital file of another system, under the expected name.
     std::fs::copy(dir.join("H2-S-OSLO-OSLOs.fchk"), scratch.join("C2H6-OSLO-2CH3-OSLOs.fchk")).unwrap();
-    let mut harness = app_with(vec![scratch.join("C2H6-OSLO-2CH3.fchk")]);
+    let mut harness = app_with(vec![scratch.join("C2H6-OSLO-2CH3.apost.json")]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     choose_orbitals(&mut harness, "OSLOs");
@@ -186,7 +186,7 @@ fn an_orbital_file_of_another_run_is_refused() {
     let (first, rest) = text.split_once('\n').unwrap();
     let stale = format!("{}, run 2026-01-01T00:00:00+01:00/abcd\n{rest}", first.rsplit_once(", run ").unwrap().0);
     std::fs::write(scratch.join("C2H6-OSLO-2CH3-OSLOs.fchk"), stale).unwrap();
-    let mut harness = app_with(vec![scratch.join("C2H6-OSLO-2CH3.fchk")]);
+    let mut harness = app_with(vec![scratch.join("C2H6-OSLO-2CH3.apost.json")]);
     harness.get_by_label("Tables (1)").click_accesskit();
     harness.run_steps(2);
     harness.get_all_by_label("Draw").next().unwrap().click_accesskit();
@@ -198,7 +198,7 @@ fn an_orbital_file_of_another_run_is_refused() {
 #[test]
 fn effao_tables_are_listed_but_not_drawable() {
     let Some(dir) = common::fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("CH3F-EFFAO-U.fchk")]);
+    let mut harness = app_with(vec![dir.join("CH3F-EFFAO-U.apost.json")]);
     harness.get_by_label("Tables (2)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("No orbital file for these orbitals.");
@@ -211,7 +211,7 @@ fn sessions_keep_analysis_orbitals() {
     let scratch = scratch_dir("orbital-set-session");
     let session = scratch.join("oslo.a3dview");
     {
-        let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.fchk")]);
+        let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.apost.json")]);
         harness.get_by_label("Tables (1)").click_accesskit();
         harness.run_steps(2);
         harness.get_all_by_label("Draw").nth(8).unwrap().click_accesskit();

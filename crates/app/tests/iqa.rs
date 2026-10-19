@@ -16,7 +16,7 @@ fn combo_with_value<'a>(harness: &'a egui_kittest::Harness<'_, apost3dview::App>
 #[test]
 fn iqa_between_atoms_with_its_terms() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.apost.json")]);
     assert!(harness.state_mut().show_on_molecule("enpart.total.atoms"));
     harness.run_steps(3);
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-atomic interaction energy with O1 (TFVC), kcal/mol"));
@@ -28,14 +28,14 @@ fn iqa_between_atoms_with_its_terms() {
     screenshot(&mut harness, "iqa-atoms-total");
 
     // Another term, the same atoms.
-    combo_with_value(&harness, "Total (IQA)").click();
+    combo_with_value(&harness, "Total (IQA)").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label("Classical (electrostatic)").click();
+    harness.get_by_label("Classical (electrostatic)").click_accesskit();
     harness.run_steps(3);
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-atomic classical (electrostatic) interaction with O1 (TFVC), kcal/mol"));
 
     // Logarithmic colors.
-    harness.get_by_label("Logarithmic colors").click();
+    harness.get_by_label("Logarithmic colors").click_accesskit();
     harness.run_steps(3);
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-atomic classical (electrostatic) interaction with O1 (TFVC), kcal/mol, log scale"));
     screenshot(&mut harness, "iqa-atoms-classical-log");
@@ -44,7 +44,7 @@ fn iqa_between_atoms_with_its_terms() {
 #[test]
 fn iqa_between_fragments() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.apost.json")]);
     assert!(harness.state_mut().show_on_molecule("enpart.total.fragments"));
     harness.run_steps(3);
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-fragment interaction energy with 1 H2O (TFVC), kcal/mol"));
@@ -57,13 +57,13 @@ fn iqa_between_fragments() {
 #[test]
 fn a_correlated_wavefunction_splits_exchange_and_correlation() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("H2O-CISD.fchk")]);
+    let mut harness = app_with(vec![dir.join("H2O-CISD.apost.json")]);
     assert!(harness.state_mut().show_on_molecule("enpart.xc.atoms"));
     harness.run_steps(3);
-    combo_with_value(&harness, "Exchange-correlation").click();
+    combo_with_value(&harness, "Exchange-correlation").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("Exchange (part of exchange-correlation)");
-    harness.get_by_label("Correlation (part of exchange-correlation)").click();
+    harness.get_by_label("Correlation (part of exchange-correlation)").click_accesskit();
     harness.run_steps(3);
     assert!(harness.state().legend_title().unwrap().contains("with O1"));
     harness.get_by_label_contains("CASSCF");
@@ -72,9 +72,9 @@ fn a_correlated_wavefunction_splits_exchange_and_correlation() {
 #[test]
 fn atomic_energies_and_the_selected_pair() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.apost.json")]);
     // Atomic energies as numbers, in the IQA section.
-    harness.get_by_label_contains("Energy decomposition (IQA)").click();
+    harness.get_by_label_contains("Energy decomposition (IQA)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("Atomic energies, kcal/mol");
     harness.get_by_label("Fragment energies, kcal/mol");
@@ -90,17 +90,17 @@ fn atomic_energies_and_the_selected_pair() {
 #[test]
 fn stopped_and_unreferenced_runs() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("H2O-TPSS.fchk")]);
-    harness.get_by_label_contains("Energy decomposition (IQA)").click();
+    let mut harness = app_with(vec![dir.join("H2O-TPSS.apost.json")]);
+    harness.get_by_label_contains("Energy decomposition (IQA)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("The run stopped during the energy decomposition: no terms were written.");
-    let mut harness = app_with(vec![dir.join("H2O-Dimer-RHF-NOREF.fchk")]);
-    harness.get_by_label_contains("Energy decomposition (IQA)").click();
+    let mut harness = app_with(vec![dir.join("H2O-Dimer-RHF-NOREF.apost.json")]);
+    harness.get_by_label_contains("Energy decomposition (IQA)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label_contains("Not possible: the .fchk has no reference energy components");
     // A run in an external field: its energy is listed.
-    let mut harness = app_with(vec![dir.join("H2O-RHF-FIELD.fchk")]);
-    harness.get_by_label_contains("Energy decomposition (IQA)").click();
+    let mut harness = app_with(vec![dir.join("H2O-RHF-FIELD.apost.json")]);
+    harness.get_by_label_contains("Energy decomposition (IQA)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("External field energy");
 }
@@ -108,20 +108,20 @@ fn stopped_and_unreferenced_runs() {
 #[test]
 fn energies_in_kcal_per_mol_or_au() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.apost.json")]);
     assert!(harness.state_mut().show_on_molecule("enpart.total.fragments"));
     harness.run_steps(3);
     // kcal/mol by default: the waters' interaction, -0.033217 au.
     harness.get_by_label("1 H2O \u{2013} 2 H2O   -20.84");
-    harness.get_all_by_label("au").next().unwrap().click();
+    harness.get_all_by_label("au").next().unwrap().click_accesskit();
     harness.run_steps(3);
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-fragment interaction energy with 1 H2O (TFVC), au"));
     harness.get_by_label("1 H2O \u{2013} 2 H2O   -0.033217");
     // Fixed ranges are kept in au whatever the unit shown.
-    harness.get_by_label("Fixed").click();
+    harness.get_by_label("Fixed").click_accesskit();
     harness.run_steps(2);
     let fixed_au = harness.state().legend_bounds();
-    harness.get_all_by_label("kcal/mol").next().unwrap().click();
+    harness.get_all_by_label("kcal/mol").next().unwrap().click_accesskit();
     harness.run_steps(3);
     let (lo, _) = harness.state().legend_bounds().unwrap();
     assert_eq!(fixed_au.unwrap().0, "\u{2212}0.0332");

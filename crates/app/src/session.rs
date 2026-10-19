@@ -94,6 +94,15 @@ struct StructureState {
     file_absolute: String,
     /// The atoms the settings below refer to, to notice a changed file.
     atomic_numbers: Vec<u32>,
+    /// The APOST-3D results file opened for this structure (relative, then
+    /// absolute), when it is not `file` itself: a `.fchk` is opened
+    /// without its results, which are loaded on request (2026-10-19).
+    /// Sessions saved before have none, and attach the results found next
+    /// to the `.fchk` when they recorded a results view, as they did then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    results: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    results_absolute: Option<String>,
     /// What the APOST-3D results show on the molecule.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     results_view: Option<ResultsView>,
@@ -253,10 +262,13 @@ impl App {
                 hidden_atoms.sort_unstable();
                 let mut hidden_bonds: Vec<[usize; 2]> = structure.hidden_bonds.iter().map(|&i| atom_pair(molecule, i)).collect();
                 hidden_bonds.sort_unstable();
+                let results = structure.apost.as_ref().map(|a| &a.results_path).filter(|r| !crate::files::same_file(r, path));
                 Some(StructureState {
                     file: relative_path(base, path),
                     file_absolute: path.to_string_lossy().into_owned(),
                     atomic_numbers: molecule.atomic_numbers.clone(),
+                    results: results.map(|r| relative_path(base, r)),
+                    results_absolute: results.map(|r| r.to_string_lossy().into_owned()),
                     results_view: structure.apost.as_ref().and_then(|a| a.view.clone()),
                     selected_surface: structure.selected_surface,
                     hidden_atoms,
@@ -388,6 +400,21 @@ impl App {
                 continue;
             };
             opened.insert(position, index);
+            // Its APOST-3D results, as the session had them open.
+            let results = match (&state.results, &state.results_absolute) {
+                (Some(relative), absolute) => {
+                    let found = resolve(&base, relative, absolute.as_deref().unwrap_or(""));
+                    if found.is_none() {
+                        problems.push(format!("{} was not found", file_name(relative)));
+                    }
+                    found
+                }
+                (None, _) if state.results_view.is_some() && self.structures[index].apost.is_none() => self.structures[index].results_nearby.clone(),
+                _ => None,
+            };
+            if let Some(results) = results {
+                self.attach_results(index, &results);
+            }
             self.restore_structure(index, state, &base, &mut problems);
         }
 

@@ -114,8 +114,12 @@ pub(crate) struct LoadedStructure {
     pub(crate) selected_total_density: bool,
     pub(crate) selected_spin_density: bool,
     pub(crate) selected_beta_mos: HashSet<usize>,
-    /// APOST-3D results found for (or opened with) this structure.
+    /// APOST-3D results opened for this structure.
     pub(crate) apost: Option<ApostAttachment>,
+    /// The `<job>.apost.json` found next to this structure's `.fchk`, not
+    /// loaded: results are opened on request (Martí, 2026-10-19), here
+    /// with the APOST-3D window's "Open these results".
+    pub(crate) results_nearby: Option<std::path::PathBuf>,
     /// The analysis orbital sets next to the results (EOS, GEOS, OSLO).
     pub(crate) orbital_sets: Vec<LoadedOrbitalSet>,
     /// The orbitals the Surfaces window generates from: 0 the SCF ones,
@@ -146,6 +150,7 @@ impl LoadedStructure {
             selected_spin_density: false,
             selected_beta_mos: HashSet::new(),
             apost: None,
+            results_nearby: None,
             orbital_sets: Vec::new(),
             active_orbital_set: 0,
         }

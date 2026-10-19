@@ -16,7 +16,7 @@ fn differing(a: &[u8], b: &[u8]) -> usize {
 #[test]
 fn fragments_are_shown_by_default_and_values_on_request() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json")]);
     harness.get_by_label("On the molecule");
     assert_eq!(harness.state().legend_title(), None, "fragments in their own colors need no legend");
 
@@ -33,7 +33,7 @@ fn fragments_are_shown_by_default_and_values_on_request() {
 #[test]
 fn a_pair_quantity_is_seen_from_one_fragment() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json")]);
     assert!(harness.state_mut().show_on_molecule("bond_orders.fragments.matrix"));
     harness.run_steps(3);
     assert!(harness.state().legend_title().unwrap().contains("with 1 Fe"));
@@ -52,7 +52,7 @@ fn a_pair_quantity_is_seen_from_one_fragment() {
 #[test]
 fn atom_values_and_the_selected_pair() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json")]);
     assert!(harness.state_mut().show_on_molecule("populations.atoms.charges"));
     harness.run_steps(3);
     assert_eq!(harness.state().legend_title().as_deref(), Some("Atomic charges (Lowdin)"));
@@ -67,16 +67,16 @@ fn atom_values_and_the_selected_pair() {
 #[test]
 fn a_fixed_range_is_shared_by_every_structure() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("NaBH3--UHF.fchk"), dir.join("NaBH3--UHF-DAVIDSON.fchk")]);
+    let mut harness = app_with(vec![dir.join("NaBH3--UHF.apost.json"), dir.join("NaBH3--UHF-DAVIDSON.fchk")]);
     // The second structure is active: show charges and fix the range.
     assert!(harness.state_mut().show_on_molecule("populations.fragments.charges"));
     harness.run_steps(2);
     let automatic_second = harness.state().legend_bounds();
-    harness.get_by_label("Fixed").click();
+    harness.get_by_label("Fixed").click_accesskit();
     harness.run_steps(2);
     assert_eq!(harness.state().legend_bounds(), automatic_second, "fixing keeps the range it had");
     // The first structure, a different run: same quantity id, same range.
-    harness.get_all_by_label("NaBH3--UHF.fchk").next().unwrap().click();
+    harness.get_all_by_label("NaBH3--UHF.fchk").next().unwrap().click_accesskit();
     harness.run_steps(2);
     assert!(harness.state_mut().show_on_molecule("populations.fragments.charges"));
     harness.run_steps(2);
@@ -86,16 +86,16 @@ fn a_fixed_range_is_shared_by_every_structure() {
 #[test]
 fn bond_thickness_and_legends_reach_the_exported_image() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json")]);
     assert!(harness.state_mut().show_on_molecule("nothing"));
     harness.run_steps(3);
     let plain = harness.state_mut().render_image(600, 450).unwrap();
 
-    harness.get_by_label("Bond thickness from bond orders").click();
+    harness.get_by_label("Bond thickness from bond orders").click_accesskit();
     harness.run_steps(3);
     let thick = harness.state_mut().render_image(600, 450).unwrap();
     assert!(differing(&plain, &thick) > 500, "bonds change thickness");
-    harness.get_by_label("Bond thickness from bond orders").click();
+    harness.get_by_label("Bond thickness from bond orders").click_accesskit();
     harness.run_steps(3);
     assert_eq!(differing(&plain, &harness.state_mut().render_image(600, 450).unwrap()), 0, "and come back equal");
 
@@ -116,8 +116,8 @@ fn bond_thickness_and_legends_reach_the_exported_image() {
 fn other_values_are_listed_only_on_request() {
     use egui_kittest::kittest::By;
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
-    harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).next().unwrap().click();
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json")]);
+    harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).next().unwrap().click_accesskit();
     harness.run_steps(2);
     for listed in ["Atomic charges (Lowdin)", "Spin populations (Lowdin)", "Fragment charges (Lowdin)", "Bond orders (Lowdin)", "EOS oxidation states (Lowdin)"] {
         assert!(harness.query_by_label(listed).is_some(), "{listed} listed");

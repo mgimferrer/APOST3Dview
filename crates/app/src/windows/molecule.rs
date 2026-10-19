@@ -85,7 +85,7 @@ impl App {
     fn show_links_to_other_windows(&mut self, ui: &mut egui::Ui, active: usize) {
         let structure = &self.structures[active];
         let has_orbitals = structure.wavefunction.is_some();
-        let has_results = structure.apost.is_some();
+        let has_results = structure.apost.is_some() || structure.results_nearby.is_some();
         ui.horizontal_wrapped(|ui| {
             if has_orbitals && ui.button("Orbitals...").on_hover_text("Generate and show orbitals (Surfaces window)").clicked() {
                 self.open_window(ToolWindow::Surfaces);

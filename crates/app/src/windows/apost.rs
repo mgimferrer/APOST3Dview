@@ -305,12 +305,24 @@ impl App {
             return false;
         };
         let Some(attachment) = structure.apost.as_mut() else {
-            ui.label(RichText::new("No APOST-3D results for this structure.").weak());
-            ui.label(
-                RichText::new("Open an APOST-3D results file (.apost.json), or a .fchk with the <job>.apost.json APOST-3D wrote next to it.")
-                    .small()
-                    .weak(),
-            );
+            // A .fchk is the calculation alone; its results are opened on
+            // request.
+            let nearby = structure.results_nearby.clone();
+            match nearby {
+                Some(path) => {
+                    ui.label("APOST-3D results of this calculation were found next to it:");
+                    ui.label(RichText::new(crate::util::file_display_name(&path)).strong());
+                    if ui.button("Open these results").clicked()
+                        && let Some(active) = self.active_structure
+                    {
+                        self.attach_results(active, &path);
+                    }
+                }
+                None => {
+                    ui.label(RichText::new("No APOST-3D results loaded.").weak());
+                    ui.label(RichText::new("To see APOST-3D results, open the results file (.apost.json) APOST-3D wrote for this calculation.").small().weak());
+                }
+            }
             return false;
         };
         let results = match &attachment.results {

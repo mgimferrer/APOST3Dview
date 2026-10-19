@@ -54,9 +54,9 @@ const BI: &[&str] = &["TESTS-VISUALIZER/Bi-dianion-OSD.fchk"];
 const BICL3: &[&str] = &["TESTS-VISUALIZER/BiCl3-def2TZVPP.fchk"];
 const H2O: &[&str] = &["TESTS-VISUALIZER/H2O-ccpVTZ.fchk"];
 const H2O_T: &[&str] = &["TESTS-VISUALIZER/H2O-T-ccpVTZ.fchk"];
-const FE: &[&str] = &["fixtures/apost3d/FeCN5NO3--UBLYP.fchk"];
-const C2H6: &[&str] = &["fixtures/apost3d/C2H6-B3LYP.fchk"];
-const C2H6_OSLO: &[&str] = &["fixtures/apost3d-orbitals/C2H6-OSLO-2CH3.fchk"];
+const FE: &[&str] = &["fixtures/apost3d/FeCN5NO3--UBLYP.apost.json"];
+const C2H6: &[&str] = &["fixtures/apost3d/C2H6-B3LYP.apost.json"];
+const C2H6_OSLO: &[&str] = &["fixtures/apost3d-orbitals/C2H6-OSLO-2CH3.apost.json"];
 
 const PLAIN: &str = "[appearance]\nambient_occlusion = false\ndepth_of_field = false\n";
 const AO: &str = "[appearance]\nambient_occlusion = true\ndepth_of_field = false\n";

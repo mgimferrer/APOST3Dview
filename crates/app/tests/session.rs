@@ -40,17 +40,17 @@ fn a_session_reopens_to_the_same_picture() {
 
     // Two generated orbitals, the first refined; element labels; no depth
     // of field; a turned camera.
-    first.get_by_label("Surfaces").click();
+    first.get_by_label("Surfaces").click_accesskit();
     first.run_steps(2);
-    first.get_by_label("HOMO/LUMO").click();
+    first.get_by_label("HOMO/LUMO").click_accesskit();
     first.run_steps(2);
-    first.get_by_label("Generate 2 orbital(s)").click();
+    first.get_by_label("Generate 2 orbital(s)").click_accesskit();
     first.run_steps(2);
-    first.get_by_label("2x").click();
-    first.get_by_label("Element").click();
-    first.get_by_label("Appearance").click();
+    first.get_by_label("2x").click_accesskit();
+    first.get_by_label("Element").click_accesskit();
+    first.get_by_label("Appearance").click_accesskit();
     first.run_steps(2);
-    first.get_by_label("Depth of field").click();
+    first.get_by_label("Depth of field").click_accesskit();
     rotate(&mut first);
     first.run_steps(3);
 
@@ -81,23 +81,25 @@ fn a_session_reopens_to_the_same_picture() {
 fn per_atom_settings_survive_and_a_moved_folder_still_opens() {
     let Some(fixtures) = fixtures_dir() else { return };
     let dir = scratch_dir("session-atoms");
-    let fchk = copy_into(&dir, &fixtures.join("CH3F.fchk"));
-    copy_into(&dir, &fixtures.join("CH3F.apost.json"));
-    let mut first = app_with(vec![fchk]);
+    copy_into(&dir, &fixtures.join("CH3F.fchk"));
+    let results = copy_into(&dir, &fixtures.join("CH3F.apost.json"));
+    let mut first = app_with(vec![results]);
 
     // Select the CH3 fragment, measure it, then hide it; fragment colors off.
-    first.get_by_label("2  CH3   C1, H3, H4, H5").click();
+    first.get_by_label("2  CH3   C1, H3, H4, H5").click_accesskit();
     first.run_steps(2);
-    first.get_by_label("Add measurement").click();
+    first.get_by_label("Add measurement").click_accesskit();
     first.run_steps(2);
-    first.get_by_label("Hide selected").click();
+    first.get_by_label("Hide selected").click_accesskit();
     first.run_steps(2);
     // Atomic charges on the molecule, with a fixed color range.
     assert!(first.state_mut().show_on_molecule("populations.atoms.charges"));
     first.run_steps(2);
-    first.get_by_label("Fixed").click();
+    first.get_by_label("Fixed").click_accesskit();
     first.run_steps(3);
     first.state().save_session_to(&dir.join("ch3f.a3dview")).unwrap();
+    let text = std::fs::read_to_string(dir.join("ch3f.a3dview")).unwrap();
+    assert!(text.contains("results = \"CH3F.apost.json\""), "the session records the results file:\n{text}");
     let before = image(&mut first);
 
     // Move the whole folder: the relative paths still lead to the files.
@@ -109,7 +111,7 @@ fn per_atom_settings_survive_and_a_moved_folder_still_opens() {
     let mut second = app_with(vec![moved.join("ch3f.a3dview")]);
     second.run_steps(3);
     assert!(toasts(&second).iter().all(|m| !m.contains("but")), "{:?}", toasts(&second));
-    second.get_by_label("Measure").click();
+    second.get_by_label("Measure").click_accesskit();
     second.run_steps(2);
     second.get_by_label_contains("C1-H3-H4-H5: ");
     assert_eq!(second.state().legend_title().as_deref(), Some("Atomic charges (TFVC)"));
@@ -123,7 +125,7 @@ fn missing_and_changed_files_are_reported() {
     let fchk = copy_into(&dir, &fixtures.join("CH3F.fchk"));
     let cube = copy_into(&dir, &repo_dir().join("TESTS-VISUALIZER/H2O-ccpVDZ-HOMO.cube"));
     let mut first = app_with(vec![fchk.clone(), cube.clone()]);
-    first.get_by_label("Hide hydrogens").click();
+    first.get_by_label("Hide hydrogens").click_accesskit();
     first.run_steps(2);
     first.state().save_session_to(&dir.join("s.a3dview")).unwrap();
 
@@ -144,7 +146,7 @@ fn a_session_is_opened_from_the_open_menu_like_any_file() {
     let first = app_with(vec![fchk]);
     first.state().save_session_to(&dir.join("x.a3dview")).unwrap();
     let mut harness = app_with(Vec::new());
-    harness.get_by_label("Open").click();
+    harness.get_by_label("Open").click_accesskit();
     harness.run_steps(1);
     harness.get_by_label("APOST3Dview session (.a3dview)...");
     // Not a session at all: a clear message.
@@ -160,18 +162,18 @@ fn surfaces_are_extracted_identically_every_time() {
     let fchk = repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk");
     let generated = || {
         let mut harness = app_with(vec![fchk.clone()]);
-        harness.get_by_label("Surfaces").click();
+        harness.get_by_label("Surfaces").click_accesskit();
         harness.run_steps(2);
-        harness.get_by_label("Generate 1 orbital(s)").click();
+        harness.get_by_label("Generate 1 orbital(s)").click_accesskit();
         harness.run_steps(5);
         harness
     };
     let (mut a, mut b) = (generated(), generated());
     let first = image(&mut a);
     assert!(first == image(&mut b), "two apps, same orbital");
-    a.get_by_label("2x").click();
+    a.get_by_label("2x").click_accesskit();
     a.run_steps(3);
-    a.get_by_label("1x").click();
+    a.get_by_label("1x").click_accesskit();
     a.run_steps(3);
     assert!(first == image(&mut a), "extracted again in the same app");
 }
