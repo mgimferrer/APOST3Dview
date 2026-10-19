@@ -275,15 +275,29 @@ pub(crate) fn iqa_meaning(term: &str, on_fragments: bool, diagonal: bool) -> Str
     format!("{prefix} {part} term")
 }
 
-/// What a matrix's diagonal and off-diagonal values are, for the window:
-/// the IQA wording for energy terms (`iqa_meaning`), else the file's own.
-/// `None` where the file says a part has no meaning ("none").
+/// What a matrix's diagonal and off-diagonal values are, always saying
+/// intra (within one atom or fragment) or inter (between two), as Martí
+/// asked for every matrix (2026-10-19): the IQA wording for energy terms
+/// (`iqa_meaning`); "intra-atomic S² (local spin)" / "inter-atomic S²
+/// (spin coupling)" for the S² decomposition; otherwise the file's own
+/// noun with intra-/inter- ("inter-fragment bond order"). `None` where the
+/// file says a part has no meaning ("none").
 pub(crate) fn matrix_meanings(entry: &IndexEntry, matrix: &MatrixObject) -> (Option<String>, Option<String>) {
     let diagonal = matrix.diagonal.clone().filter(|d| d != "none");
-    match enpart_term(&entry.id) {
-        Some((term, on_fragments)) => (diagonal.map(|_| iqa_meaning(term, on_fragments, true)), Some(iqa_meaning(term, on_fragments, false))),
-        None => (diagonal, matrix.off_diagonal.clone()),
+    if let Some((term, on_fragments)) = enpart_term(&entry.id) {
+        return (diagonal.map(|_| iqa_meaning(term, on_fragments, true)), Some(iqa_meaning(term, on_fragments, false)));
     }
+    let level = if entry.kind.on_fragments() { "fragment" } else { "atomic" };
+    let s2 = entry.id.ends_with(".s2");
+    let name = |within: bool, noun: String| {
+        let prefix = if within { "intra" } else { "inter" };
+        if s2 {
+            format!("{prefix}-{level} S\u{b2} ({noun})")
+        } else {
+            format!("{prefix}-{level} {noun}")
+        }
+    };
+    (diagonal.map(|d| name(true, d)), matrix.off_diagonal.clone().map(|o| name(false, o)))
 }
 
 /// What a matrix entry's diagonal holds ("local spin", "intra-atomic

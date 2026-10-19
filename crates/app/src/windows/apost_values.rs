@@ -92,11 +92,13 @@ impl App {
             // diagonal on each of them.
             if let (Some(diagonal), Some(Quantity::Matrix(m))) = (diagonal_meaning(results, entry), results.quantity(entry).ok()) {
                 let pairs = matrix_meanings(entry, &m).1.unwrap_or_else(|| "pairs".to_string());
-                let each = if entry.kind.on_fragments() { "each fragment" } else { "each atom" };
+                let (each, between) = if entry.kind.on_fragments() { ("each fragment", "two fragments") } else { ("each atom", "two atoms") };
                 ui.horizontal_wrapped(|ui| {
                     ui.label("Values");
-                    ui.selectable_value(&mut view.diagonal, false, capitalize(&pairs)).on_hover_text("Between pairs, seen from one atom or fragment");
-                    ui.selectable_value(&mut view.diagonal, true, format!("{} ({each})", capitalize(&diagonal))).on_hover_text("The matrix diagonal, on every atom or fragment");
+                    ui.selectable_value(&mut view.diagonal, false, capitalize(&pairs))
+                        .on_hover_text(format!("Between {between} (off-diagonal), seen from one of them"));
+                    ui.selectable_value(&mut view.diagonal, true, capitalize(&diagonal))
+                        .on_hover_text(format!("Within {each} (diagonal), on all of them"));
                 });
             }
             if let Some(on_fragments) = focus_target(results, view) {

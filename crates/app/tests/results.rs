@@ -37,7 +37,7 @@ fn a_pair_quantity_is_seen_from_one_fragment() {
     assert!(harness.state_mut().show_on_molecule("bond_orders.fragments.matrix"));
     harness.run_steps(3);
     assert!(harness.state().legend_title().unwrap().contains("with 1 Fe"));
-    harness.get_by_label("Diagonal: localization index. Off-diagonal: bond order.");
+    harness.get_by_label("Diagonal: intra-fragment localization index. Off-diagonal: inter-fragment bond order.");
     harness.get_by_label_contains("(diagonal and one triangle)");
     // The strongest pair first.
     harness.get_by_label_contains("1 Fe \u{2013} 7 NO   1.852845");
