@@ -5,6 +5,7 @@
 pub mod apost;
 pub mod coordinates;
 pub mod cube;
+pub mod density_matrix;
 pub mod element;
 pub mod envelope;
 pub mod fchk;
@@ -25,6 +26,7 @@ pub use apost::{
 };
 pub use coordinates::{format_coordinates, CoordinateFormat};
 pub use cube::{parse_cube, CubeFile, ScalarGrid};
+pub use density_matrix::{natural_orbitals, read_fchk_density, scan_fchk_densities, DensityMatrix, FchkDensities};
 pub use envelope::{envelope_mesh, sphere_mesh, unit_sphere};
 pub use fchk::{parse_fchk_summary, FchkSummary};
 
