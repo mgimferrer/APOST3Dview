@@ -422,17 +422,14 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
                     scene.labels.push(ValueLabel { text, anchor: anchor(i), color });
                 }
             }
-            let scheme = results.input.as_ref().and_then(|i| i.atomic_definition.as_ref()).and_then(|d| d.short_name.clone().or_else(|| d.keyword.clone()));
-            let with_scheme = |what: String| match &scheme {
-                Some(scheme) => format!("{what} ({scheme})"),
-                None => what,
-            };
+            // As in the Show menu, plus the focus for pairs: "Inter-atomic
+            // bond order with O1 (new bond orders, TFVC)".
             let title = match (&quantity, focus) {
                 (Quantity::Matrix(m), Some(f)) => {
                     let what = matrix_meanings(entry, m).1.unwrap_or_else(|| entry.title.clone());
-                    with_scheme(format!("{} with {}", capitalize(&what), name(f)))
+                    format!("{} with {} {}", capitalize(&what), name(f), part_source(results, entry, false)).trim_end().to_string()
                 }
-                (Quantity::Matrix(m), None) => with_scheme(capitalize(&matrix_meanings(entry, m).0.unwrap_or_else(|| entry.title.clone()))),
+                (Quantity::Matrix(_), None) => choice_label(results, entry, true),
                 _ => entry.title.clone(),
             };
             let title = match unit {
@@ -565,33 +562,103 @@ pub(crate) fn is_secondary(entry: &IndexEntry) -> bool {
     }
 }
 
-/// The quantities a file offers for the selector, grouped: fragment values,
+/// One choice in the Show menu: a quantity, and for a matrix whether its
+/// diagonal (a value on each atom or fragment) or its pairs.
+pub(crate) struct Choice<'a> {
+    pub(crate) entry: &'a IndexEntry,
+    pub(crate) diagonal: bool,
+    pub(crate) label: String,
+}
+
+/// How a quantity is named in the Show menu: a matrix by what its
+/// diagonal or its pairs hold, always saying intra or inter
+/// ("Intra-atomic S² (local spin) (TFVC)", "Inter-fragment bond order
+/// (TFVC)"); anything else by its title.
+pub(crate) fn choice_label(results: &ApostResults, entry: &IndexEntry, diagonal: bool) -> String {
+    match part_meaning(results, entry, diagonal) {
+        Some(meaning) => format!("{} {}", capitalize(&meaning), part_source(results, entry, diagonal)),
+        None => entry.title.clone(),
+    }
+}
+
+/// What a matrix's diagonal (or its pairs) holds, as `matrix_meanings`.
+fn part_meaning(results: &ApostResults, entry: &IndexEntry, diagonal: bool) -> Option<String> {
+    match results.quantity(entry).ok()? {
+        Quantity::Matrix(m) => {
+            let (d, o) = matrix_meanings(entry, &m);
+            if diagonal { d } else { o }
+        }
+        _ => None,
+    }
+}
+
+/// The parenthesis after a matrix part's name: the atomic definition
+/// ("(TFVC)"), and the matrix it comes from when another matrix's part
+/// has the same name ("(bond orders, TFVC)" against "(LI/DI from the
+/// 2-RDM, TFVC)").
+pub(crate) fn part_source(results: &ApostResults, entry: &IndexEntry, diagonal: bool) -> String {
+    let title = entry.title.as_str();
+    let (name, scheme) = match title.rfind(" (").filter(|_| title.ends_with(')')) {
+        Some(i) => (&title[..i], &title[i + 2..title.len() - 1]),
+        None => (title, ""),
+    };
+    let meaning = part_meaning(results, entry, diagonal);
+    let shared = results.entries(entry.kind).any(|other| other.id != entry.id && part_meaning(results, other, diagonal) == meaning);
+    let source = shared.then(|| {
+        // "Fragment bond orders" -> "bond orders"; acronyms stay ("LI/DI").
+        let name = name.strip_prefix("Fragment ").unwrap_or(name);
+        let mut chars = name.chars();
+        match (chars.next(), chars.next()) {
+            (Some(first), Some(second)) if second.is_lowercase() => format!("{}{}", first.to_lowercase(), &name[first.len_utf8()..]),
+            _ => name.to_string(),
+        }
+    });
+    match (source, scheme) {
+        (Some(source), "") => format!("({source})"),
+        (Some(source), scheme) => format!("({source}, {scheme})"),
+        (None, "") => String::new(),
+        (None, scheme) => format!("({scheme})"),
+    }
+}
+
+/// The choices a file offers for the Show menu, grouped: fragment values,
 /// fragment pairs, atom values, atom pairs (fragments first: they are what
-/// fragment analyses are about). Values in another atomic definition than
-/// the run's own, printed only for comparison, and the secondary ones
-/// (`is_secondary`) are left out unless `include_other`.
-pub(crate) fn grouped_entries(results: &ApostResults, include_other: bool) -> Vec<(&'static str, Vec<&IndexEntry>)> {
+/// fragment analyses are about), then the energy decomposition. A
+/// matrix's diagonal is a value on each fragment or atom, so it is listed
+/// with those values (intra); its pairs under "Between" (inter) — Martí,
+/// 2026-10-19. Values in another atomic definition than the run's own,
+/// printed only for comparison, and the secondary ones (`is_secondary`)
+/// are left out unless `include_other`.
+pub(crate) fn grouped_entries(results: &ApostResults, include_other: bool) -> Vec<(&'static str, Vec<Choice<'_>>)> {
     // The energy decomposition has a group of its own: the IQA matrices
     // (their other terms through the term selector).
     let is_enpart = |e: &IndexEntry| e.analysis.as_deref() == Some("enpart");
-    let mut groups: Vec<(&'static str, Vec<&IndexEntry>)> = [
-        ("Fragment values", QuantityKind::FragmentVector),
-        ("Between fragments", QuantityKind::FragmentMatrix),
-        ("Atom values", QuantityKind::AtomVector),
-        ("Between atoms", QuantityKind::AtomMatrix),
-    ]
-    .into_iter()
-    .map(|(group, kind)| (group, results.entries(kind).filter(|e| (include_other || !(e.is_comparison() || is_secondary(e))) && !is_enpart(e)).collect::<Vec<_>>()))
-    .collect();
-    // Atomic energies are listed as numbers in the window, not offered as
-    // colors: dominated by the core, they would only tell elements apart
-    // (APOST-3D's advice, brief 09).
-    let iqa: Vec<&IndexEntry> = ["enpart.total.fragments", "enpart.total.atoms"]
-    .iter()
-    .filter_map(|id| results.entry(id))
-    .collect();
+    let listed = |e: &&IndexEntry| (include_other || !(e.is_comparison() || is_secondary(e))) && !is_enpart(e);
+    let values = |kind| results.entries(kind).filter(listed).map(|entry| Choice { entry, diagonal: false, label: entry.title.clone() });
+    let diagonals = |kind| {
+        results.entries(kind).filter(listed).filter(|e| diagonal_meaning(results, e).is_some()).map(|entry| Choice {
+            entry,
+            diagonal: true,
+            label: choice_label(results, entry, true),
+        })
+    };
+    let pairs = |kind| results.entries(kind).filter(listed).map(|entry| Choice { entry, diagonal: false, label: choice_label(results, entry, false) });
+    let mut groups: Vec<(&'static str, Vec<Choice>)> = vec![
+        ("Fragment values", values(QuantityKind::FragmentVector).chain(diagonals(QuantityKind::FragmentMatrix)).collect()),
+        ("Between fragments", pairs(QuantityKind::FragmentMatrix).collect()),
+        ("Atom values", values(QuantityKind::AtomVector).chain(diagonals(QuantityKind::AtomMatrix)).collect()),
+        ("Between atoms", pairs(QuantityKind::AtomMatrix).collect()),
+    ];
+    // Atomic energies are listed as numbers in the window too (the IQA
+    // section's tables); here the interactions and, on request, the
+    // intra (self) energies.
+    let iqa: Vec<Choice> = ["enpart.total.fragments", "enpart.total.atoms"]
+        .iter()
+        .filter_map(|id| results.entry(id))
+        .flat_map(|entry| [false, true].map(|diagonal| Choice { entry, diagonal, label: choice_label(results, entry, diagonal) }))
+        .collect();
     groups.push(("Energy decomposition (IQA)", iqa));
-    groups.retain(|(_, entries)| !entries.is_empty());
+    groups.retain(|(_, choices)| !choices.is_empty());
     groups
 }
 

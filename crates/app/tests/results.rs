@@ -119,7 +119,15 @@ fn other_values_are_listed_only_on_request() {
     let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json")]);
     harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).next().unwrap().click_accesskit();
     harness.run_steps(2);
-    for listed in ["Atomic charges (Lowdin)", "Spin populations (Lowdin)", "Fragment charges (Lowdin)", "Bond orders (Lowdin)", "EOS oxidation states (Lowdin)"] {
+    for listed in [
+        "Atomic charges (Lowdin)",
+        "Spin populations (Lowdin)",
+        "Fragment charges (Lowdin)",
+        "EOS oxidation states (Lowdin)",
+        "Inter-atomic bond order (Lowdin)",
+        "Intra-atomic localization index (Lowdin)",
+        "Inter-fragment bond order (Lowdin)",
+    ] {
         assert!(harness.query_by_label(listed).is_some(), "{listed} listed");
     }
     let other = ["Atomic charges (Mulliken)", "Electron populations (Lowdin)", "Total valences (Lowdin)", "Fragment free valences (Lowdin)", "EOS electrons, alpha (Lowdin)"];

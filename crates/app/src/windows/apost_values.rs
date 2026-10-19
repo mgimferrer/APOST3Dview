@@ -8,14 +8,17 @@ use egui::{Color32, RichText, Sense};
 
 use crate::app::App;
 use crate::names::{atom_name, fragment_name};
-use crate::util::{capitalize, rgb_to_color32};
-use crate::results_view::{build_scene, display_unit, enpart_term, enpart_term_name, is_energy, scaled_quantity, EnergyUnit, focus_target, grouped_entries, is_secondary, matrix_meanings, diagonal_meaning, range_key, shows_diagonal, shown_entry, ResultsView, Shown, FOCUS_COLOR};
+use crate::util::rgb_to_color32;
+use crate::results_view::{build_scene, display_unit, enpart_term, enpart_term_name, is_energy, scaled_quantity, EnergyUnit, focus_target, choice_label, grouped_entries, is_secondary, matrix_meanings, range_key, shows_diagonal, shown_entry, ResultsView, Shown, FOCUS_COLOR};
 
-fn shown_label(results: &ApostResults, shown: &Shown) -> String {
-    match shown {
+fn shown_label(results: &ApostResults, view: &ResultsView) -> String {
+    match &view.shown {
         Shown::Nothing => "Nothing".to_string(),
         Shown::Fragments => "Fragments".to_string(),
-        Shown::Quantity(id) => results.entry(id).map(|e| e.title.clone()).unwrap_or_else(|| id.clone()),
+        Shown::Quantity(id) => match results.entry(id) {
+            Some(entry) => choice_label(results, entry, shows_diagonal(results, view)),
+            None => id.clone(),
+        },
     }
 }
 
@@ -44,18 +47,20 @@ impl App {
 
         ui.horizontal(|ui| {
             ui.label("Show");
-            egui::ComboBox::from_id_salt("results_shown").width(250.0).selected_text(shown_label(results, &view.shown)).show_ui(ui, |ui| {
+            egui::ComboBox::from_id_salt("results_shown").width(250.0).selected_text(shown_label(results, view)).show_ui(ui, |ui| {
                 ui.selectable_value(&mut view.shown, Shown::Nothing, "Nothing");
                 if !results.fragments().is_empty() {
                     ui.selectable_value(&mut view.shown, Shown::Fragments, "Fragments");
                 }
-                for (group, entries) in grouped_entries(results, *list_other) {
+                for (group, choices) in grouped_entries(results, *list_other) {
                     ui.separator();
                     ui.label(RichText::new(group).small().weak());
-                    for entry in entries {
-                        let value = Shown::Quantity(entry.id.clone());
-                        if ui.selectable_label(view.shown == value, &entry.title).clicked() {
+                    for choice in choices {
+                        let value = Shown::Quantity(choice.entry.id.clone());
+                        let selected = view.shown == value && shows_diagonal(results, view) == choice.diagonal;
+                        if ui.selectable_label(selected, &choice.label).clicked() {
                             view.shown = value;
+                            view.diagonal = choice.diagonal;
                             view.focus = 0;
                         }
                     }
@@ -88,19 +93,6 @@ impl App {
 
         let entry = shown_entry(results, view).cloned();
         if let Some(entry) = &entry {
-            // A matrix: its pairs seen from one atom or fragment, or its
-            // diagonal on each of them.
-            if let (Some(diagonal), Some(Quantity::Matrix(m))) = (diagonal_meaning(results, entry), results.quantity(entry).ok()) {
-                let pairs = matrix_meanings(entry, &m).1.unwrap_or_else(|| "pairs".to_string());
-                let (each, between) = if entry.kind.on_fragments() { ("each fragment", "two fragments") } else { ("each atom", "two atoms") };
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("Values");
-                    ui.selectable_value(&mut view.diagonal, false, capitalize(&pairs))
-                        .on_hover_text(format!("Between {between} (off-diagonal), seen from one of them"));
-                    ui.selectable_value(&mut view.diagonal, true, capitalize(&diagonal))
-                        .on_hover_text(format!("Within {each} (diagonal), on all of them"));
-                });
-            }
             if let Some(on_fragments) = focus_target(results, view) {
                 let count = if on_fragments { results.fragments().len() } else { molecule.atomic_numbers.len() };
                 let name = |i: usize| if on_fragments { fragment_name(&results.fragments()[i], &molecule.atomic_numbers) } else { atom_name(&molecule.atomic_numbers, i) };

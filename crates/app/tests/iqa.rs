@@ -128,38 +128,65 @@ fn energies_in_kcal_per_mol_or_au() {
     assert_eq!(lo, "\u{2212}20.8437");
 }
 
-/// A matrix shows either its pairs seen from one atom or fragment, or its
-/// diagonal on every one of them: intra-fragment (self) energies, local
-/// spin.
+/// Opens the Show menu and picks `label` in it.
+fn show(harness: &mut egui_kittest::Harness<'_, apost3dview::App>, label: &str) {
+    // (Opened only if it isn't still open from the last pick.)
+    if harness.query_all_by_label(label).count() == 0 {
+        harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).next().unwrap().click_accesskit();
+        harness.run_steps(2);
+    }
+    harness.get_all_by_label(label).last().unwrap().click_accesskit();
+    harness.run_steps(3);
+}
+
+/// The Show menu offers a matrix's diagonal as a value on each atom or
+/// fragment (intra: self-energies, local spin) and its pairs seen from one
+/// of them (inter).
 #[test]
 fn a_matrix_diagonal_on_every_atom_or_fragment() {
     let Some(dir) = fixtures_dir() else { return };
     let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.apost.json")]);
-    assert!(harness.state_mut().show_on_molecule("enpart.total.fragments"));
-    harness.run_steps(3);
-    harness.get_by_label("Intra-fragment (self) energy").click_accesskit();
-    harness.run_steps(3);
+    show(&mut harness, "Intra-fragment (self) energy (TFVC)");
     assert_eq!(harness.state().legend_title().as_deref(), Some("Intra-fragment (self) energy (TFVC), kcal/mol"));
     assert!(harness.query_by_label("Seen from").is_none(), "no focus for the diagonal");
-    harness.get_by_label("Inter-fragment interaction energy").click_accesskit();
-    harness.run_steps(3);
+    show(&mut harness, "Inter-fragment interaction energy (TFVC)");
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-fragment interaction energy with 1 H2O (TFVC), kcal/mol"));
+    harness.get_by_label("Seen from");
 
-    // Atomic S^2 (the diagonal, local spin) on every atom, CISD run.
+    // Atomic and fragment S^2 (the diagonal, local spin), CISD run.
     let mut harness = app_with(vec![dir.join("H2O-CISD.apost.json")]);
-    assert!(harness.state_mut().show_on_molecule("local_spin.atoms.s2"));
-    harness.run_steps(3);
-    harness.get_by_label("Intra-atomic S\u{b2} (local spin)").click_accesskit();
-    harness.run_steps(3);
+    show(&mut harness, "Intra-atomic S\u{b2} (local spin) (TFVC)");
     assert_eq!(harness.state().legend_title().as_deref(), Some("Intra-atomic S\u{b2} (local spin) (TFVC)"));
     screenshot(&mut harness, "local-spin");
-    // The same for fragments.
-    assert!(harness.state_mut().show_on_molecule("local_spin.fragments.s2"));
-    harness.run_steps(3);
-    harness.get_by_label("Intra-fragment S\u{b2} (local spin)").click_accesskit();
-    harness.run_steps(3);
+    show(&mut harness, "Intra-fragment S\u{b2} (local spin) (TFVC)");
     assert_eq!(harness.state().legend_title().as_deref(), Some("Intra-fragment S\u{b2} (local spin) (TFVC)"));
-    harness.get_by_label("Inter-fragment S\u{b2} (spin coupling)").click_accesskit();
-    harness.run_steps(3);
+    show(&mut harness, "Inter-fragment S\u{b2} (spin coupling) (TFVC)");
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-fragment S\u{b2} (spin coupling) with 1 O (TFVC)"));
+}
+
+/// Every choice in the Show menu says intra or inter and is unique: where
+/// two matrices give a part the same name, the source matrix is named.
+#[test]
+fn show_menu_names_every_part_once() {
+    let Some(dir) = fixtures_dir() else { return };
+    let mut harness = app_with(vec![dir.join("H2O-CISD.apost.json")]);
+    harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).next().unwrap().click_accesskit();
+    harness.run_steps(3);
+    for label in [
+        "Intra-fragment localization index (bond orders, TFVC)",
+        "Intra-fragment localization index (LI/DI from the 2-RDM, TFVC)",
+        "Intra-atomic localization index (bond orders, TFVC)",
+        "Intra-atomic localization index (new bond orders, TFVC)",
+        "Intra-atomic localization index (LI/DI from the 2-RDM, TFVC)",
+        "Inter-atomic bond order (bond orders, TFVC)",
+        "Inter-atomic bond order (new bond orders, TFVC)",
+        "Inter-atomic delocalization index (TFVC)",
+        "Intra-atomic S\u{b2} (local spin) (TFVC)",
+        "Inter-atomic S\u{b2} (spin coupling) (TFVC)",
+        "Intra-atomic (self) energy (TFVC)",
+        "Inter-atomic interaction energy (TFVC)",
+    ] {
+        assert_eq!(harness.query_all_by_label(label).count(), 1, "{label}");
+    }
+    assert_eq!(harness.query_all_by_label("Intra-fragment localization index (TFVC)").count(), 0, "ambiguous name");
 }
