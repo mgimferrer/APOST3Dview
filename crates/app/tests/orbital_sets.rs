@@ -24,9 +24,9 @@ fn orbital_fixtures() -> Option<PathBuf> {
 /// Picks `option` in the Orbitals menu of the Surfaces window.
 fn choose_orbitals(harness: &mut egui_kittest::Harness<'_, apost3dview::App>, option: &str) {
     let combo = harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).find(|n| n.value().as_deref().is_some_and(|v| v.contains("orbitals") || v.contains("EFOs") || v.contains("OSLOs")));
-    combo.expect("Orbitals menu").click();
+    combo.expect("Orbitals menu").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label(option).click();
+    harness.get_by_label(option).click_accesskit();
     harness.run_steps(2);
 }
 
@@ -34,15 +34,15 @@ fn choose_orbitals(harness: &mut egui_kittest::Harness<'_, apost3dview::App>, op
 fn oslos_are_generated_with_their_fragments() {
     let Some(dir) = orbital_fixtures() else { return };
     let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.fchk")]);
-    harness.get_by_label("Surfaces").click();
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     choose_orbitals(&mut harness, "OSLOs");
     // Only the OSLOs, each with its fragment(s) and FOLI.
     harness.get_by_label_contains("OSLO 1  1 CH3");
     harness.get_by_label_contains("OSLO 3  1 CH3");
-    harness.get_by_label("Select all").click();
+    harness.get_by_label("Select all").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label("Generate 9 orbital(s)").click();
+    harness.get_by_label("Generate 9 orbital(s)").click_accesskit();
     harness.run_steps(3);
     let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
     assert_eq!(labels.len(), 9, "{labels:?}");
@@ -62,11 +62,11 @@ fn oslos_before_orthogonalization_are_a_set_of_their_own() {
     let session = scratch.join("preortho.a3dview");
     {
         let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.fchk")]);
-        harness.get_by_label("Surfaces").click();
+        harness.get_by_label("Surfaces").click_accesskit();
         harness.run_steps(2);
         // The final C-C OSLO, then the same one before orthogonalization:
         // both stay, told apart by name.
-        harness.get_by_label("Tables (1)").click();
+        harness.get_by_label("Tables (1)").click_accesskit();
         harness.run_steps(2);
         harness.get_all_by_label("Draw").nth(8).unwrap().click_accesskit();
         harness.run_steps(3);
@@ -78,7 +78,7 @@ fn oslos_before_orthogonalization_are_a_set_of_their_own() {
         // Tick OSLO 9 (the list shows the first eight without scrolling).
         harness.state_mut().select_set_orbitals(&[8], &[]);
         harness.run_steps(2);
-        harness.get_by_label("Generate 1 orbital(s)").click();
+        harness.get_by_label("Generate 1 orbital(s)").click_accesskit();
         harness.run_steps(3);
         let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
         assert_eq!(labels, vec!["OSLO 9 \u{b7} 1 CH3 + 2 CH3", "OSLO 9 before orth. \u{b7} 1 CH3 + 2 CH3"]);
@@ -99,7 +99,7 @@ fn a_table_row_draws_its_orbital() {
     let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.fchk")]);
     harness.get_by_label("Key numbers");
     harness.get_by_label("Sum of the FOLI values, total");
-    harness.get_by_label("Tables (1)").click();
+    harness.get_by_label("Tables (1)").click_accesskit();
     harness.run_steps(2);
     assert!(harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).any(|n| n.value().as_deref() == Some("OSLOs, total")));
     harness.get_by_label("Draw shows the orbital as a surface.");
@@ -115,18 +115,18 @@ fn a_table_row_draws_its_orbital() {
 fn geos_sets_name_paired_unpaired_and_negative_efos() {
     let Some(dir) = orbital_fixtures() else { return };
     let mut harness = app_with(vec![dir.join("NaBH3--B3LYP-GEOS.fchk")]);
-    harness.get_by_label("Surfaces").click();
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     choose_orbitals(&mut harness, "GEOS EFOs");
     harness.get_by_label_contains("GEOS EFOs paired");
     harness.get_by_label_contains("GEOS EFOs unpaired");
     // The negative paired EFOs, in their own table, named after their
     // place in the orbital file.
-    harness.get_by_label("Tables (5)").click();
+    harness.get_by_label("Tables (5)").click_accesskit();
     harness.run_steps(2);
-    harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).find(|n| n.value().as_deref().is_some_and(|v| v.contains("EFOs, paired"))).expect("Tables menu").click();
+    harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).find(|n| n.value().as_deref().is_some_and(|v| v.contains("EFOs, paired"))).expect("Tables menu").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label("GEOS negative paired EFOs (TFVC)").click();
+    harness.get_by_label("GEOS negative paired EFOs (TFVC)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("EFO 164 paired");
     harness.get_by_label("EFO 165 paired");
@@ -137,12 +137,12 @@ fn geos_sets_name_paired_unpaired_and_negative_efos() {
 fn a_closed_shell_eos_set_says_beta_equals_alpha() {
     let Some(dir) = orbital_fixtures() else { return };
     let mut harness = app_with(vec![dir.join("FeCO2-PBEPBE.fchk")]);
-    harness.get_by_label("Surfaces").click();
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     choose_orbitals(&mut harness, "EOS EFOs");
     harness.get_by_label_contains("same as the \u{3b1} ones");
     // An iron d EFO from its table row.
-    harness.get_by_label_contains("Tables (").click();
+    harness.get_by_label_contains("Tables (").click_accesskit();
     harness.run_steps(4);
     let draws = harness.get_all_by_label("Draw").count();
     assert!(draws > 0);
@@ -162,12 +162,12 @@ fn an_orbital_file_of_another_molecule_is_refused() {
     // The orbital file of another system, under the expected name.
     std::fs::copy(dir.join("H2-S-OSLO-OSLOs.fchk"), scratch.join("C2H6-OSLO-2CH3-OSLOs.fchk")).unwrap();
     let mut harness = app_with(vec![scratch.join("C2H6-OSLO-2CH3.fchk")]);
-    harness.get_by_label("Surfaces").click();
+    harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     choose_orbitals(&mut harness, "OSLOs");
-    harness.get_by_label("Select all").click();
+    harness.get_by_label("Select all").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label("Generate 9 orbital(s)").click();
+    harness.get_by_label("Generate 9 orbital(s)").click_accesskit();
     harness.run_steps(3);
     assert!(harness.state().surface_labels().is_empty());
     assert!(toasts(&harness).iter().any(|m| m.contains("does not belong to the open .fchk")), "{:?}", toasts(&harness));
@@ -187,7 +187,7 @@ fn an_orbital_file_of_another_run_is_refused() {
     let stale = format!("{}, run 2026-01-01T00:00:00+01:00/abcd\n{rest}", first.rsplit_once(", run ").unwrap().0);
     std::fs::write(scratch.join("C2H6-OSLO-2CH3-OSLOs.fchk"), stale).unwrap();
     let mut harness = app_with(vec![scratch.join("C2H6-OSLO-2CH3.fchk")]);
-    harness.get_by_label("Tables (1)").click();
+    harness.get_by_label("Tables (1)").click_accesskit();
     harness.run_steps(2);
     harness.get_all_by_label("Draw").next().unwrap().click_accesskit();
     harness.run_steps(3);
@@ -199,7 +199,7 @@ fn an_orbital_file_of_another_run_is_refused() {
 fn effao_tables_are_listed_but_not_drawable() {
     let Some(dir) = common::fixtures_dir() else { return };
     let mut harness = app_with(vec![dir.join("CH3F-EFFAO-U.fchk")]);
-    harness.get_by_label("Tables (2)").click();
+    harness.get_by_label("Tables (2)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("No orbital file for these orbitals.");
     assert_eq!(harness.query_all_by_label("Draw").count(), 0);
@@ -212,7 +212,7 @@ fn sessions_keep_analysis_orbitals() {
     let session = scratch.join("oslo.a3dview");
     {
         let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.fchk")]);
-        harness.get_by_label("Tables (1)").click();
+        harness.get_by_label("Tables (1)").click_accesskit();
         harness.run_steps(2);
         harness.get_all_by_label("Draw").nth(8).unwrap().click_accesskit();
         harness.run_steps(3);

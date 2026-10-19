@@ -6,6 +6,7 @@
 use egui::{RichText, Slider};
 
 use crate::app::App;
+use crate::windows::ToolWindow;
 use crate::orbital_sets::show_set_checklist;
 use crate::orbitals::{show_mo_checklist, OrbitalAccuracyPreset};
 use crate::state::LoadedStructure;
@@ -21,14 +22,8 @@ enum ListAction {
 impl App {
     pub(crate) fn show_surfaces_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_surfaces;
-        egui::Window::new("Surfaces").open(&mut open).default_pos([16.0, 330.0]).default_width(300.0).show(ctx, |ui| {
-            // Its own scroll area, capped at the screen: with orbitals,
-            // densities and a surface list it can outgrow a laptop's.
-            egui::ScrollArea::vertical()
-                .id_salt("surfaces_window")
-                .max_height(ctx.content_rect().height() - 140.0)
-                .show(ui, |ui| self.show_surfaces_content(ui));
-        });
+        let response = self.column_window(ctx, ToolWindow::Surfaces, &mut open).show(ctx, |ui| self.show_surfaces_content(ui));
+        self.record_column_window(ctx, ToolWindow::Surfaces, response.map(|r| r.response));
         self.show_surfaces = open;
     }
 

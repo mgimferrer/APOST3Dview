@@ -5,6 +5,7 @@ use apost3dview_core::{fragment_coverage, hill_formula, ApostResults};
 use egui::{Color32, RichText};
 
 use crate::app::App;
+use crate::windows::ToolWindow;
 use crate::names::atom_name;
 use crate::util::{capitalize, swatch};
 use crate::results::{fragment_color, ApostAttachment, FRAGMENT_PALETTE, UNASSIGNED_COLOR};
@@ -147,7 +148,7 @@ fn show_input_text(ui: &mut egui::Ui, results: &ApostResults) {
         if ui.button("Copy").clicked() {
             ui.ctx().copy_text(text.to_string());
         }
-        egui::ScrollArea::both().id_salt("apost_input_scroll").max_height(220.0).show(ui, |ui| {
+        egui::ScrollArea::both().id_salt("apost_input_scroll").auto_shrink([false, true]).max_height(220.0).show(ui, |ui| {
             ui.add(egui::Label::new(RichText::new(text).monospace()).selectable(true).wrap_mode(egui::TextWrapMode::Extend));
         });
     });
@@ -238,7 +239,7 @@ fn show_report(ui: &mut egui::Ui, attachment: &mut ApostAttachment) {
                     ui.ctx().copy_text(lines.join("\n"));
                 }
                 let row_height = ui.text_style_height(&egui::TextStyle::Monospace);
-                egui::ScrollArea::both().id_salt("apost_report_scroll").max_height(320.0).show_rows(ui, row_height, lines.len(), |ui, rows| {
+                egui::ScrollArea::both().id_salt("apost_report_scroll").auto_shrink([false, true]).max_height(320.0).show_rows(ui, row_height, lines.len(), |ui, rows| {
                     for line in &lines[rows] {
                         ui.add(egui::Label::new(RichText::new(line).monospace()).wrap_mode(egui::TextWrapMode::Extend));
                     }
@@ -261,42 +262,37 @@ impl App {
     pub(crate) fn show_apost_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_apost;
         let mut fragment_action = None;
-        egui::Window::new("APOST-3D")
-            .open(&mut open)
-            .default_pos([ctx.content_rect().right() - 430.0, 50.0])
-            .default_width(380.0)
-            .min_width(380.0)
-            // Sized by its content (which changes a lot with what is shown),
-            // up to the screen; beyond that its own scroll area takes over.
-            .auto_sized()
+        // Its size stays as the user leaves it, whatever is shown (the
+        // content scrolls inside): see `column.rs`.
+        let response = self
+            .column_window(ctx, ToolWindow::Apost, &mut open)
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().id_salt("apost_window").max_height(ctx.content_rect().height() - 140.0).show(ui, |ui| {
-                    if !self.show_apost_header(ui) {
-                        return;
-                    }
-                    ui.add_space(6.0);
-                    egui::CollapsingHeader::new(RichText::new("On the molecule").strong()).id_salt("apost_on_molecule").default_open(true).show(ui, |ui| {
-                        self.show_results_controls(ui);
-                    });
-                    self.show_results_values(ui);
-                    self.show_selected_pair(ui);
-                    self.show_enpart_quality(ui);
-                    self.show_key_numbers(ui);
-                    self.show_tables(ui);
-
-                    let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
-                    let atomic_numbers = structure.molecule.atomic_numbers.clone();
-                    let selected_atoms = structure.selected_atoms.clone();
-                    let Some(attachment) = structure.apost.as_mut() else { return };
-                    let Ok(results) = &attachment.results else { return };
-                    let focus_mode = attachment.view.as_ref().and_then(|v| focus_target(results, v)) == Some(true);
-                    if results.molecule.is_some() {
-                        fragment_action = show_fragments(ui, results, &atomic_numbers, &selected_atoms, focus_mode).map(|a| (a, focus_mode));
-                    }
-                    show_input_text(ui, results);
-                    show_report(ui, attachment);
+                if !self.show_apost_header(ui) {
+                    return;
+                }
+                ui.add_space(6.0);
+                egui::CollapsingHeader::new(RichText::new("On the molecule").strong()).id_salt("apost_on_molecule").default_open(true).show(ui, |ui| {
+                    self.show_results_controls(ui);
                 });
+                self.show_results_values(ui);
+                self.show_selected_pair(ui);
+                self.show_enpart_quality(ui);
+                self.show_key_numbers(ui);
+                self.show_tables(ui);
+
+                let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
+                let atomic_numbers = structure.molecule.atomic_numbers.clone();
+                let selected_atoms = structure.selected_atoms.clone();
+                let Some(attachment) = structure.apost.as_mut() else { return };
+                let Ok(results) = &attachment.results else { return };
+                let focus_mode = attachment.view.as_ref().and_then(|v| focus_target(results, v)) == Some(true);
+                if results.molecule.is_some() {
+                    fragment_action = show_fragments(ui, results, &atomic_numbers, &selected_atoms, focus_mode).map(|a| (a, focus_mode));
+                }
+                show_input_text(ui, results);
+                show_report(ui, attachment);
             });
+        self.record_column_window(ctx, ToolWindow::Apost, response.map(|r| r.response));
         self.show_apost = open;
         self.apply_fragment_action(fragment_action);
     }

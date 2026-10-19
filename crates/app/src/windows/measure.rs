@@ -5,6 +5,7 @@ use apost3dview_core::{measure, LengthUnit, MeasurementKind};
 use egui::{RichText, Slider};
 
 use crate::app::App;
+use crate::windows::ToolWindow;
 use crate::state::Measurement;
 use crate::util::{format_measurement, format_measurement_atoms};
 
@@ -23,10 +24,8 @@ impl App {
 
     pub(crate) fn show_measure_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_measure;
-        egui::Window::new("Measure")
-            .open(&mut open)
-            .default_pos([350.0, 50.0])
-            .default_width(280.0)
+        let response = self
+            .column_window(ctx, ToolWindow::Measure, &mut open)
             .show(ctx, |ui| {
                 let Some(active) = self.active_structure else {
                     ui.label(RichText::new("Open a structure first.").weak());
@@ -109,6 +108,7 @@ impl App {
                     });
                 });
             });
+        self.record_column_window(ctx, ToolWindow::Measure, response.map(|r| r.response));
         self.show_measure = open;
     }
 }

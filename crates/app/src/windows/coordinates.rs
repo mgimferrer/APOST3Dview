@@ -4,6 +4,7 @@
 use apost3dview_core::{format_coordinates, CoordinateFormat, LengthUnit};
 
 use crate::app::App;
+use crate::windows::ToolWindow;
 
 impl App {
     /// Writes the active structure's coordinates to a standard `.xyz` file
@@ -22,10 +23,8 @@ impl App {
 
     pub(crate) fn show_coordinates_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_coordinates;
-        egui::Window::new("Coordinates")
-            .open(&mut open)
-            .default_pos([650.0, 300.0])
-            .default_width(420.0)
+        let response = self
+            .column_window(ctx, ToolWindow::Coordinates, &mut open)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Unit:");
@@ -78,6 +77,7 @@ impl App {
                     }
                 }
             });
+        self.record_column_window(ctx, ToolWindow::Coordinates, response.map(|r| r.response));
         self.show_coordinates = open;
     }
 }

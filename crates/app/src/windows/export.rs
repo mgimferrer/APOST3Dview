@@ -1,15 +1,14 @@
 //! Export window: the current view as a PNG image or a turning GIF.
 
 use crate::app::App;
+use crate::windows::ToolWindow;
 use crate::export::{FIGURE_WIDTH_DOUBLE_COLUMN_IN, FIGURE_WIDTH_SINGLE_COLUMN_IN, RenderPreset};
 
 impl App {
     pub(crate) fn show_export_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_export;
-        egui::Window::new("Export")
-            .open(&mut open)
-            .default_pos([650.0, 50.0])
-            .default_width(280.0)
+        let response = self
+            .column_window(ctx, ToolWindow::Export, &mut open)
             .show(ctx, |ui| {
                 if self.active_structure.is_none() {
                     ui.label(egui::RichText::new("Open a structure first.").weak());
@@ -116,6 +115,7 @@ impl App {
                     self.export_render_gif();
                 }
             });
+        self.record_column_window(ctx, ToolWindow::Export, response.map(|r| r.response));
         self.show_export = open;
     }
 }

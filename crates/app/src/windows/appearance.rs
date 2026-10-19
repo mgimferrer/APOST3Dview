@@ -7,14 +7,13 @@ use apost3dview_render::{AoSettings, DofSettings, IsosurfaceMaterial, Material};
 use egui::{Color32, RichText, Slider};
 
 use crate::app::App;
+use crate::windows::ToolWindow;
 
 impl App {
     pub(crate) fn show_appearance_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_appearance;
-        egui::Window::new("Appearance")
-            .open(&mut open)
-            .default_pos([350.0, 240.0])
-            .default_width(270.0)
+        let response = self
+            .column_window(ctx, ToolWindow::Appearance, &mut open)
             .show(ctx, |ui| {
                 self.show_looks(ui);
 
@@ -43,6 +42,7 @@ impl App {
                 ui.add_space(6.0);
                 egui::CollapsingHeader::new("Advanced").id_salt("appearance_advanced").show(ui, |ui| self.show_advanced_appearance(ui));
             });
+        self.record_column_window(ctx, ToolWindow::Appearance, response.map(|r| r.response));
         self.show_appearance = open;
     }
 

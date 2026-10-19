@@ -246,3 +246,59 @@ fn windows_asked_for_again_come_back_expanded() {
     harness.run_steps(2);
     assert!(harness.state().window_expanded(&harness.ctx, "Surfaces"));
 }
+
+/// Tool windows stack at the top right in toolbar order, one below the
+/// other; collapsing one moves the ones below up; opening a long section
+/// (the text report) does not change a window's size; dragging a window by
+/// its title takes it out of the column, and "Arrange windows" puts it
+/// back.
+#[test]
+fn tool_windows_stack_in_a_column() {
+    use egui::{Event, PointerButton};
+    let Some(dir) = fixtures_dir() else { return };
+    let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.apost.json")]);
+    harness.get_by_label("Measure").click();
+    harness.run_steps(4);
+    let rect = |harness: &egui_kittest::Harness<'_, apost3dview::App>, title: &str| harness.state().window_rect(title).unwrap();
+    let screen_right = harness.ctx.content_rect().right();
+    let (molecule, measure, apost) = (rect(&harness, "Molecule"), rect(&harness, "Measure"), rect(&harness, "APOST-3D"));
+    for r in [molecule, measure, apost] {
+        assert!((r.right() - (screen_right - 8.0)).abs() < 1.5, "right-aligned: {r:?}");
+    }
+    assert!(molecule.bottom() <= measure.top() && measure.bottom() <= apost.top(), "in order, no overlap: {molecule:?} {measure:?} {apost:?}");
+
+    // Collapsing Molecule moves the others up.
+    let id = egui::Id::new("Molecule").with("collapsing");
+    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(&harness.ctx, id, true);
+    state.set_open(false);
+    state.store(&harness.ctx);
+    harness.run_steps(4);
+    assert!(rect(&harness, "Measure").top() < measure.top() - 50.0, "moved up");
+
+    // The text report opens inside the window, which keeps its size.
+    let before = rect(&harness, "APOST-3D").size();
+    harness.get_by_label_contains("Text report").click_accesskit();
+    harness.run_steps(4);
+    assert_eq!(rect(&harness, "APOST-3D").size(), before);
+
+    // Dragged by its title: out of the column, until "Arrange windows".
+    let title = rect(&harness, "Measure").center_top() + egui::vec2(0.0, 12.0);
+    harness.event(Event::PointerMoved(title));
+    harness.event(Event::PointerButton { pos: title, button: PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    harness.run_steps(1);
+    for step in 1..=10 {
+        harness.event(Event::PointerMoved(title + egui::vec2(-30.0 * step as f32, 20.0 * step as f32)));
+        harness.run_steps(1);
+    }
+    let end = title + egui::vec2(-300.0, 200.0);
+    harness.event(Event::PointerButton { pos: end, button: PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    harness.run_steps(3);
+    let moved = rect(&harness, "Measure");
+    assert!(moved.left() < screen_right - 600.0, "the window followed the drag: {moved:?}");
+    harness.run_steps(3);
+    assert_eq!(rect(&harness, "Measure"), moved, "and stays where it was put");
+    harness.get_by_label("Arrange windows").click();
+    harness.run_steps(4);
+    assert!((rect(&harness, "Measure").right() - (screen_right - 8.0)).abs() < 1.5, "back in the column");
+    assert!(harness.query_by_label("Arrange windows").is_none());
+}

@@ -7,6 +7,7 @@ mod apost_enpart;
 mod apost_tables;
 mod apost_values;
 mod appearance;
+pub(crate) mod column;
 mod coordinates;
 mod export;
 mod measure;
@@ -16,7 +17,7 @@ mod surfaces;
 use crate::app::App;
 
 /// The tool windows, in toolbar order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ToolWindow {
     Molecule,
     Surfaces,

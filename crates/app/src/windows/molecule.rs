@@ -14,10 +14,8 @@ use crate::windows::ToolWindow;
 impl App {
     pub(crate) fn show_molecule_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_molecule;
-        egui::Window::new("Molecule")
-            .open(&mut open)
-            .default_pos([16.0, 50.0])
-            .default_width(290.0)
+        let response = self
+            .column_window(ctx, ToolWindow::Molecule, &mut open)
             .show(ctx, |ui| {
                 self.show_structure_list(ui);
                 let Some(active) = self.active_structure else { return };
@@ -35,6 +33,7 @@ impl App {
                     self.show_selection_actions(ui, active);
                 }
             });
+        self.record_column_window(ctx, ToolWindow::Molecule, response.map(|r| r.response));
         self.show_molecule = open;
     }
 

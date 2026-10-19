@@ -167,6 +167,8 @@ pub struct App {
     /// Windows asked for since the last frame, to show expanded
     /// (`open_window`).
     pub(crate) windows_to_expand: Vec<crate::windows::ToolWindow>,
+    /// Where the tool windows go (`windows/column.rs`).
+    pub(crate) window_column: crate::windows::column::WindowColumn,
     /// The table chosen in the APOST-3D window's Tables section (entry id).
     pub(crate) apost_table: Option<String>,
     /// What the results display was last built for (see
@@ -241,6 +243,7 @@ impl App {
             color_ranges: Default::default(),
             list_other_values: false,
             windows_to_expand: Vec::new(),
+            window_column: Default::default(),
             apost_table: None,
             results_signature: String::new(),
             session_path: None,
@@ -482,7 +485,7 @@ impl App {
     /// around, and auto-spin — always in view, so none of it has to be
     /// looked up in a window.
     fn show_status_bar(&mut self, ui: &mut egui::Ui) {
-        egui::Panel::bottom("status_bar").show(ui, |ui| {
+        let response = egui::Panel::bottom("status_bar").show(ui, |ui| {
             ui.horizontal(|ui| {
                 if let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) {
                     let n = structure.molecule.atomic_numbers.len();
@@ -511,12 +514,13 @@ impl App {
                 });
             });
         });
+        self.window_column.bottom = response.response.rect.top();
     }
 
     pub(crate) fn show_toolbar(&mut self, ui: &mut egui::Ui) {
         let mut open_request: Option<Option<FileKind>> = None;
         let mut save_request: Option<bool> = None;
-        egui::Panel::top("toolbar").show(ui, |ui| {
+        let response = egui::Panel::top("toolbar").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(4.0);
                 ui.label(egui::RichText::new("APOST3Dview").strong());
@@ -560,9 +564,13 @@ impl App {
                     if ui.selectable_label(self.show_about, "About").clicked() {
                         self.show_about = !self.show_about;
                     }
+                    if self.windows_out_of_column() && ui.button("Arrange windows").on_hover_text("Put the windows you moved back in the column on the right").clicked() {
+                        self.arrange_windows();
+                    }
                 });
             });
         });
+        self.window_column.top = response.response.rect.bottom();
         if let Some(kind) = open_request {
             self.open_dialog(kind);
         }
@@ -675,6 +683,7 @@ impl eframe::App for App {
         self.expand_requested_windows(&ctx);
         self.show_toolbar(ui);
         self.show_status_bar(ui);
+        self.plan_window_column(&ctx);
         self.show_molecule_window(&ctx);
         self.show_surfaces_window(&ctx);
         self.show_measure_window(&ctx);

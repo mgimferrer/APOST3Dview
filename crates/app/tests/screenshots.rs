@@ -119,9 +119,11 @@ fn every_window_open() {
         harness.get_by_label(name).click();
         harness.run_steps(1);
     }
-    harness.get_by_label("Generate 1 orbital(s)").click();
+    // (Through accessibility: with every window open, these are scrolled
+    // out of sight inside their windows.)
+    harness.get_by_label("Generate 1 orbital(s)").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label("2  CH3   C1, H3, H4, H5").click();
+    harness.get_by_label("2  CH3   C1, H3, H4, H5").click_accesskit();
     harness.remove_cursor();
     harness.run_steps(4);
     assert!(has_content(&screenshot(&mut harness, "every-window")));
