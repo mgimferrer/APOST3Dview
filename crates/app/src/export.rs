@@ -187,7 +187,7 @@ impl App {
         let mut uniforms = SceneUniforms::new(&self.camera, export_aspect, &self.ao_render_material());
         let target_format = self.render_state.target_format;
         uniforms.set_srgb_target(target_format.is_srgb());
-        let label_instances = self.build_export_label_instances(active, &self.camera, settings.height as f32);
+        let label_instances = self.build_export_label_instances(active, &self.camera, settings.width as f32, settings.height as f32);
 
         let mut renderer = self.render_state.renderer.write();
         let resources = renderer.callback_resources.get_mut::<ViewportResources>().ok_or("Renderer not ready.")?;
@@ -315,7 +315,7 @@ impl App {
                     &material,
                     &settings,
                     turntable,
-                    |camera| self.build_export_label_instances(active, camera, settings.height as f32),
+                    |camera| self.build_export_label_instances(active, camera, settings.width as f32, settings.height as f32),
                     |pixels, width, height| self.draw_legend_into(pixels, width, height),
                     file,
                 ),

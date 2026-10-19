@@ -2,17 +2,14 @@
 //! labels, legend, bond thickness (see `results_view` for what is shown).
 
 use apost3dview_core::Quantity;
-use apost3dview_render::{glyph_scale_for_font_size, layout_label, GlyphInstance, Halo, Legend, OrbitCamera};
+use apost3dview_render::Legend;
 use egui::{Pos2, Rect};
 
 use crate::app::App;
 use crate::results_view::{
-    bond_scales, build_scene, envelope_vertices, focus_target, fragment_envelopes, halo_instances, label_position, ResultsScene,
+    bond_scales, build_scene, envelope_vertices, focus_target, fragment_envelopes, halo_instances, ResultsScene,
 };
 use crate::state::LoadedStructure;
-
-/// Labels' stroke weight: as the measurement labels' bold.
-const VALUE_LABEL_EDGE: f32 = 0.40;
 
 impl App {
     /// The active structure's results scene, if it has results and a view.
@@ -90,37 +87,9 @@ impl App {
 
     /// Value labels for the active structure, sized for a view
     /// `viewport_height_px` tall, drawn over everything.
-    pub(crate) fn value_label_instances(&self, camera: &OrbitCamera, viewport_height_px: f32) -> Vec<GlyphInstance> {
-        let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) else { return Vec::new() };
-        let Some(scene) = self.results_scene(structure) else { return Vec::new() };
-        let (Some(attachment), Some(view)) = (structure.apost.as_ref(), structure.apost.as_ref().and_then(|a| a.view.as_ref())) else {
-            return Vec::new();
-        };
-        let Ok(results) = &attachment.results else { return Vec::new() };
-        let (ink, halo) = self.label_colors();
-        let eye = camera.eye();
-        let mut glyphs = Vec::new();
-        for label in &scene.labels {
-            let on_atom = matches!(label.anchor, crate::results_view::LabelAnchor::Atom(_));
-            if let crate::results_view::LabelAnchor::Atom(a) = label.anchor {
-                if structure.hidden_atoms.contains(&a) {
-                    continue;
-                }
-            }
-            let Some(position) = label_position(label.anchor, results, &structure.molecule, self.material.atom_scale, eye) else { continue };
-            let px = if on_atom { view.label_size * 0.72 } else { view.label_size };
-            let scale = glyph_scale_for_font_size(px, camera.world_units_per_pixel((position - eye).length(), viewport_height_px));
-            let color = if label.color == [0.0; 3] { ink } else { label.color };
-            let mut instances = layout_label(&self.glyph_atlas, &label.text, position, scale, color, VALUE_LABEL_EDGE, Halo { color: halo, width: 0.2 });
-            instances.iter_mut().for_each(|g| g.on_top = 1.0);
-            glyphs.extend(instances);
-        }
-        glyphs
-    }
-
     /// Label ink and halo for the current background: dark text with a
     /// background-colored outline on light backgrounds, and the reverse.
-    fn label_colors(&self) -> ([f32; 3], [f32; 3]) {
+    pub(crate) fn label_colors(&self) -> ([f32; 3], [f32; 3]) {
         let [r, g, b] = self.material.background;
         let light = 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5;
         if light { ([0.09, 0.1, 0.12], [r, g, b]) } else { ([0.95, 0.95, 0.96], [r, g, b]) }

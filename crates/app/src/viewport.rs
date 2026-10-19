@@ -1,13 +1,10 @@
 //! The 3D viewport.
 
-use apost3dview_core::{element_data, measure};
-use apost3dview_render::{glyph_scale_for_font_size, glyph_scale_for_world_size, pick_atom, pick_bond, ray_from_ndc, GlyphInstance, ViewportCallback};
+use apost3dview_render::{pick_atom, pick_bond, ray_from_ndc, ViewportCallback};
 use glam::Vec2;
 
 use crate::app::App;
-use crate::labels::{EDGE_BIAS_ATOM_LABEL, EDGE_BIAS_BOLD, EDGE_BIAS_NORMAL, push_label};
-use crate::state::AtomLabelMode;
-use crate::util::{color32_to_rgb, format_measurement, measurement_anchor, project_to_screen, toggle_selected};
+use crate::util::toggle_selected;
 
 /// Arrow-key rotation speed, radians per second.
 pub(crate) const ARROW_ROTATE_SPEED: f32 = 1.2;
@@ -150,91 +147,20 @@ impl App {
             }
         }
 
-        // True 3D labels: real depth-tested billboard glyph quads
-        // (see crates/render/src/{glyphs,label,shaders/text.wgsl}),
-        // not a 2D UI overlay — so a bond or atom nearer the camera
-        // correctly, even partially, occludes them. Built fresh
-        // each repaint and handed to the wgpu callback below.
-        // Atom labels are sized in world units (scale with zoom,
-        // like the atom itself); measurement labels still hold a
-        // constant apparent screen size, which depends on distance
-        // from the camera and so is also recomputed every frame.
-        let mut label_instances: Vec<GlyphInstance> = Vec::new();
-
-        if self.atom_label_mode != AtomLabelMode::None {
-            let structure = &self.structures[active];
-            let color = color32_to_rgb(self.atom_label_style.text_color);
-            for (index, (&z, &position)) in structure.molecule.atomic_numbers.iter().zip(&structure.molecule.positions).enumerate()
-            {
-                if structure.hidden_atoms.contains(&index) {
-                    continue;
-                }
-                // A real world-space size, tied to this atom's own
-                // rendered radius — labels are true 3D geometry, so
-                // they grow and shrink with zoom exactly like the
-                // atom they're attached to, rather than holding a
-                // constant on-screen size the way a 2D overlay would.
-                let radius = crate::util::drawn_radius(z, self.material.atom_scale);
-                let scale = glyph_scale_for_world_size(radius * self.atom_label_style.relative_size);
-                let text = match self.atom_label_mode {
-                    AtomLabelMode::Number => format!("{}", index + 1),
-                    AtomLabelMode::Type => element_data(z).symbol.to_string(),
-                    AtomLabelMode::NumberType => crate::names::atom_name(&structure.molecule.atomic_numbers, index),
-                    AtomLabelMode::None => unreachable!(),
-                };
-                // The label anchor starts at the atom's own 3D
-                // center, but the sphere impostor's near surface
-                // renders a full radius closer to the camera than
-                // that — so a label sitting exactly at the center
-                // is depth-occluded by its own atom. Push the
-                // anchor toward the camera past the sphere's near
-                // surface (radius + a little clearance) so the
-                // label wins the depth test against its own atom.
-                let to_camera = (self.camera.eye() - position).normalize_or_zero();
-                let label_anchor = position + to_camera * (radius * 1.15 + 0.02);
-                push_label(&mut label_instances, &self.glyph_atlas, &text, label_anchor, scale, color, EDGE_BIAS_ATOM_LABEL);
-            }
-        }
-
-        // Measurement labels still live in screen space for the
-        // *offset* the user drags them by (simplest way to keep
-        // "nudge it N pixels clear of the clutter" behavior
-        // whatever the current zoom/rotation) — but that offset
-        // is converted to a world-space position every frame
-        // before rendering, same as the atom labels above, so
-        // it's still real, depth-tested 3D geometry.
+        // Labels over the molecule (atom names, measurements, APOST-3D
+        // values), placed so none overlaps: see `labels.rs`. A
+        // measurement label can be dragged where it landed.
+        let labels = self.scene_labels(active, &self.camera, rect);
+        let (label_instances, measurement_hits) = (labels.glyphs, labels.measurement_hits);
         let mut label_updates: Vec<(usize, egui::Vec2)> = Vec::new();
-        let (camera_right, camera_up) = self.camera.screen_basis();
-        let measurement_color = color32_to_rgb(self.measurement_style.text_color);
-        for (index, measurement) in self.structures[active].measurements.iter().enumerate() {
-            let anchor = measurement_anchor(&self.structures[active].molecule, measurement.kind);
-            let distance = (anchor - self.camera.eye()).length();
-            let world_per_pixel = self.camera.world_units_per_pixel(distance, rect.height());
-            let world_offset = camera_right * (measurement.label_offset.x * world_per_pixel)
-                - camera_up * (measurement.label_offset.y * world_per_pixel);
-            let final_anchor = anchor + world_offset;
-
-            let value = measure(&self.structures[active].molecule, measurement.kind);
-            let text = format_measurement(measurement.kind, value, self.coordinate_unit, self.measurement_style.decimal_places);
-            let scale = glyph_scale_for_font_size(self.measurement_style.font_size, world_per_pixel);
-            let edge_bias = if self.measurement_style.bold { EDGE_BIAS_BOLD } else { EDGE_BIAS_NORMAL };
-            push_label(&mut label_instances, &self.glyph_atlas, &text, final_anchor, scale, measurement_color, edge_bias);
-
-            // Hit-test area for dragging: approximate (text length
-            // × font size), since there's no 2D layout pass to get
-            // an exact box from anymore.
-            if let Some(screen_pos) = project_to_screen(&self.camera, aspect_ratio, rect, final_anchor) {
-                let approx_width = text.chars().count() as f32 * self.measurement_style.font_size * 0.55;
-                let approx_height = self.measurement_style.font_size * 1.3;
-                let hit_rect = egui::Rect::from_center_size(screen_pos, egui::vec2(approx_width, approx_height));
-                let label_response = ui.interact(hit_rect, ui.id().with(("measurement_label", active, index)), egui::Sense::drag());
-                if label_response.dragged() {
-                    label_updates.push((index, measurement.label_offset + label_response.drag_delta()));
-                }
+        for (index, hit_rect) in measurement_hits {
+            let label_response = ui.interact(hit_rect, ui.id().with(("measurement_label", active, index)), egui::Sense::drag());
+            if label_response.dragged() {
+                let offset = self.structures[active].measurements[index].label_offset;
+                label_updates.push((index, offset + label_response.drag_delta()));
             }
         }
         let any_label_dragged = !label_updates.is_empty();
-        label_instances.extend(self.value_label_instances(&self.camera, rect.height()));
         for (index, offset) in label_updates {
             if let Some(measurement) = self.structures[active].measurements.get_mut(index) {
                 measurement.label_offset = offset;

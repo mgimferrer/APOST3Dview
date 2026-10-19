@@ -53,6 +53,11 @@ pub(crate) struct ResultsView {
     /// The unit energies are shown in (APOST-3D writes them in au).
     #[serde(default)]
     pub(crate) energy_unit: EnergyUnit,
+    /// Each value's atom or fragment named above it ("2 CN" over "-0.15");
+    /// off: the values alone. For atoms, the name follows the Molecule
+    /// window's Labels setting ("C12" when that is None).
+    #[serde(default = "names_by_default")]
+    pub(crate) names: bool,
     /// For a matrix: its diagonal on every atom or fragment (local spin,
     /// localization index, intra (self) energy) instead of the pairs seen
     /// from the focus (Martí, 2026-10-19). Ignored for a matrix whose
@@ -121,6 +126,10 @@ pub(crate) fn scaled_matrix(m: &MatrixObject, factor: f64) -> MatrixObject {
     m
 }
 
+fn names_by_default() -> bool {
+    true
+}
+
 impl ResultsView {
     /// Results open showing nothing on the molecule (Martí, 2026-10-19):
     /// the molecule as it is, the APOST-3D window to choose from.
@@ -136,6 +145,7 @@ impl ResultsView {
             log_scale: false,
             energy_unit: EnergyUnit::default(),
             diagonal: false,
+            names: true,
         }
     }
 }

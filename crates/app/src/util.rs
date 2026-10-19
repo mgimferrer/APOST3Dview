@@ -42,14 +42,6 @@ pub(crate) fn format_measurement_atoms(molecule: &Molecule, kind: MeasurementKin
         .join("-")
 }
 
-/// Centroid of a measurement's involved atoms — the default label anchor
-/// before the user's own drag offset is applied.
-pub(crate) fn measurement_anchor(molecule: &Molecule, kind: MeasurementKind) -> Vec3 {
-    let atoms = kind.atoms();
-    let sum = atoms.iter().fold(Vec3::ZERO, |acc, &i| acc + molecule.positions[i]);
-    sum / atoms.len() as f32
-}
-
 /// Projects a world-space point through the camera into screen pixels
 /// within `rect`. `None` if it's behind the camera.
 pub(crate) fn project_to_screen(camera: &OrbitCamera, aspect_ratio: f32, rect: egui::Rect, world_pos: Vec3) -> Option<egui::Pos2> {

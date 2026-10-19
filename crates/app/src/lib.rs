@@ -8,6 +8,7 @@ mod app;
 mod export;
 mod files;
 mod isosurfaces;
+mod label_layout;
 mod labels;
 mod names;
 mod orbital_sets;

@@ -49,6 +49,14 @@ impl Halo {
     pub const NONE: Halo = Halo { color: [1.0, 1.0, 1.0], width: 0.0 };
 }
 
+/// The world-space size `layout_label` gives `text` at
+/// `world_size_per_raster_px`: its width, and one line's height (the em),
+/// for placing labels so they don't overlap.
+pub fn label_extent(atlas: &GlyphAtlas, text: &str, world_size_per_raster_px: f32) -> (f32, f32) {
+    let advance: f32 = text.chars().map(|ch| atlas.get(ch).advance).sum();
+    (advance * world_size_per_raster_px, crate::glyphs::GLYPH_RASTER_PX * world_size_per_raster_px)
+}
+
 /// Lays out `text` centered on `anchor`, both horizontally and vertically
 /// (vertical centering uses a reference digit's cap height, so ordinary
 /// labels sit squarely on their anchor rather than floating above it

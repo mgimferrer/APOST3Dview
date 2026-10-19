@@ -159,6 +159,10 @@ impl App {
             ui.horizontal(|ui| {
                 ui.checkbox(&mut view.labels, "Values on the molecule");
                 if view.labels {
+                    ui.checkbox(&mut view.names, "with names")
+                        .on_hover_text("Each value's atom or fragment named above it; for atoms, as the Molecule window's Labels setting names them");
+                }
+                if view.labels {
                     let mut auto = view.decimals.is_none();
                     ui.label("decimals");
                     if ui.selectable_label(auto, "auto").clicked() {

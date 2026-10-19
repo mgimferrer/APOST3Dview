@@ -57,6 +57,10 @@ const H2O_T: &[&str] = &["TESTS-VISUALIZER/H2O-T-ccpVTZ.fchk"];
 const FE: &[&str] = &["fixtures/apost3d/FeCN5NO3--UBLYP.apost.json"];
 const C2H6: &[&str] = &["fixtures/apost3d/C2H6-B3LYP.apost.json"];
 const C2H6_OSLO: &[&str] = &["fixtures/apost3d-orbitals/C2H6-OSLO-2CH3.apost.json"];
+const CH3F: &[&str] = &["fixtures/apost3d/CH3F.apost.json"];
+/// APOST-3D EOS (Löwdin) on the 83-atom Bi complex, run locally
+/// (2026-10-19); not in git, so the scene is skipped without it.
+const BI_EOS: &[&str] = &["fixtures/bi-eos-lowdin/Bi-EOS-LOWDIN.apost.json"];
 
 const PLAIN: &str = "[appearance]\nambient_occlusion = false\ndepth_of_field = false\n";
 const AO: &str = "[appearance]\nambient_occlusion = true\ndepth_of_field = false\n";
@@ -100,7 +104,7 @@ fn translucent(surface: String, opacity: f32, colors: Option<(&str, &str)>) -> S
 /// An APOST-3D results view showing `id` (focus 0-based).
 fn results(id: &str, focus: usize, bond_thickness: bool, log_scale: bool) -> String {
     format!(
-        "[structures.results_view]\nvisible = true\nfocus = {focus}\nlabels = true\nlabel_size = 1.0\nbond_thickness = {bond_thickness}\n\
+        "[structures.results_view]\nvisible = true\nfocus = {focus}\nlabels = true\nlabel_size = 26.0\nbond_thickness = {bond_thickness}\n\
          log_scale = {log_scale}\n[structures.results_view.shown]\nshow = \"quantity\"\nid = \"{id}\"\n"
     )
 }
@@ -164,6 +168,23 @@ fn scenes() -> Vec<Scene> {
         scene("fe-atom-charges", FE, &format!("{AO}[[structures]]\n{}", results("populations.atoms.charges", 0, false, false))),
         scene("fe-bond-order-focus", FE, &format!("{AO}[[structures]]\n{}", results("bond_orders.fragments.matrix", 0, true, false))),
         far(1.8, scene("c2h6-iqa-log", C2H6, &format!("{AO}[[structures]]\n{}", results("enpart.total.atoms", 0, false, true)))),
+        // Crowded labels: measurements beside their bonds and inside their
+        // angles; a value whose atom's center is covered by a hydrogen;
+        // values on 83 atoms, overlapping ones moved or left out.
+        far(
+            1.3,
+            scene(
+                "bicl3-measurements",
+                BICL3,
+                &format!(
+                    "{AO}[[structures]]\n{}",
+                    [[1, 2], [1, 3]].iter().map(|a| format!("[[structures.measurements]]\natoms = {a:?}\nlabel_offset = [0.0, 0.0]\n")).collect::<String>()
+                        + &[[2, 1, 3], [3, 1, 4]].iter().map(|a| format!("[[structures.measurements]]\natoms = {a:?}\nlabel_offset = [0.0, 0.0]\n")).collect::<String>()
+                ),
+            ),
+        ),
+        scene("ch3f-atom-charges", CH3F, &format!("{AO}[[structures]]\n{}", results("populations.atoms.charges", 0, false, false))),
+        scene("bi-eos-atom-charges", BI_EOS, &format!("{AO}[[structures]]\n{}", results("populations.atoms.charges", 0, false, false))),
         // A shared OSLO in its two fragments' colors.
         scene("c2h6-oslo-shared", C2H6_OSLO, &format!("{AO}[[structures]]\n{}", orbital(9, 1.0, 1, Some("oslo"), true))),
     ];

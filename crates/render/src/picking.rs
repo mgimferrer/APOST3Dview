@@ -151,14 +151,67 @@ pub fn is_atom_visible(
     hidden_bonds: &HashSet<usize>,
 ) -> bool {
     let position = molecule.positions[atom_index];
-    let to_atom = position - camera_eye;
-    let distance = to_atom.length();
+    if (position - camera_eye).length() < 1e-5 {
+        return true;
+    }
+    ray_reaches_atom(molecule, camera_eye, atom_index, position, atom_scale, bond_radius, hidden_atoms, hidden_bonds)
+}
+
+/// How much of an atom can be seen from the camera, roughly: the share of
+/// nine rays (to its center and to eight points around it, at 0.6 of its
+/// radius across the line of sight) that reach it before anything else.
+/// An atom whose center is just covered by a small neighbor (a hydrogen in
+/// front of a carbon) still counts as mostly visible.
+#[allow(clippy::too_many_arguments)]
+pub fn atom_visible_fraction(
+    molecule: &Molecule,
+    camera_eye: Vec3,
+    atom_index: usize,
+    atom_scale: f32,
+    bond_radius: f32,
+    hidden_atoms: &HashSet<usize>,
+    hidden_bonds: &HashSet<usize>,
+) -> f32 {
+    let position = molecule.positions[atom_index];
+    let view = (position - camera_eye).normalize_or_zero();
+    if view == Vec3::ZERO {
+        return 1.0;
+    }
+    let side = view.any_orthonormal_vector();
+    let other = view.cross(side);
+    let reach = element_data(molecule.atomic_numbers[atom_index]).vdw_radius * atom_scale * 0.6;
+    let targets = std::iter::once(position).chain((0..8).map(|k| {
+        let angle = k as f32 * std::f32::consts::FRAC_PI_4;
+        position + (side * angle.cos() + other * angle.sin()) * reach
+    }));
+    let reached = targets.filter(|&t| ray_reaches_atom(molecule, camera_eye, atom_index, t, atom_scale, bond_radius, hidden_atoms, hidden_bonds)).count();
+    reached as f32 / 9.0
+}
+
+/// Whether the ray from the camera toward `target` (a point on or in atom
+/// `atom_index`) meets that atom before any other atom or bond (one not
+/// attached to it).
+#[allow(clippy::too_many_arguments)]
+fn ray_reaches_atom(
+    molecule: &Molecule,
+    camera_eye: Vec3,
+    atom_index: usize,
+    target: Vec3,
+    atom_scale: f32,
+    bond_radius: f32,
+    hidden_atoms: &HashSet<usize>,
+    hidden_bonds: &HashSet<usize>,
+) -> bool {
+    let to_target = target - camera_eye;
+    let distance = to_target.length();
     if distance < 1e-5 {
         return true;
     }
-    let dir = to_atom / distance;
+    let dir = to_target / distance;
     let own_radius = element_data(molecule.atomic_numbers[atom_index]).vdw_radius * atom_scale;
-    let own_surface_t = (distance - own_radius).max(0.0);
+    // Where the ray enters this atom (for the center ray, its distance
+    // minus its radius).
+    let Some(own_surface_t) = ray_sphere_hit(camera_eye, dir, molecule.positions[atom_index], own_radius) else { return false };
     // A little slack so a bond/atom that just grazes this atom's own
     // surface (as anything actually touching it geometrically will)
     // doesn't register as a false occluder.
@@ -169,10 +222,10 @@ pub fn is_atom_visible(
             continue;
         }
         let other_radius = element_data(molecule.atomic_numbers[index]).vdw_radius * atom_scale;
-        if let Some(t) = ray_sphere_hit(camera_eye, dir, other_position, other_radius) {
-            if t < own_surface_t - epsilon {
-                return false;
-            }
+        if let Some(t) = ray_sphere_hit(camera_eye, dir, other_position, other_radius)
+            && t < own_surface_t - epsilon
+        {
+            return false;
         }
     }
 

@@ -27,7 +27,7 @@ fn character_set() -> Vec<char> {
 /// stays reasonably crisp whether a label ends up small (a hydrogen atom
 /// tag) or large (a zoomed-in measurement), since it's just a texture
 /// sampled onto a quad scaled after the fact.
-const GLYPH_RASTER_PX: f32 = 64.0;
+pub(crate) const GLYPH_RASTER_PX: f32 = 64.0;
 const ATLAS_CELL_PX: u32 = 88;
 
 /// Glyphs are rasterized at `GLYPH_RASTER_PX * SDF_SUPERSAMPLE` and the
