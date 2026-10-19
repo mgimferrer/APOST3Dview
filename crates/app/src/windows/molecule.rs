@@ -9,6 +9,7 @@ use egui::{RichText, Slider};
 use crate::app::App;
 use crate::state::AtomLabelMode;
 use crate::util::find_bond_between;
+use crate::windows::ToolWindow;
 
 impl App {
     pub(crate) fn show_molecule_window(&mut self, ctx: &egui::Context) {
@@ -88,13 +89,13 @@ impl App {
         let has_results = structure.apost.is_some();
         ui.horizontal_wrapped(|ui| {
             if has_orbitals && ui.button("Orbitals...").on_hover_text("Generate and show orbitals (Surfaces window)").clicked() {
-                self.show_surfaces = true;
+                self.open_window(ToolWindow::Surfaces);
             }
             if has_results && ui.button("APOST-3D results...").clicked() {
-                self.show_apost = true;
+                self.open_window(ToolWindow::Apost);
             }
             if ui.button("Coordinates...").on_hover_text("Cartesian coordinates, to copy or save as .xyz").clicked() {
-                self.show_coordinates = true;
+                self.open_window(ToolWindow::Coordinates);
             }
         });
     }
@@ -182,7 +183,7 @@ impl App {
             }
             if (2..=4).contains(&atoms.len()) && ui.button("Add measurement").on_hover_text("Add this distance, angle or dihedral to the Measure window").clicked() {
                 self.add_measurement_from_selection();
-                self.show_measure = true;
+                self.open_window(ToolWindow::Measure);
             }
             if ui.button("Clear (Esc)").clicked() {
                 self.clear_selection();

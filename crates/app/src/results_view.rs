@@ -116,9 +116,11 @@ pub(crate) fn scaled_matrix(m: &MatrixObject, factor: f64) -> MatrixObject {
 }
 
 impl ResultsView {
-    pub(crate) fn new(results: &ApostResults) -> Self {
+    /// Results open showing nothing on the molecule (Martí, 2026-10-19):
+    /// the molecule as it is, the APOST-3D window to choose from.
+    pub(crate) fn new(_results: &ApostResults) -> Self {
         Self {
-            shown: if results.fragments().is_empty() { Shown::Nothing } else { Shown::Fragments },
+            shown: Shown::Nothing,
             visible: true,
             focus: 0,
             labels: true,
@@ -235,8 +237,45 @@ pub(crate) fn enpart_term_name(term: &str) -> &'static str {
         "xc_dft" => "DFT exchange-correlation",
         "electron_nuclear" => "Electron-nuclear attraction",
         "nuclear_repulsion" => "Nuclear repulsion",
-        "kinetic" => "Kinetic (self-energies only)",
+        "kinetic" => "Kinetic (intra only)",
         _ => "Other",
+    }
+}
+
+/// How an IQA matrix value is named, so it always says whether it lies
+/// between two fragments (atoms) or within one (Martí, 2026-10-19):
+/// `diagonal` for the matrix diagonal (within: "intra-atomic (self)
+/// energy"), otherwise a pair (between: "inter-fragment interaction
+/// energy", "inter-atomic exchange-correlation term").
+pub(crate) fn iqa_meaning(term: &str, on_fragments: bool, diagonal: bool) -> String {
+    let level = if on_fragments { "fragment" } else { "atomic" };
+    let prefix = if diagonal { format!("intra-{level}") } else { format!("inter-{level}") };
+    let part = match term {
+        "total" if diagonal => return format!("{prefix} (self) energy"),
+        "total" => return format!("{prefix} interaction energy"),
+        "classical_interaction" => return format!("{prefix} classical (electrostatic) interaction"),
+        "xc" => "exchange-correlation",
+        "exchange" => "exchange",
+        "correlation" => "correlation",
+        "coulomb" => "Coulomb",
+        "exact_exchange_share" => "exact-exchange",
+        "xc_dft" => "DFT exchange-correlation",
+        "electron_nuclear" => "electron-nuclear",
+        "nuclear_repulsion" => "nuclear repulsion",
+        "kinetic" => "kinetic",
+        _ => "energy",
+    };
+    format!("{prefix} {part} term")
+}
+
+/// What a matrix's diagonal and off-diagonal values are, for the window:
+/// the IQA wording for energy terms (`iqa_meaning`), else the file's own.
+/// `None` where the file says a part has no meaning ("none").
+pub(crate) fn matrix_meanings(entry: &IndexEntry, matrix: &MatrixObject) -> (Option<String>, Option<String>) {
+    let diagonal = matrix.diagonal.clone().filter(|d| d != "none");
+    match enpart_term(&entry.id) {
+        Some((term, on_fragments)) => (diagonal.map(|_| iqa_meaning(term, on_fragments, true)), Some(iqa_meaning(term, on_fragments, false))),
+        None => (diagonal, matrix.off_diagonal.clone()),
     }
 }
 
@@ -298,14 +337,15 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             } else {
                 scene.halos = items;
             }
-            // IQA: the focus's own term (its self-energy) in the window, and
-            // the values of its pairs from the multipolar expansion marked
-            // "≈" (their exchange-correlation is approximate).
+            // IQA: the focus's own term (intra, its self-energy) in the
+            // window, and the values of its pairs from the multipolar
+            // expansion marked "≈" (their exchange-correlation is
+            // approximate).
             let enpart = enpart_term(&entry.id).and_then(|_| results.enpart());
             if let (Quantity::Matrix(m), Some(f), Some(_)) = (&quantity, focus, &enpart) {
-                if let (Some(noun), Some(e)) = (m.diagonal.as_deref().filter(|d| *d != "none"), m.get(f, f)) {
+                if let (Some(noun), Some(e)) = (matrix_meanings(entry, m).0, m.get(f, f)) {
                     let (d, u) = if unit == Some("kcal/mol") { (2, "kcal/mol") } else { (6, "au") };
-                    scene.notes.push(format!("{} of {}: {} {u}", capitalize(noun), name(f), format_signed(e, d)));
+                    scene.notes.push(format!("{} of {}: {} {u}", capitalize(&noun), name(f), format_signed(e, d)));
                 }
             }
             let fragments = results.fragments();
@@ -335,7 +375,7 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             }
             let title = match (&quantity, focus) {
                 (Quantity::Matrix(m), Some(f)) => {
-                    let what = m.off_diagonal.clone().unwrap_or_else(|| entry.title.clone());
+                    let what = matrix_meanings(entry, m).1.unwrap_or_else(|| entry.title.clone());
                     let scheme = results.input.as_ref().and_then(|i| i.atomic_definition.as_ref()).and_then(|d| d.short_name.clone().or_else(|| d.keyword.clone()));
                     match scheme {
                         Some(scheme) => format!("{} with {} ({scheme})", capitalize(&what), name(f)),
@@ -456,12 +496,30 @@ pub(crate) fn label_position(anchor: LabelAnchor, results: &ApostResults, molecu
     }
 }
 
+/// Quantities the Show menu leaves out unless "Also list other values" is
+/// ticked (Martí, 2026-10-19): what follows from a quantity already shown
+/// (electron populations and EOS/OSLO electron counts from the charges and
+/// oxidation states, valences from the bond orders), overlap populations,
+/// and GEOS paired electrons (the unpaired ones stay). They remain in the
+/// text report and in the tables.
+pub(crate) fn is_secondary(entry: &IndexEntry) -> bool {
+    let parts: Vec<&str> = entry.id.split('.').collect();
+    match parts.as_slice() {
+        ["bond_orders", "overlap_populations", ..] => true,
+        ["bond_orders", _, last] => last.starts_with("valence_"),
+        ["populations", .., "electrons"] => true,
+        ["eos" | "oslo", "fragments", last] => last.starts_with("electrons"),
+        ["geos", "fragments", "electrons_paired"] => true,
+        _ => false,
+    }
+}
+
 /// The quantities a file offers for the selector, grouped: fragment values,
 /// fragment pairs, atom values, atom pairs (fragments first: they are what
 /// fragment analyses are about). Values in another atomic definition than
-/// the run's own, printed only for comparison, are left out unless
-/// `include_comparison`.
-pub(crate) fn grouped_entries(results: &ApostResults, include_comparison: bool) -> Vec<(&'static str, Vec<&IndexEntry>)> {
+/// the run's own, printed only for comparison, and the secondary ones
+/// (`is_secondary`) are left out unless `include_other`.
+pub(crate) fn grouped_entries(results: &ApostResults, include_other: bool) -> Vec<(&'static str, Vec<&IndexEntry>)> {
     // The energy decomposition has a group of its own: the IQA matrices
     // (their other terms through the term selector).
     let is_enpart = |e: &IndexEntry| e.analysis.as_deref() == Some("enpart");
@@ -472,7 +530,7 @@ pub(crate) fn grouped_entries(results: &ApostResults, include_comparison: bool) 
         ("Between atoms", QuantityKind::AtomMatrix),
     ]
     .into_iter()
-    .map(|(group, kind)| (group, results.entries(kind).filter(|e| (include_comparison || !e.is_comparison()) && !is_enpart(e)).collect::<Vec<_>>()))
+    .map(|(group, kind)| (group, results.entries(kind).filter(|e| (include_other || !(e.is_comparison() || is_secondary(e))) && !is_enpart(e)).collect::<Vec<_>>()))
     .collect();
     // Atomic energies are listed as numbers in the window, not offered as
     // colors: dominated by the core, they would only tell elements apart
@@ -500,6 +558,60 @@ pub(crate) fn focus_target(results: &ApostResults, view: &ResultsView) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn iqa_values_say_inter_or_intra() {
+        assert_eq!(iqa_meaning("total", true, false), "inter-fragment interaction energy");
+        assert_eq!(iqa_meaning("total", true, true), "intra-fragment (self) energy");
+        assert_eq!(iqa_meaning("total", false, false), "inter-atomic interaction energy");
+        assert_eq!(iqa_meaning("total", false, true), "intra-atomic (self) energy");
+        assert_eq!(iqa_meaning("classical_interaction", false, false), "inter-atomic classical (electrostatic) interaction");
+        assert_eq!(iqa_meaning("xc", true, false), "inter-fragment exchange-correlation term");
+        assert_eq!(iqa_meaning("kinetic", false, true), "intra-atomic kinetic term");
+    }
+
+    #[test]
+    fn secondary_quantities() {
+        let entry = |id: &str| IndexEntry {
+            id: id.to_string(),
+            analysis: None,
+            spin: None,
+            path: String::new(),
+            kind: QuantityKind::FragmentVector,
+            title: String::new(),
+            unit: None,
+            decimals: None,
+            role: None,
+            signed: None,
+        };
+        for id in [
+            "bond_orders.atoms.valence_total",
+            "bond_orders.fragments.valence_free",
+            "bond_orders.overlap_populations.atoms.matrix",
+            "populations.atoms.electrons",
+            "populations.fragments.electrons",
+            "eos.fragments.electrons_alpha",
+            "oslo.fragments.electrons",
+            "oslo.fragments.electrons_beta",
+            "geos.fragments.electrons_paired",
+        ] {
+            assert!(is_secondary(&entry(id)), "{id} is secondary");
+        }
+        for id in [
+            "populations.atoms.charges",
+            "populations.fragments.spin",
+            "bond_orders.atoms.matrix",
+            "bond_orders.fragments.matrix",
+            "eos.fragments.oxidation_states",
+            "oslo.fragments.oxidation_states",
+            "geos.fragments.electrons_unpaired",
+            "local_spin.atoms.unpaired_electrons",
+            "local_spin.fragments.s2",
+            "enpart.total.atoms",
+        ] {
+            assert!(!is_secondary(&entry(id)), "{id} is listed");
+        }
+    }
 
     #[test]
     fn enpart_term_ids() {

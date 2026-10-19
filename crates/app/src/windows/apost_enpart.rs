@@ -195,7 +195,10 @@ impl App {
             let molecule = &molecule;
             let atom_names: Vec<String> = (0..molecule.atomic_numbers.len()).map(|a| atom_name(&molecule.atomic_numbers, a)).collect();
             let fragment_names: Vec<String> = results.fragments().iter().map(|f| fragment_name(f, &molecule.atomic_numbers)).collect();
-            for (level, title, names) in [("fragments", "Fragment energies", &fragment_names), ("atoms", "Atomic energies", &atom_names)] {
+            for (level, title, own_name, names) in [
+                ("fragments", "Fragment energies", "Intra-fragment (self) energy", &fragment_names),
+                ("atoms", "Atomic energies", "Intra-atomic (self) energy", &atom_names),
+            ] {
                 let Some(rows) = energy_rows(results, level, names) else { continue };
                 let rows: Vec<_> = rows.into_iter().map(|(n, s, a)| (n, s.map(|v| v * factor), a.map(|v| v * factor))).collect();
                 let title = format!("{title}, {unit}");
@@ -203,7 +206,7 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(title).small().weak());
                     if ui.small_button("Copy").on_hover_text("As tab-separated text, for a spreadsheet").clicked() {
-                        let text: String = std::iter::once("\tSelf-energy\tAdditive energy\n".to_string())
+                        let text: String = std::iter::once(format!("\t{own_name}\tAdditive energy\n"))
                             .chain(rows.iter().map(|(n, s, a)| format!("{n}\t{}\t{}\n", s.map(|v| v.to_string()).unwrap_or_default(), a.map(|v| v.to_string()).unwrap_or_default())))
                             .collect();
                         ui.ctx().copy_text(text);
@@ -212,7 +215,7 @@ impl App {
                 egui::ScrollArea::vertical().id_salt(("apost_enpart_energies", level)).max_height(180.0).show(ui, |ui| {
                     egui::Grid::new(("apost_enpart_energies_grid", level)).num_columns(3).striped(true).spacing([14.0, 3.0]).show(ui, |ui| {
                         ui.label("");
-                        ui.label(RichText::new("Self-energy").strong());
+                        ui.label(RichText::new(own_name).strong());
                         ui.label(RichText::new("Additive energy").strong());
                         ui.end_row();
                         for (name, own, additive) in &rows {
@@ -225,7 +228,9 @@ impl App {
                     });
                 });
             }
-            ui.label(RichText::new("Additive energies are the self-energy plus half of each interaction; they add up to the total energy.").small().weak());
+            ui.label(
+                RichText::new("Additive energies are the intra (self) energy plus half of each inter interaction; they add up to the total energy.").small().weak(),
+            );
         });
     }
 }

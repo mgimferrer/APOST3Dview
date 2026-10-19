@@ -9,7 +9,7 @@ use egui::{Color32, RichText, Sense};
 use crate::app::App;
 use crate::names::{atom_name, fragment_name};
 use crate::util::rgb_to_color32;
-use crate::results_view::{build_scene, display_unit, enpart_term, enpart_term_name, is_energy, scaled_quantity, EnergyUnit, focus_target, grouped_entries, shown_entry, ResultsView, Shown, FOCUS_COLOR};
+use crate::results_view::{build_scene, display_unit, enpart_term, enpart_term_name, is_energy, scaled_quantity, EnergyUnit, focus_target, grouped_entries, is_secondary, matrix_meanings, shown_entry, ResultsView, Shown, FOCUS_COLOR};
 
 fn shown_label(results: &ApostResults, shown: &Shown) -> String {
     match shown {
@@ -33,7 +33,7 @@ impl App {
     /// "On the molecule": the one choice of what to draw, and how.
     pub(crate) fn show_results_controls(&mut self, ui: &mut egui::Ui) {
         let Some(active) = self.active_structure else { return };
-        let list_comparison = &mut self.list_comparison_values;
+        let list_other = &mut self.list_other_values;
         let structure = &mut self.structures[active];
         let molecule = structure.molecule.clone();
         let Some(attachment) = structure.apost.as_mut() else { return };
@@ -49,7 +49,7 @@ impl App {
                 if !results.fragments().is_empty() {
                     ui.selectable_value(&mut view.shown, Shown::Fragments, "Fragments");
                 }
-                for (group, entries) in grouped_entries(results, *list_comparison) {
+                for (group, entries) in grouped_entries(results, *list_other) {
                     ui.separator();
                     ui.label(RichText::new(group).small().weak());
                     for entry in entries {
@@ -60,9 +60,11 @@ impl App {
                         }
                     }
                 }
-                if results.index.iter().any(|e| e.is_comparison()) {
+                if results.index.iter().any(|e| e.is_comparison() || is_secondary(e)) {
                     ui.separator();
-                    ui.checkbox(list_comparison, "Also list Mulliken values (for comparison)");
+                    ui.checkbox(list_other, "Also list other values").on_hover_text(
+                        "Mulliken values printed for comparison, electron populations and counts, valences, overlap populations",
+                    );
                 }
             });
             ui.checkbox(&mut view.visible, "").on_hover_text("Show or hide on the molecule, keeping the choice");
@@ -219,7 +221,8 @@ impl App {
                 });
             }
             Quantity::Matrix(matrix) => {
-                if let (Some(d), Some(o)) = (&matrix.diagonal, &matrix.off_diagonal) {
+                let meanings = matrix_meanings(&entry, matrix);
+                if let (Some(d), Some(o)) = &meanings {
                     ui.label(RichText::new(format!("Diagonal: {d}. Off-diagonal: {o}.")).small().weak());
                 }
                 if let (Some(total), Some(rule)) = (matrix.total, &matrix.total_rule) {
@@ -230,7 +233,7 @@ impl App {
                     ui.ctx().copy_text(matrix_text(matrix, &names));
                 }
                 let signed = matches!(scale, Some(ColorScale::Diverging { .. }));
-                if let Some(focus) = heat_map(ui, matrix, &names, view.focus, signed, view.log_scale) {
+                if let Some(focus) = heat_map(ui, matrix, &meanings, &names, view.focus, signed, view.log_scale) {
                     view.focus = focus;
                 }
                 if let Some(focus) = strongest_pairs(ui, matrix, &names, decimals) {
@@ -269,7 +272,7 @@ impl App {
             });
             if !iqa.is_empty() {
                 ui.add_space(4.0);
-                ui.label(RichText::new(format!("Interaction energy (IQA), {}", energy_unit.name())).small().weak());
+                ui.label(RichText::new(format!("Inter-atomic interaction energy (IQA), {}", energy_unit.name())).small().weak());
                 egui::Grid::new("results_pair_iqa").num_columns(2).spacing([12.0, 3.0]).striped(true).show(ui, |ui| {
                     for (entry, value) in &iqa {
                         let Some((term, _)) = enpart_term(&entry.id) else { continue };
@@ -295,7 +298,15 @@ impl App {
 /// The matrix as colored cells, the focus's row outlined. A signed
 /// quantity uses the diverging scale (`log` as on the molecule), others
 /// the magnitude.
-fn heat_map(ui: &mut egui::Ui, matrix: &MatrixObject, names: &[String], focus: usize, signed: bool, log: bool) -> Option<usize> {
+fn heat_map(
+    ui: &mut egui::Ui,
+    matrix: &MatrixObject,
+    meanings: &(Option<String>, Option<String>),
+    names: &[String],
+    focus: usize,
+    signed: bool,
+    log: bool,
+) -> Option<usize> {
     let n = matrix.values.len();
     if n == 0 || n > 40 {
         return None;
@@ -330,7 +341,7 @@ fn heat_map(ui: &mut egui::Ui, matrix: &MatrixObject, names: &[String], focus: u
     };
     if let Some((i, j)) = response.hover_pos().and_then(cell_at) {
         let value = matrix.get(i, j).map(|v| format!("{v:.4}")).unwrap_or_else(|| "n/a".into());
-        let meaning = if i == j { matrix.diagonal.clone() } else { matrix.off_diagonal.clone() }.unwrap_or_default();
+        let meaning = if i == j { meanings.0.clone() } else { meanings.1.clone() }.unwrap_or_default();
         let pair = if i == j { names[i].clone() } else { format!("{} \u{2013} {}", names[i], names[j]) };
         response.clone().on_hover_text(format!("{pair}: {value}\n{meaning}"));
     }

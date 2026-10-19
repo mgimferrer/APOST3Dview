@@ -16,6 +16,7 @@ use crate::orbitals::OrbitalGenerationState;
 use crate::presets::list_style_presets;
 use crate::state::{AtomLabelMode, AtomLabelStyle, LoadedStructure, MeasurementStyle};
 use crate::util::molecules_share_geometry;
+use crate::windows::ToolWindow;
 use crate::viewport::DEFAULT_AUTO_SPIN_SPEED;
 
 /// How long the splash screen stays up at most. A click dismisses it
@@ -160,8 +161,12 @@ pub struct App {
     /// every structure so figures of different systems compare.
     pub(crate) color_ranges: std::collections::BTreeMap<String, apost3dview_render::ColorScale>,
     /// List, in the Show menu, the values APOST-3D prints only for
-    /// comparison (Mulliken's, in a run with another atomic definition).
-    pub(crate) list_comparison_values: bool,
+    /// comparison (Mulliken's, in a run with another atomic definition)
+    /// and the secondary ones (`results_view::is_secondary`).
+    pub(crate) list_other_values: bool,
+    /// Windows asked for since the last frame, to show expanded
+    /// (`open_window`).
+    pub(crate) windows_to_expand: Vec<crate::windows::ToolWindow>,
     /// The table chosen in the APOST-3D window's Tables section (entry id).
     pub(crate) apost_table: Option<String>,
     /// What the results display was last built for (see
@@ -234,7 +239,8 @@ impl App {
             new_preset_name: String::new(),
             toasts: Vec::new(),
             color_ranges: Default::default(),
-            list_comparison_values: false,
+            list_other_values: false,
+            windows_to_expand: Vec::new(),
             apost_table: None,
             results_signature: String::new(),
             session_path: None,
@@ -538,16 +544,16 @@ impl App {
                     });
                 });
                 ui.separator();
-                for (open, name) in [
-                    (&mut self.show_molecule, "Molecule"),
-                    (&mut self.show_surfaces, "Surfaces"),
-                    (&mut self.show_measure, "Measure"),
-                    (&mut self.show_apost, "APOST-3D"),
-                    (&mut self.show_appearance, "Appearance"),
-                    (&mut self.show_export, "Export"),
-                ] {
-                    if ui.selectable_label(*open, name).clicked() {
-                        *open = !*open;
+                // A click closes an open window, and opens a closed one
+                // expanded.
+                for window in ToolWindow::TOOLBAR {
+                    let open = self.window_open(window);
+                    if ui.selectable_label(open, window.title()).clicked() {
+                        if open {
+                            *self.window_flag(window) = false;
+                        } else {
+                            self.open_window(window);
+                        }
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -666,6 +672,7 @@ impl eframe::App for App {
         self.update_surfaces(&ctx);
         self.update_results_display(&ctx);
 
+        self.expand_requested_windows(&ctx);
         self.show_toolbar(ui);
         self.show_status_bar(ui);
         self.show_molecule_window(&ctx);

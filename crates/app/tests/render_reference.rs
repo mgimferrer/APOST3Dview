@@ -62,6 +62,8 @@ const PLAIN: &str = "[appearance]\nambient_occlusion = false\ndepth_of_field = f
 const AO: &str = "[appearance]\nambient_occlusion = true\ndepth_of_field = false\n";
 const DOF: &str = "[appearance]\nambient_occlusion = false\ndepth_of_field = true\n";
 const AO_DOF: &str = "[appearance]\nambient_occlusion = true\ndepth_of_field = true\n";
+/// The fragment envelopes (results open showing nothing).
+const FRAGMENTS: &str = "[[structures]]\n[structures.results_view.shown]\nshow = \"fragments\"\n";
 
 /// A generated-orbital surface (1-based orbital, Medium grid).
 fn orbital(orbital: usize, opacity: f32, refinement: usize, set: Option<&str>, by_fragment: bool) -> String {
@@ -154,10 +156,10 @@ fn scenes() -> Vec<Scene> {
             ),
         ),
         far(1.6, scene("triplet-total-density", H2O_T, &format!("{AO_DOF}[[structures]]\n{}", translucent(density(false), 0.35, None)))),
-        // APOST-3D: fragment envelopes (the default view), with and
-        // without depth of field (the value labels take another path).
-        scene("fe-fragments-ao-dof", FE, AO_DOF),
-        scene("fe-fragments-ao", FE, AO),
+        // APOST-3D: fragment envelopes, with and without depth of field
+        // (the value labels take another path).
+        scene("fe-fragments-ao-dof", FE, &format!("{AO_DOF}{FRAGMENTS}")),
+        scene("fe-fragments-ao", FE, &format!("{AO}{FRAGMENTS}")),
         scene("fe-fragment-charges", FE, &format!("{AO}[[structures]]\n{}", results("populations.fragments.charges", 0, false, false))),
         scene("fe-atom-charges", FE, &format!("{AO}[[structures]]\n{}", results("populations.atoms.charges", 0, false, false))),
         scene("fe-bond-order-focus", FE, &format!("{AO}[[structures]]\n{}", results("bond_orders.fragments.matrix", 0, true, false))),
@@ -172,7 +174,7 @@ fn scenes() -> Vec<Scene> {
         ("window-bi-ao", BI, AO.to_string()),
         ("window-bi-ao-dof", BI, AO_DOF.to_string()),
         ("window-h2o-homo-ao", H2O, format!("{AO}[[structures]]\n{}", orbital(5, 1.0, 1, None, false))),
-        ("window-fe-fragments", FE, AO_DOF.to_string()),
+        ("window-fe-fragments", FE, format!("{AO_DOF}{FRAGMENTS}")),
         ("window-h2o-homo-translucent", H2O, format!("{AO}[[structures]]\n{}", translucent(orbital(5, 1.0, 1, None, false), 0.5, None))),
     ] {
         let zoom_out = if files == H2O { 2.4 } else { 1.0 };

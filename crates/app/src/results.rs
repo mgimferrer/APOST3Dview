@@ -117,6 +117,6 @@ impl App {
         self.structures[index].orbital_sets = sets;
         self.structures[index].active_orbital_set = 0;
         self.structures[index].apost = Some(ApostAttachment::new(results_path, results, true));
-        self.show_apost = true;
+        self.open_window(crate::windows::ToolWindow::Apost);
     }
 }

@@ -109,18 +109,26 @@ fn bond_thickness_and_legends_reach_the_exported_image() {
     assert!(differing(&corner(&plain), &corner(&with_values)) > 300, "legend in the corner");
 }
 
-/// The Show menu lists the run's own atomic definition; the Mulliken values
-/// APOST-3D prints for comparison only on request.
+/// The Show menu lists the run's own atomic definition and the quantities
+/// worth drawing; the Mulliken values APOST-3D prints for comparison, and
+/// the secondary ones (electron counts, valences, ...), only on request.
 #[test]
-fn comparison_values_are_listed_only_on_request() {
+fn other_values_are_listed_only_on_request() {
     use egui_kittest::kittest::By;
     let Some(dir) = fixtures_dir() else { return };
     let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk")]);
     harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).next().unwrap().click();
     harness.run_steps(2);
-    assert!(harness.query_by_label("Atomic charges (Lowdin)").is_some());
-    assert!(harness.query_by_label("Atomic charges (Mulliken)").is_none());
-    harness.get_by_label("Also list Mulliken values (for comparison)").click_accesskit();
+    for listed in ["Atomic charges (Lowdin)", "Spin populations (Lowdin)", "Fragment charges (Lowdin)", "Bond orders (Lowdin)", "EOS oxidation states (Lowdin)"] {
+        assert!(harness.query_by_label(listed).is_some(), "{listed} listed");
+    }
+    let other = ["Atomic charges (Mulliken)", "Electron populations (Lowdin)", "Total valences (Lowdin)", "Fragment free valences (Lowdin)", "EOS electrons, alpha (Lowdin)"];
+    for hidden in other {
+        assert!(harness.query_by_label(hidden).is_none(), "{hidden} not listed");
+    }
+    harness.get_by_label("Also list other values").click_accesskit();
     harness.run_steps(2);
-    assert!(harness.query_by_label("Atomic charges (Mulliken)").is_some());
+    for shown in other {
+        assert!(harness.query_by_label(shown).is_some(), "{shown} listed on request");
+    }
 }

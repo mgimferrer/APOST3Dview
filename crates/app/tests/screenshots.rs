@@ -52,6 +52,10 @@ fn fragment_envelopes_leave_the_atoms_alone() {
     // between structures of the same geometry keeps the camera.
     let mut harness = app_with(vec![dir.join("FeCN5NO3--UBLYP.fchk"), scratch.join("plain.fchk")]);
     harness.run_steps(3);
+    harness.get_all_by_label("FeCN5NO3--UBLYP.fchk").next().unwrap().click();
+    harness.run_steps(3);
+    assert!(harness.state_mut().show_on_molecule("fragments"));
+    harness.run_steps(3);
     let with_envelopes = harness.state_mut().render_image(480, 360).unwrap();
     harness.get_all_by_label("plain.fchk").next().unwrap().click();
     harness.run_steps(3);

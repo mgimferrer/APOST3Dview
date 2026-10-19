@@ -212,3 +212,37 @@ fn a_selection_can_be_measured_from_the_molecule_window() {
     harness.run_steps(3);
     harness.get_by_label_contains("C1-H3-H4-H5: ");
 }
+
+/// Asking for a window again (toolbar button or a link in the Molecule
+/// window) brings it back expanded, even if it had been collapsed; a click
+/// on the toolbar button of an open window closes it.
+#[test]
+fn windows_asked_for_again_come_back_expanded() {
+    let mut harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk")]);
+    let collapse = |harness: &mut egui_kittest::Harness<'_, apost3dview::App>| {
+        let id = egui::Id::new("Surfaces").with("collapsing");
+        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(&harness.ctx, id, true);
+        state.set_open(false);
+        state.store(&harness.ctx);
+        harness.run_steps(2);
+        assert!(!harness.state().window_expanded(&harness.ctx, "Surfaces"));
+    };
+    harness.get_by_label("Surfaces").click();
+    harness.run_steps(2);
+    assert!(harness.state().window_expanded(&harness.ctx, "Surfaces"));
+
+    // Collapsed, then asked for from the Molecule window's link.
+    collapse(&mut harness);
+    harness.get_by_label("Orbitals...").click();
+    harness.run_steps(2);
+    assert!(harness.state().window_expanded(&harness.ctx, "Surfaces"));
+
+    // Collapsed, closed from the toolbar, opened again: expanded.
+    collapse(&mut harness);
+    harness.get_all_by_label("Surfaces").next().unwrap().click();
+    harness.run_steps(2);
+    assert!(!harness.state().window_expanded(&harness.ctx, "Surfaces"));
+    harness.get_all_by_label("Surfaces").next().unwrap().click();
+    harness.run_steps(2);
+    assert!(harness.state().window_expanded(&harness.ctx, "Surfaces"));
+}

@@ -72,7 +72,7 @@ impl App {
         let Some(Ok(results)) = structure.apost.as_ref().map(|a| &a.results) else { return };
         // The energy decomposition's numbers are in its own section.
         let entries: Vec<&IndexEntry> =
-            results.entries(QuantityKind::Scalar).filter(|e| (self.list_comparison_values || !e.is_comparison()) && e.analysis.as_deref() != Some("enpart")).collect();
+            results.entries(QuantityKind::Scalar).filter(|e| (self.list_other_values || !e.is_comparison()) && e.analysis.as_deref() != Some("enpart")).collect();
         if entries.is_empty() {
             return;
         }
@@ -102,7 +102,7 @@ impl App {
         let Some(active) = self.active_structure else { return };
         let structure = &self.structures[active];
         let Some(Ok(results)) = structure.apost.as_ref().map(|a| &a.results) else { return };
-        let entries: Vec<&IndexEntry> = results.entries(QuantityKind::Table).filter(|e| self.list_comparison_values || !e.is_comparison()).collect();
+        let entries: Vec<&IndexEntry> = results.entries(QuantityKind::Table).filter(|e| self.list_other_values || !e.is_comparison()).collect();
         if entries.is_empty() {
             return;
         }

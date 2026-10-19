@@ -295,7 +295,7 @@ impl App {
         let molecule = results.molecule().unwrap_or_else(|| Molecule::from_atoms(Vec::new(), Vec::new()));
         let mut structure = LoadedStructure::new(label, molecule, Some(path.to_path_buf()));
         structure.apost = Some(ApostAttachment::without_fchk(path, results));
-        self.show_apost = true;
+        self.open_window(crate::windows::ToolWindow::Apost);
         Some(self.push_structure(structure))
     }
 }
