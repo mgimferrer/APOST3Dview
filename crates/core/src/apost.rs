@@ -30,8 +30,10 @@ use crate::fchk::FchkSummary;
 use crate::molecule::Molecule;
 
 pub const RESULTS_SCHEMA: &str = "apost3d-results";
-/// The only schema major version this viewer understands.
-pub const SUPPORTED_SCHEMA_MAJOR: u32 = 0;
+/// The schema major versions this viewer understands: 0 (the development
+/// versions, last 0.13) and 1, which APOST-3D writes from its release on:
+/// the 0.13 format frozen (Martí, 2026-10-20). A later major is refused.
+pub const SUPPORTED_SCHEMA_MAJORS: std::ops::RangeInclusive<u32> = 0..=1;
 /// File name suffix of an APOST-3D results file.
 pub const RESULTS_SUFFIX: &str = ".apost.json";
 
@@ -706,11 +708,12 @@ pub fn parse_apost_results(text: &str) -> Result<ApostResults, String> {
     let version = value.get("schema_version").and_then(Value::as_str).unwrap_or("");
     let major = version.split('.').next().and_then(|m| m.parse::<u32>().ok());
     match major {
-        Some(SUPPORTED_SCHEMA_MAJOR) => {}
+        Some(m) if SUPPORTED_SCHEMA_MAJORS.contains(&m) => {}
         Some(_) => {
             return Err(format!(
                 "written in results-file version {version}, which this APOST3Dview does not know \
-                 (it reads version {SUPPORTED_SCHEMA_MAJOR}.x). Please update APOST3Dview."
+                 (it reads versions up to {}.x). Please update APOST3Dview.",
+                SUPPORTED_SCHEMA_MAJORS.end()
             ));
         }
         None => return Err(format!("unreadable schema_version \"{version}\"")),
@@ -996,8 +999,16 @@ mod tests {
 
     #[test]
     fn refuses_an_unknown_major_version_with_a_clear_message() {
-        let err = parse_apost_results(&edited(|v| v["schema_version"] = "1.0".into())).unwrap_err();
-        assert!(err.contains("version 1.0") && err.contains("update APOST3Dview"), "{err}");
+        let err = parse_apost_results(&edited(|v| v["schema_version"] = "2.0".into())).unwrap_err();
+        assert!(err.contains("version 2.0") && err.contains("up to 1.x") && err.contains("update APOST3Dview"), "{err}");
+    }
+
+    /// The release format (1.x) is read like the last development one.
+    #[test]
+    fn reads_the_release_version() {
+        for version in ["1.0", "1.3"] {
+            parse_apost_results(&edited(|v| v["schema_version"] = version.into())).unwrap_or_else(|e| panic!("{version}: {e}"));
+        }
     }
 
     #[test]
