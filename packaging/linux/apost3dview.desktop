@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=APOST3Dview
+Comment=Molecules, orbitals, densities and APOST-3D results
+Exec=apost3dview %F
+Icon=apost3dview
+Terminal=false
+Categories=Science;Chemistry;Education;

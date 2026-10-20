@@ -63,3 +63,6 @@ PROJECT-ROADMAP.md
 # own tests, copied from a local APOST3D checkout by
 # scripts/sync-apost3d-fixtures.sh. Local only: rerun the script to get them.
 /fixtures/
+
+# Release packages built by scripts/package-*.sh
+/dist/
