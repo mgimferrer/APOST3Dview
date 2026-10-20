@@ -13,7 +13,7 @@ dir=dist/$name
 rm -rf dist && mkdir -p "$dir"
 cp target/release/apost3dview "$dir/"
 cp crates/app/assets/icon.png "$dir/apost3dview.png"
-cp packaging/linux/apost3dview.desktop packaging/linux/install.sh LICENSE "$dir/"
+cp packaging/linux/APOST3Dview.desktop packaging/linux/install.sh LICENSE "$dir/"
 chmod +x "$dir/install.sh"
 tar -C dist -czf "dist/$name.tar.gz" "$name"
 rm -rf "$dir"

@@ -17,7 +17,7 @@ fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "APOST3Dview",
+        apost3dview::APP_ID,
         native_options,
         Box::new(|cc| Ok(Box::new(apost3dview::App::with_options(cc, startup)))),
     )

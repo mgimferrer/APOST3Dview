@@ -6,3 +6,4 @@ Exec=apost3dview %F
 Icon=apost3dview
 Terminal=false
 Categories=Science;Chemistry;Education;
+StartupWMClass=APOST3Dview

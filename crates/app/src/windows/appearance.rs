@@ -94,6 +94,9 @@ impl App {
                 self.save_style_preset(&name);
                 self.new_preset_name.clear();
             }
+            if ui.button("Open presets folder").on_hover_text("Where your looks are saved, one file each: copy them to another computer or share them").clicked() {
+                self.open_presets_folder();
+            }
         });
     }
 

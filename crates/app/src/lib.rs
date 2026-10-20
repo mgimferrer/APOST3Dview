@@ -25,3 +25,8 @@ mod viewport;
 mod windows;
 
 pub use app::{App, StartupOptions};
+
+/// The app's name for the system: eframe's folder for saved state (and our
+/// `presets/` inside it), and the window's app id, which on Linux must
+/// match the menu entry `APOST3Dview.desktop`.
+pub const APP_ID: &str = "APOST3Dview";
