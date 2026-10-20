@@ -1,6 +1,7 @@
 # Every push to main: build and check on Windows, macOS and Linux, and run
-# the tests that need no GPU. The app tests also run on a software GPU
-# (WARP on Windows, lavapipe on Linux), reported but not yet required.
+# the tests that need no GPU. The app tests run on a software GPU (WARP on
+# Windows, lavapipe on Linux): every render pipeline built and drawn through
+# DX12 and Vulkan, which this Mac never exercises.
 name: CI
 
 on:
@@ -34,7 +35,6 @@ jobs:
 
   app-tests:
     name: App tests, software GPU (${{ matrix.os }})
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:

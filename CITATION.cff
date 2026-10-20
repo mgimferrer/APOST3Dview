@@ -1,6 +1,7 @@
 cff-version: 1.2.0
 message: "APOST3Dview does not yet have its own dedicated publication. Until it does, if you use it, please cite the APOST-3D paper listed under preferred-citation."
 title: "APOST3Dview"
+version: "0.9.0"
 type: software
 authors:
   - family-names: "Gimferrer"

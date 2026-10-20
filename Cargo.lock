@@ -188,7 +188,7 @@ dependencies = [
 
 [[package]]
 name = "apost3dview"
-version = "0.1.0"
+version = "0.9.0"
 dependencies = [
  "apost3dview-core",
  "apost3dview-render",
@@ -208,7 +208,7 @@ dependencies = [
 
 [[package]]
 name = "apost3dview-core"
-version = "0.1.0"
+version = "0.9.0"
 dependencies = [
  "faer",
  "glam",
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "apost3dview-render"
-version = "0.1.0"
+version = "0.9.0"
 dependencies = [
  "apost3dview-core",
  "bytemuck",
