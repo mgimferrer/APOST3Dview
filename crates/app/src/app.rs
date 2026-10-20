@@ -388,13 +388,13 @@ impl App {
         };
 
         self.active_structure = Some(index);
-        if should_reframe {
-            if let Some(structure) = self.structures.get(index) {
-                let (center, radius) = structure.molecule.bounding_sphere();
-                // Room for fragment envelopes and the values beside them.
-                let has_fragments = structure.apost.as_ref().and_then(|a| a.results.as_ref().ok()).is_some_and(|r| !r.fragments().is_empty());
-                self.camera.frame_bounds(center, if has_fragments { radius + 2.2 } else { radius });
-            }
+        if should_reframe
+            && let Some(structure) = self.structures.get(index)
+        {
+            let (center, radius) = structure.molecule.bounding_sphere();
+            // Room for fragment envelopes and the values beside them.
+            let has_fragments = structure.apost.as_ref().and_then(|a| a.results.as_ref().ok()).is_some_and(|r| !r.fragments().is_empty());
+            self.camera.frame_bounds(center, if has_fragments { radius + 2.2 } else { radius });
         }
         self.rebuild_geometry();
         self.rebuild_highlights();

@@ -48,10 +48,10 @@ pub fn pick_atom(molecule: &Molecule, origin: Vec3, dir: Vec3, atom_scale: f32, 
             continue;
         }
         let radius = element_data(z).vdw_radius * atom_scale;
-        if let Some(t) = ray_sphere_hit(origin, dir, position, radius) {
-            if best.is_none_or(|(_, best_t)| t < best_t) {
-                best = Some((index, t));
-            }
+        if let Some(t) = ray_sphere_hit(origin, dir, position, radius)
+            && best.is_none_or(|(_, best_t)| t < best_t)
+        {
+            best = Some((index, t));
         }
     }
     best.map(|(index, _)| index)

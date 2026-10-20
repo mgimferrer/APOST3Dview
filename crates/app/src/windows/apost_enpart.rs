@@ -75,8 +75,11 @@ fn warnings(enpart: &Enpart) -> Vec<&'static str> {
     found
 }
 
-/// One table row per atom (or fragment): name, self-energy, additive energy.
-fn energy_rows(results: &ApostResults, level: &str, names: &[String]) -> Option<Vec<(String, Option<f64>, Option<f64>)>> {
+/// A row of the energies table: name, self-energy, additive energy.
+type EnergyRow = (String, Option<f64>, Option<f64>);
+
+/// One table row per atom (or fragment).
+fn energy_rows(results: &ApostResults, level: &str, names: &[String]) -> Option<Vec<EnergyRow>> {
     let vector = |key: &str| match results.entry(&format!("enpart.atomic_energies.{level}.{key}")).map(|e| results.quantity(e)) {
         Some(Ok(Quantity::Vector(v))) => Some(v),
         _ => None,
@@ -136,7 +139,7 @@ impl App {
                 if let Some(t) = two {
                     if let Some(e) = t.error_kcal {
                         let tolerance = match t.tolerance_kcal {
-                            Some(x) if x == 0.0 => " (tolerance 0: always corrected)".to_string(),
+                            Some(0.0) => " (tolerance 0: always corrected)".to_string(),
                             Some(x) => format!(" (tolerance {x})"),
                             None => String::new(),
                         };

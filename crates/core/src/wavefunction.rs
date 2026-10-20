@@ -89,11 +89,7 @@ pub struct MolecularOrbitals {
 
 impl MolecularOrbitals {
     pub fn num_orbitals(&self) -> usize {
-        if self.num_basis_functions == 0 {
-            0
-        } else {
-            self.coefficients.len() / self.num_basis_functions
-        }
+        self.coefficients.len().checked_div(self.num_basis_functions).unwrap_or(0)
     }
 
     pub fn coefficients_for(&self, mo_index: usize) -> &[f64] {

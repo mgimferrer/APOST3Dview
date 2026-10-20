@@ -13,7 +13,7 @@
 
 use faer::linalg::matmul::matmul;
 use faer::{Accum, Mat, MatRef, Par};
-use glam::{DVec3, Vec3};
+use glam::DVec3;
 
 use crate::wavefunction::{BasisSet, MolecularOrbitals};
 
@@ -362,8 +362,7 @@ fn grid_box(basis: &BasisSet, spacing_bohr: f64, padding_bohr: f64) -> Result<(D
 /// A grid in angstrom with `values`, from a box in bohr.
 fn grid_in_angstrom(min: DVec3, dims: [usize; 3], spacing_bohr: f64, values: Vec<f32>) -> crate::cube::ScalarGrid {
     let step = (spacing_bohr * crate::units::ANGSTROM_PER_BOHR) as f32;
-    let steps = [Vec3::new(step, 0.0, 0.0), Vec3::new(0.0, step, 0.0), Vec3::new(0.0, 0.0, step)];
-    crate::cube::ScalarGrid { origin: crate::units::angstrom_from_bohr(min.to_array()), dims, steps, values }
+    crate::cube::ScalarGrid::axis_aligned(crate::units::angstrom_from_bohr(min.to_array()), dims, step, values)
 }
 
 /// A density on a grid, rho(r) = sum over the channels' orbitals of
@@ -523,6 +522,8 @@ mod tests {
         assert!(evaluate_basis_functions(&basis, DVec3::ZERO, &mut scratch).is_err());
     }
 
+    // Indices a, b address the Gram matrix: clearer than iterators.
+    #[allow(clippy::needless_range_loop)]
     #[test]
     fn pure_g_components_are_orthonormal() {
         // Same method as the pure-d/pure-f checks above, extended to g's
@@ -578,6 +579,8 @@ mod tests {
         }
     }
 
+    // Indices a, b address the Gram matrix: clearer than iterators.
+    #[allow(clippy::needless_range_loop)]
     #[test]
     fn pure_f_components_are_orthonormal() {
         // Same method as the pure-d check above, extended to f's 7
@@ -630,6 +633,8 @@ mod tests {
         }
     }
 
+    // Indices a, b address the Gram matrix: clearer than iterators.
+    #[allow(clippy::needless_range_loop)]
     #[test]
     fn pure_d_components_are_orthonormal() {
         // Numerically integrate ⟨pure_d_i | pure_d_j⟩ on a coarse 3D grid

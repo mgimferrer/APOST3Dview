@@ -113,37 +113,37 @@ impl App {
         // No separate "Atoms/Bonds/Off" mode needed for that
         // anymore, since a click can only ever mean one thing at
         // a time regardless.
-        if response.clicked() {
-            if let Some(pos) = response.interact_pointer_pos() {
-                let ndc_x = ((pos.x - rect.left()) / rect.width()) * 2.0 - 1.0;
-                let ndc_y = 1.0 - ((pos.y - rect.top()) / rect.height()) * 2.0;
-                let (origin, direction) = ray_from_ndc(&self.camera, aspect_ratio, ndc_x, ndc_y);
+        if response.clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let ndc_x = ((pos.x - rect.left()) / rect.width()) * 2.0 - 1.0;
+            let ndc_y = 1.0 - ((pos.y - rect.top()) / rect.height()) * 2.0;
+            let (origin, direction) = ray_from_ndc(&self.camera, aspect_ratio, ndc_x, ndc_y);
 
-                let structure = &self.structures[active];
-                let atom_hit = pick_atom(&structure.molecule, origin, direction, self.material.atom_scale, &structure.hidden_atoms);
-                let bond_hit = if atom_hit.is_none() {
-                    pick_bond(
-                        &structure.molecule,
-                        origin,
-                        direction,
-                        self.material.bond_radius,
-                        &structure.hidden_atoms,
-                        &structure.hidden_bonds,
-                    )
-                } else {
-                    None
-                };
+            let structure = &self.structures[active];
+            let atom_hit = pick_atom(&structure.molecule, origin, direction, self.material.atom_scale, &structure.hidden_atoms);
+            let bond_hit = if atom_hit.is_none() {
+                pick_bond(
+                    &structure.molecule,
+                    origin,
+                    direction,
+                    self.material.bond_radius,
+                    &structure.hidden_atoms,
+                    &structure.hidden_bonds,
+                )
+            } else {
+                None
+            };
 
-                if let Some(index) = atom_hit {
-                    // With a pair quantity shown, a click chooses the focus.
-                    if !self.focus_on_clicked_atom(index) {
-                        toggle_selected(&mut self.structures[active].selected_atoms, index);
-                        self.rebuild_highlights();
-                    }
-                } else if let Some(index) = bond_hit {
-                    toggle_selected(&mut self.structures[active].selected_bonds, index);
+            if let Some(index) = atom_hit {
+                // With a pair quantity shown, a click chooses the focus.
+                if !self.focus_on_clicked_atom(index) {
+                    toggle_selected(&mut self.structures[active].selected_atoms, index);
                     self.rebuild_highlights();
                 }
+            } else if let Some(index) = bond_hit {
+                toggle_selected(&mut self.structures[active].selected_bonds, index);
+                self.rebuild_highlights();
             }
         }
 

@@ -429,10 +429,10 @@ impl ApostResults {
             if fragment.atoms.is_empty() {
                 return Err(format!("fragment {} has no atoms", fragment.id));
             }
-            if let Some(n_atoms) = n_atoms {
-                if let Some(&bad) = fragment.atoms.iter().find(|&&a| a == 0 || a > n_atoms) {
-                    return Err(format!("fragment {} lists atom {bad}, but the molecule has {n_atoms} atoms", fragment.id));
-                }
+            if let Some(n_atoms) = n_atoms
+                && let Some(&bad) = fragment.atoms.iter().find(|&&a| a == 0 || a > n_atoms)
+            {
+                return Err(format!("fragment {} lists atom {bad}, but the molecule has {n_atoms} atoms", fragment.id));
             }
         }
         Ok(())
@@ -820,15 +820,15 @@ pub fn check_against_fchk(results: &ApostResults, fchk: &FchkSummary) -> Result<
         }
     }
     let summary = results.wavefunction.as_ref();
-    if let (Some(a), Some(b)) = (summary.and_then(|w| w.n_basis_functions), fchk.n_basis_functions) {
-        if a != b {
-            return Err(format!("the results used {a} basis functions, the .fchk has {b}"));
-        }
+    if let (Some(a), Some(b)) = (summary.and_then(|w| w.n_basis_functions), fchk.n_basis_functions)
+        && a != b
+    {
+        return Err(format!("the results used {a} basis functions, the .fchk has {b}"));
     }
-    if let (Some(a), Some(b)) = (summary.and_then(|w| w.energy_au), fchk.scf_energy) {
-        if (a - b).abs() > ENERGY_TOLERANCE_AU {
-            return Err(format!("the results were computed from an energy of {a:.6} hartree, the .fchk has {b:.6}"));
-        }
+    if let (Some(a), Some(b)) = (summary.and_then(|w| w.energy_au), fchk.scf_energy)
+        && (a - b).abs() > ENERGY_TOLERANCE_AU
+    {
+        return Err(format!("the results were computed from an energy of {a:.6} hartree, the .fchk has {b:.6}"));
     }
     Ok(())
 }

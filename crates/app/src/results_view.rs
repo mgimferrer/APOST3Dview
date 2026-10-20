@@ -401,11 +401,11 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             // expansion marked "≈" (their exchange-correlation is
             // approximate).
             let enpart = enpart_term(&entry.id).and_then(|_| results.enpart());
-            if let (Quantity::Matrix(m), Some(f), Some(_)) = (&quantity, focus, &enpart) {
-                if let (Some(noun), Some(e)) = (matrix_meanings(entry, m).0, m.get(f, f)) {
-                    let (d, u) = if unit == Some("kcal/mol") { (2, "kcal/mol") } else { (6, "au") };
-                    scene.notes.push(format!("{} of {}: {} {u}", capitalize(&noun), name(f), format_signed(e, d)));
-                }
+            if let (Quantity::Matrix(m), Some(f), Some(_)) = (&quantity, focus, &enpart)
+                && let (Some(noun), Some(e)) = (matrix_meanings(entry, m).0, m.get(f, f))
+            {
+                let (d, u) = if unit == Some("kcal/mol") { (2, "kcal/mol") } else { (6, "au") };
+                scene.notes.push(format!("{} of {}: {} {u}", capitalize(&noun), name(f), format_signed(e, d)));
             }
             let fragments = results.fragments();
             let approximate = |i: usize| match (&enpart, focus) {

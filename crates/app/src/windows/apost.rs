@@ -231,7 +231,7 @@ fn show_fragments(ui: &mut egui::Ui, results: &ApostResults, atomic_numbers: &[u
 /// at a time, since a large system's report runs to many thousands of lines.
 fn show_report(ui: &mut egui::Ui, attachment: &mut ApostAttachment) {
     let Some(path) = &attachment.report_path else { return };
-    let name = crate::util::file_display_name(&path);
+    let name = crate::util::file_display_name(path);
     let response = egui::CollapsingHeader::new(format!("Text report ({name})")).id_salt("apost_report").show(ui, |ui| {
         match &attachment.report_lines {
             Some(Ok(lines)) => {

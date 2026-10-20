@@ -24,7 +24,7 @@ pub use camera::OrbitCamera;
 pub use colormap::{draw_legend, format_signed, ColorScale, Legend};
 pub use consts::{DEPTH_BUFFER_BITS, DEPTH_FORMAT, MSAA_SAMPLES};
 pub use dof::DofSettings;
-pub use export::{downsample_rgba, ExportSettings};
+pub use export::{downsample_rgba, readback_to_rgba, ExportSettings};
 pub use glyphs::{glyph_scale_for_font_size, glyph_scale_for_world_size, GlyphAtlas};
 pub use instances::{build_atom_instances, build_bond_instances, AtomInstance, BondInstance, BondVisualStyle, HIGHLIGHT_COLOR};
 pub use isosurface_mesh::{push_isosurface_vertices, IsosurfaceMaterial, IsosurfaceVertex};

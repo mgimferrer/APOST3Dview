@@ -61,22 +61,22 @@ impl App {
         if let Some(active) = self.active_structure {
             let scene = self.structures.get(active).and_then(|s| self.results_scene(s));
             let structure = &mut self.structures[active];
-            if let (Some(scene), Some(attachment)) = (scene, structure.apost.as_mut()) {
-                if let Ok(results) = &attachment.results {
-                    if !scene.envelopes.is_empty() {
-                        let mut hidden: Vec<usize> = structure.hidden_atoms.iter().copied().collect();
-                        hidden.sort_unstable();
-                        let key = (atom_scale.to_bits(), hidden);
-                        if attachment.envelope_cache.as_ref().map(|(k, _)| k) != Some(&key) {
-                            let meshes = fragment_envelopes(results, &structure.molecule, atom_scale, &structure.hidden_atoms);
-                            attachment.envelope_cache = Some((key, meshes));
-                        }
-                        let meshes = &attachment.envelope_cache.as_ref().unwrap().1;
-                        (vertices, ranges) = envelope_vertices(&scene, meshes);
+            if let (Some(scene), Some(attachment)) = (scene, structure.apost.as_mut())
+                && let Ok(results) = &attachment.results
+            {
+                if !scene.envelopes.is_empty() {
+                    let mut hidden: Vec<usize> = structure.hidden_atoms.iter().copied().collect();
+                    hidden.sort_unstable();
+                    let key = (atom_scale.to_bits(), hidden);
+                    if attachment.envelope_cache.as_ref().map(|(k, _)| k) != Some(&key) {
+                        let meshes = fragment_envelopes(results, &structure.molecule, atom_scale, &structure.hidden_atoms);
+                        attachment.envelope_cache = Some((key, meshes));
                     }
-                    halos = halo_instances(&scene, &structure.molecule, atom_scale, &structure.hidden_atoms);
-
+                    let meshes = &attachment.envelope_cache.as_ref().unwrap().1;
+                    (vertices, ranges) = envelope_vertices(&scene, meshes);
                 }
+                halos = halo_instances(&scene, &structure.molecule, atom_scale, &structure.hidden_atoms);
+
             }
         }
         self.with_resources(|resources| {

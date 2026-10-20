@@ -203,28 +203,28 @@ impl Surface {
 
     fn push_vertices(&self, vertices: &mut Vec<IsosurfaceVertex>) {
         let s = &self.settings;
-        if let (true, Some(tint)) = (s.by_fragment, &self.fragment_tint) {
-            if !tint.is_empty() {
-                // Positive lobe in the fragment color, negative in a paler
-                // tint of it: the phase stays visible, the fragment too.
-                for (mesh, pale) in [(&self.positive, false), (&self.negative, true)] {
-                    if pale && !s.both_signs {
-                        continue;
-                    }
-                    if let Some(mesh) = mesh {
-                        push_tinted_vertices(vertices, mesh, tint, pale, s.opacity);
-                    }
+        if let (true, Some(tint)) = (s.by_fragment, &self.fragment_tint)
+            && !tint.is_empty()
+        {
+            // Positive lobe in the fragment color, negative in a paler
+            // tint of it: the phase stays visible, the fragment too.
+            for (mesh, pale) in [(&self.positive, false), (&self.negative, true)] {
+                if pale && !s.both_signs {
+                    continue;
                 }
-                return;
+                if let Some(mesh) = mesh {
+                    push_tinted_vertices(vertices, mesh, tint, pale, s.opacity);
+                }
             }
+            return;
         }
         if let Some(mesh) = &self.positive {
             push_isosurface_vertices(vertices, mesh, color32_to_rgb(s.positive_color), s.opacity);
         }
-        if s.both_signs {
-            if let Some(mesh) = &self.negative {
-                push_isosurface_vertices(vertices, mesh, color32_to_rgb(s.negative_color), s.opacity);
-            }
+        if s.both_signs
+            && let Some(mesh) = &self.negative
+        {
+            push_isosurface_vertices(vertices, mesh, color32_to_rgb(s.negative_color), s.opacity);
         }
     }
 }

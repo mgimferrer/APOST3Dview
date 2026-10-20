@@ -161,14 +161,14 @@ impl App {
                         ui.label("");
                     }
                     ui.end_row();
-                    for row in 0..table.n_rows {
+                    for (row, name) in names.iter().enumerate().take(table.n_rows) {
                         ui.horizontal(|ui| {
-                            if !by_orbital {
-                                if let Some(f) = results.fragments().get(row) {
-                                    fragment_swatches(ui, results, [f.id]);
-                                }
+                            if !by_orbital
+                                && let Some(f) = results.fragments().get(row)
+                            {
+                                fragment_swatches(ui, results, [f.id]);
                             }
-                            ui.label(&names[row]);
+                            ui.label(name);
                         });
                         for column in &columns {
                             let text = cell_text(&table, column, row, results, &structure.molecule);
@@ -184,7 +184,7 @@ impl App {
                         if can_draw {
                             match (channel, table.number("fchk_column", row)) {
                                 (Some((analysis, beta)), Some(column)) if column >= 1.0 => {
-                                    if ui.small_button("Draw").on_hover_text(format!("Generate {} as a surface", names[row])).clicked() {
+                                    if ui.small_button("Draw").on_hover_text(format!("Generate {name} as a surface")).clicked() {
                                         draw = Some((analysis.to_string(), beta, column as usize - 1));
                                     }
                                 }

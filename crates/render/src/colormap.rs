@@ -144,6 +144,7 @@ fn text_width(text: &str, px: f32) -> f32 {
     text.chars().map(|c| legend_font().metrics(c, px).advance_width).sum()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_text(pixels: &mut [u8], width: u32, height: u32, text: &str, x: f32, baseline: f32, px: f32, color: [u8; 3]) {
     let font = legend_font();
     let mut pen = x;

@@ -57,7 +57,6 @@ pub fn render_turntable_gif<W: Write + Send + 'static>(
     let direction = if turntable.direction == Vec2::ZERO { Vec2::X } else { turntable.direction };
     let (width, height) = (settings.width as usize, settings.height as usize);
     let aspect = settings.width as f32 / settings.height.max(1) as f32;
-    let bgra = matches!(target_format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb);
 
     let (collector, writer) = gifski::new(gifski::Settings {
         width: None,
@@ -84,13 +83,7 @@ pub fn render_turntable_gif<W: Write + Send + 'static>(
                 break;
             }
         };
-        // The offscreen readback is in the target format's channel order;
-        // gifski wants RGBA.
-        if bgra {
-            for px in pixels.chunks_mut(4) {
-                px.swap(0, 2);
-            }
-        }
+        crate::export::readback_to_rgba(&mut pixels, target_format);
         // Anything drawn onto the finished image (a legend).
         finish_frame(&mut pixels, settings.width, settings.height);
         let frame = imgref::ImgVec::new(rgb::FromSlice::as_rgba(pixels.as_slice()).to_vec(), width, height);

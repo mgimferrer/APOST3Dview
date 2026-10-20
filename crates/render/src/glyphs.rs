@@ -85,6 +85,7 @@ fn edt_get(grid: &[EdtPoint], width: i32, height: i32, x: i32, y: i32) -> EdtPoi
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn edt_compare(grid: &[EdtPoint], width: i32, height: i32, best: &mut EdtPoint, x: i32, y: i32, ox: i32, oy: i32) {
     let neighbor = edt_get(grid, width, height, x + ox, y + oy);
     let candidate = EdtPoint { dx: neighbor.dx + ox, dy: neighbor.dy + oy };

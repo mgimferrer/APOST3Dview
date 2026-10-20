@@ -75,7 +75,7 @@ pub fn envelope_mesh(centers: &[Vec3], radii: &[f32]) -> IsosurfaceMesh {
         }
     });
 
-    let grid = ScalarGrid { origin: lo, dims, steps: [Vec3::X * step, Vec3::Y * step, Vec3::Z * step], values };
+    let grid = ScalarGrid::axis_aligned(lo, dims, step, values);
     extract_isosurface(&grid, LEVEL)
 }
 

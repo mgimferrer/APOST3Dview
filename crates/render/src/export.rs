@@ -95,6 +95,18 @@ pub fn downsample_rgba(pixels: &[u8], width: u32, height: u32, factor: u32) -> (
     (out, down_w, down_h)
 }
 
+/// Puts pixels read back from a render target of `format` in RGBA order:
+/// the swapchain format on some platforms/backends is BGRA, and the
+/// offscreen texture (so the readback) uses it too, since the pipelines
+/// are built for it. Image and GIF encoders expect RGBA.
+pub fn readback_to_rgba(pixels: &mut [u8], format: wgpu::TextureFormat) {
+    if matches!(format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb) {
+        for px in pixels.chunks_mut(4) {
+            px.swap(0, 2);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -208,8 +208,7 @@ mod tests {
 
     #[test]
     fn basis_stays_orthonormal_and_aimed_at_the_target() {
-        let mut camera = OrbitCamera::default();
-        camera.target = Vec3::new(1.0, -2.0, 0.5);
+        let mut camera = OrbitCamera { target: Vec3::new(1.0, -2.0, 0.5), ..OrbitCamera::default() };
         for i in 0..5000 {
             let t = i as f32 * 0.01;
             camera.orbit(0.013 * t.sin(), 0.017 * (1.3 * t).cos());

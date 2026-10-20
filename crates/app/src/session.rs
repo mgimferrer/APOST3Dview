@@ -377,7 +377,7 @@ impl App {
 
     /// Replaces everything open with the session in `path`.
     pub(crate) fn open_session(&mut self, path: &Path) {
-        let name = crate::util::file_display_name(&path);
+        let name = crate::util::file_display_name(path);
         let session: SessionFile = match std::fs::read_to_string(path).map_err(|e| e.to_string()).and_then(|t| toml::from_str(&t).map_err(|e| e.to_string())) {
             Ok(session) => session,
             Err(err) => {
@@ -485,10 +485,10 @@ impl App {
         let structure = &mut self.structures[index];
         structure.surfaces = surfaces;
         structure.selected_surface = state.selected_surface.filter(|&i| i < structure.surfaces.len());
-        if let (Some(view), Some(attachment)) = (&state.results_view, structure.apost.as_mut()) {
-            if attachment.results.is_ok() {
-                attachment.view = Some(view.clone());
-            }
+        if let (Some(view), Some(attachment)) = (&state.results_view, structure.apost.as_mut())
+            && attachment.results.is_ok()
+        {
+            attachment.view = Some(view.clone());
         }
         if !same_atoms {
             return;
@@ -537,7 +537,9 @@ impl App {
 
         // Orbitals, grouped by set and grid so each group is one batched
         // evaluation.
-        let mut groups: BTreeMap<(Option<String>, u64, u64), Vec<(usize, OrbitalChoice)>> = BTreeMap::new();
+        // (set, spacing bits, padding bits) -> (slot, orbital).
+        type Group = (Option<String>, u64, u64);
+        let mut groups: BTreeMap<Group, Vec<(usize, OrbitalChoice)>> = BTreeMap::new();
         for (slot, state) in states.iter().enumerate() {
             match &state.origin {
                 SurfaceOrigin::Cube { file, file_absolute } => match resolve(base, file, file_absolute).map(|p| (parse_cube(&p), p)) {

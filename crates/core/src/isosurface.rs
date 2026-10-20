@@ -53,11 +53,14 @@ impl IsosurfaceMesh {
 }
 
 /// The unit cube's 8 corners, as offsets from its "low" corner.
-const CUBE_CORNERS: [(i32, i32, i32); 8] =
+/// A cube corner as an offset (0 or 1 along each axis).
+type Corner = (i32, i32, i32);
+
+const CUBE_CORNERS: [Corner; 8] =
     [(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0), (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)];
 
 /// The unit cube's 12 edges, as (corner_a, corner_b) offset pairs.
-const CUBE_EDGES: [((i32, i32, i32), (i32, i32, i32)); 12] = [
+const CUBE_EDGES: [(Corner, Corner); 12] = [
     // Along X
     ((0, 0, 0), (1, 0, 0)),
     ((0, 1, 0), (1, 1, 0)),
@@ -333,12 +336,7 @@ mod tests {
                 }
             }
         }
-        ScalarGrid {
-            origin,
-            dims: [n, n, n],
-            steps: [Vec3::new(step, 0.0, 0.0), Vec3::new(0.0, step, 0.0), Vec3::new(0.0, 0.0, step)],
-            values,
-        }
+        ScalarGrid::axis_aligned(origin, [n, n, n], step, values)
     }
 
     #[test]

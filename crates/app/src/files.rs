@@ -212,10 +212,10 @@ impl App {
                 if wfn.alpha.num_orbitals() > 0 {
                     structure.selected_alpha_mos.insert(wfn.alpha.homo_index() - 1);
                 }
-                if let Some(beta) = &wfn.beta {
-                    if beta.num_orbitals() > 0 {
-                        structure.selected_beta_mos.insert(beta.homo_index() - 1);
-                    }
+                if let Some(beta) = &wfn.beta
+                    && beta.num_orbitals() > 0
+                {
+                    structure.selected_beta_mos.insert(beta.homo_index() - 1);
                 }
                 if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("fchk")) {
                     let (densities, problems) = crate::natural::load_densities(path, &wfn);

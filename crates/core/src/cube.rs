@@ -74,6 +74,13 @@ pub struct ScalarGrid {
 }
 
 impl ScalarGrid {
+    /// A grid along x, y and z with the same `step` (angstrom) on each axis.
+    pub fn axis_aligned(origin: Vec3, dims: [usize; 3], step: f32, values: Vec<f32>) -> Self {
+        Self { origin, dims, steps: [Vec3::new(step, 0.0, 0.0), Vec3::new(0.0, step, 0.0), Vec3::new(0.0, 0.0, step)], values }
+    }
+}
+
+impl ScalarGrid {
     #[inline]
     pub fn index(&self, i: usize, j: usize, k: usize) -> usize {
         (i * self.dims[1] + j) * self.dims[2] + k
@@ -204,10 +211,10 @@ fn parse_fortran_f32(token: &str) -> Option<f32> {
     if let Ok(v) = token.parse::<f32>() {
         return Some(v);
     }
-    if token.contains(['D', 'd']) {
-        if let Ok(v) = token.replace(['D', 'd'], "E").parse::<f32>() {
-            return Some(v);
-        }
+    if token.contains(['D', 'd'])
+        && let Ok(v) = token.replace(['D', 'd'], "E").parse::<f32>()
+    {
+        return Some(v);
     }
     // Missing-E exponent: scan for a `+`/`-` not already preceded by
     // `E`/`e` (skipping index 0, which may be the mantissa's own sign)
@@ -270,7 +277,7 @@ pub fn parse_cube(path: &Path) -> io::Result<CubeFile> {
         in_angstrom |= count < 0;
         steps[axis] = parse_vec3_bohr(&mut fields, "grid step vector")?;
     }
-    if dims.iter().any(|&d| d == 0) {
+    if dims.contains(&0) {
         return Err(invalid_data("grid dimension of zero in .cube file"));
     }
 
@@ -418,12 +425,7 @@ mod tests {
     }
 
     fn axis_aligned_grid(dims: [usize; 3], step: f32, values: Vec<f32>) -> ScalarGrid {
-        ScalarGrid {
-            origin: Vec3::ZERO,
-            dims,
-            steps: [Vec3::new(step, 0.0, 0.0), Vec3::new(0.0, step, 0.0), Vec3::new(0.0, 0.0, step)],
-            values,
-        }
+        ScalarGrid::axis_aligned(Vec3::ZERO, dims, step, values)
     }
 
     #[test]

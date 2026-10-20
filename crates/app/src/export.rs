@@ -84,15 +84,12 @@ impl App {
         };
         match self.render_export.preset {
             RenderPreset::Dpi => self.publication_export_settings(background),
-            RenderPreset::Custom => ExportSettings {
-                width: self.render_export.custom_width.max(1),
-                height: self.render_export.custom_height.max(1),
-                supersample: self.render_export.custom_supersample.max(1),
+            RenderPreset::Custom => self.export_settings(
+                self.render_export.custom_width.max(1),
+                self.render_export.custom_height.max(1),
+                self.render_export.custom_supersample.max(1),
                 background,
-                ambient_occlusion: self.ao_enabled.then_some(self.ao_settings),
-                depth_of_field: self.dof_enabled.then_some(self.dof_settings),
-                dof_focus_distance: self.camera.distance,
-            },
+            ),
         }
     }
 
@@ -106,10 +103,16 @@ impl App {
         let width = ((self.render_export.figure_width_in * self.render_export.dpi as f64).round() as u32).max(1);
         let aspect_ratio = if self.last_aspect_ratio > 0.0 { self.last_aspect_ratio } else { 1.0 };
         let height = ((width as f32 / aspect_ratio).round() as u32).max(1);
+        self.export_settings(width, height, PUBLICATION_SUPERSAMPLE, background)
+    }
+
+    /// Export settings of this size with the live view's look: ambient
+    /// occlusion and depth of field as set, focused where the camera is.
+    fn export_settings(&self, width: u32, height: u32, supersample: u32, background: Option<[f32; 4]>) -> ExportSettings {
         ExportSettings {
             width,
             height,
-            supersample: PUBLICATION_SUPERSAMPLE,
+            supersample,
             background,
             ambient_occlusion: self.ao_enabled.then_some(self.ao_settings),
             depth_of_field: self.dof_enabled.then_some(self.dof_settings),
@@ -192,15 +195,7 @@ impl App {
         let mut renderer = self.render_state.renderer.write();
         let resources = renderer.callback_resources.get_mut::<ViewportResources>().ok_or("Renderer not ready.")?;
         let mut pixels = resources.render_offscreen(&self.render_state.device, &self.render_state.queue, target_format, &uniforms, &label_instances, settings)?;
-        // The swapchain format on some platforms/backends is BGRA rather
-        // than RGBA — the offscreen texture (and so the readback) is in
-        // whatever channel order that format uses, since the pipelines are
-        // fixed to it. Swap back to RGBA, which image encoders expect.
-        if matches!(target_format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb) {
-            for px in pixels.chunks_mut(4) {
-                px.swap(0, 2);
-            }
-        }
+        apost3dview_render::readback_to_rgba(&mut pixels, target_format);
         drop(renderer);
         self.draw_legend_into(&mut pixels, settings.width, settings.height);
         Ok(pixels)
@@ -213,15 +208,7 @@ impl App {
     pub fn render_image(&mut self, width: u32, height: u32) -> Result<Vec<u8>, String> {
         let active = self.active_structure.ok_or("nothing open")?;
         let [r, g, b] = self.material.background;
-        let settings = ExportSettings {
-            width,
-            height,
-            supersample: 1,
-            background: Some([r, g, b, 1.0]),
-            ambient_occlusion: self.ao_enabled.then_some(self.ao_settings),
-            depth_of_field: self.dof_enabled.then_some(self.dof_settings),
-            dof_focus_distance: self.camera.distance,
-        };
+        let settings = self.export_settings(width, height, 1, Some([r, g, b, 1.0]));
         self.render_rgba(active, &settings)
     }
 
@@ -229,7 +216,7 @@ impl App {
     /// (same name, `.a3dview`) when "Also save the session" is ticked, so
     /// every figure keeps the exact setup that produced it.
     fn report_saved_image(&mut self, image: &std::path::Path) {
-        let image_name = crate::util::file_display_name(&image);
+        let image_name = crate::util::file_display_name(image);
         if !self.render_export.save_session_with_image {
             self.show_status(format!("Saved {image_name}"));
             return;
@@ -251,15 +238,7 @@ impl App {
         let aspect_ratio = if self.last_aspect_ratio > 0.0 { self.last_aspect_ratio } else { 1.0 };
         let height = ((width as f32 / aspect_ratio).round() as u32).max(16);
         let [r, g, b] = self.material.background;
-        ExportSettings {
-            width,
-            height,
-            supersample: PUBLICATION_SUPERSAMPLE,
-            background: Some([r, g, b, 1.0]),
-            ambient_occlusion: self.ao_enabled.then_some(self.ao_settings),
-            depth_of_field: self.dof_enabled.then_some(self.dof_settings),
-            dof_focus_distance: self.camera.distance,
-        }
+        self.export_settings(width, height, PUBLICATION_SUPERSAMPLE, Some([r, g, b, 1.0]))
     }
 
     pub(crate) fn gif_frame_count(&self) -> usize {

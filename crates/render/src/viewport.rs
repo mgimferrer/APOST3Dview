@@ -882,6 +882,7 @@ impl ViewportResources {
     /// per-frame cost — cheap to just rebuild outright rather than track
     /// incremental diffs, even for much larger molecules than this project
     /// currently targets.
+    #[allow(clippy::too_many_arguments)]
     pub fn update_geometry(
         &mut self,
         device: &wgpu::Device,
@@ -1104,29 +1105,29 @@ impl ViewportResources {
         // billboard glyph quads, drawn opaque-ish (alpha-to-coverage, see
         // the pipeline) so they're correctly, precisely occluded by
         // whatever's actually in front of them.
-        if let Some((buffer, count)) = &self.text_instances {
-            if *count > 0 {
-                render_pass.set_pipeline(&self.text_pipeline);
-                render_pass.set_bind_group(1, &self.glyph_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, buffer.slice(..));
-                render_pass.draw(0..6, 0..*count);
-            }
+        if let Some((buffer, count)) = &self.text_instances
+            && *count > 0
+        {
+            render_pass.set_pipeline(&self.text_pipeline);
+            render_pass.set_bind_group(1, &self.glyph_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, buffer.slice(..));
+            render_pass.draw(0..6, 0..*count);
         }
 
         // Isosurfaces (Phase 2 .cube orbitals/densities) — translucent lit
         // mesh, drawn after the opaque/text passes so it's correctly
         // depth-tested against them, before the highlight overlay so a
         // selection highlight (if any) still reads on top.
-        if let Some((buffer, count)) = &self.isosurface_vertices {
-            if *count > 0 {
-                render_pass.set_pipeline(if ao.is_some() { &self.isosurface_pipeline_ao } else { &self.isosurface_pipeline });
-                render_pass.set_bind_group(1, &self.isosurface_material_bind_group, &[]);
-                if let Some(ao_bind_group) = ao {
-                    render_pass.set_bind_group(2, ao_bind_group, &[]);
-                }
-                render_pass.set_vertex_buffer(0, buffer.slice(..));
-                render_pass.draw(0..*count, 0..1);
+        if let Some((buffer, count)) = &self.isosurface_vertices
+            && *count > 0
+        {
+            render_pass.set_pipeline(if ao.is_some() { &self.isosurface_pipeline_ao } else { &self.isosurface_pipeline });
+            render_pass.set_bind_group(1, &self.isosurface_material_bind_group, &[]);
+            if let Some(ao_bind_group) = ao {
+                render_pass.set_bind_group(2, ao_bind_group, &[]);
             }
+            render_pass.set_vertex_buffer(0, buffer.slice(..));
+            render_pass.draw(0..*count, 0..1);
         }
         // Translucent surfaces over everything opaque, already sorted
         // farthest first (`write_uniforms`).
@@ -1213,13 +1214,13 @@ impl ViewportResources {
         // doesn't read group 1 at all, so it still needs *some* compatible
         // bind group there — the real material bind group is as good as
         // any, and avoids a third pipeline layout just for this.
-        if let Some((buffer, count)) = &self.isosurface_vertices {
-            if *count > 0 {
-                render_pass.set_pipeline(&self.isosurface_gbuffer_pipeline);
-                render_pass.set_bind_group(1, &self.isosurface_material_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, buffer.slice(..));
-                render_pass.draw(0..*count, 0..1);
-            }
+        if let Some((buffer, count)) = &self.isosurface_vertices
+            && *count > 0
+        {
+            render_pass.set_pipeline(&self.isosurface_gbuffer_pipeline);
+            render_pass.set_bind_group(1, &self.isosurface_material_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, buffer.slice(..));
+            render_pass.draw(0..*count, 0..1);
         }
     }
 
@@ -1386,10 +1387,10 @@ impl ViewportResources {
     /// reruns the AO passes every frame the camera moves and can't afford
     /// to reallocate that often.
     fn ensure_ao_textures(&mut self, device: &wgpu::Device, width: u32, height: u32) {
-        if let Some(existing) = &self.ao_live {
-            if existing.width == width && existing.height == height {
-                return;
-            }
+        if let Some(existing) = &self.ao_live
+            && existing.width == width && existing.height == height
+        {
+            return;
         }
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
         let make_texture = |label: &str, format: wgpu::TextureFormat| {
@@ -1490,10 +1491,10 @@ impl ViewportResources {
     /// (Re)creates the live view's persistent depth-of-field textures if
     /// they don't exist yet or the viewport was resized.
     fn ensure_dof_textures(&mut self, device: &wgpu::Device, width: u32, height: u32) {
-        if let Some(existing) = &self.dof_live {
-            if existing.width == width && existing.height == height {
-                return;
-            }
+        if let Some(existing) = &self.dof_live
+            && existing.width == width && existing.height == height
+        {
+            return;
         }
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
         let color_format = self.target_format;

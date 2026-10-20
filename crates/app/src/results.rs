@@ -41,6 +41,10 @@ pub(crate) fn fragment_color(position: usize) -> [u8; 3] {
     FRAGMENT_PALETTE[position % FRAGMENT_PALETTE.len()]
 }
 
+/// What fragment envelopes depend on: the atom size (its bits) and the
+/// hidden atoms, sorted.
+pub(crate) type EnvelopeKey = (u32, Vec<usize>);
+
 /// The APOST-3D results file found for (or opened with) a structure.
 pub(crate) struct ApostAttachment {
     pub(crate) results_path: PathBuf,
@@ -61,7 +65,7 @@ pub(crate) struct ApostAttachment {
     pub(crate) view: Option<ResultsView>,
     /// Fragment envelope meshes, kept while the atom size and the hidden
     /// atoms stay the same (the key).
-    pub(crate) envelope_cache: Option<((u32, Vec<usize>), Vec<IsosurfaceMesh>)>,
+    pub(crate) envelope_cache: Option<(EnvelopeKey, Vec<IsosurfaceMesh>)>,
 }
 
 impl ApostAttachment {
@@ -96,7 +100,7 @@ impl App {
     /// explained rather than silently ignored.
     pub(crate) fn attach_results(&mut self, index: usize, results_path: &Path) {
         let Some(structure) = self.structures.get(index) else { return };
-        let results_name = crate::util::file_display_name(&results_path);
+        let results_name = crate::util::file_display_name(results_path);
         let fchk_name = structure.label.clone();
 
         let results = load_apost_results(results_path)
