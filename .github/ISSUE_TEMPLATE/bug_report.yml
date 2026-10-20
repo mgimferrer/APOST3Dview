@@ -1,0 +1,44 @@
+name: Problem report
+description: Something doesn't work, looks wrong, or the app doesn't start.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead. A screenshot helps.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      placeholder: |
+        1. Open water.fchk
+        2. Surfaces, tick HOMO, Generate
+        3. ...
+  - type: input
+    id: details
+    attributes:
+      label: Version and system
+      description: In APOST3Dview, open About and click "Copy these details", then paste here. If the app doesn't start, write the version you downloaded and your operating system.
+      placeholder: APOST3Dview 0.9.0 · windows x86_64 · NVIDIA GeForce ... (Dx12)
+    validations:
+      required: true
+  - type: dropdown
+    id: files
+    attributes:
+      label: Kind of file involved
+      multiple: true
+      options:
+        - .fchk
+        - .molden
+        - .cube
+        - .xyz
+        - .apost.json (APOST-3D results)
+        - .a3dview (session)
+        - None, or not sure
+  - type: markdown
+    attributes:
+      value: |
+        If the problem only happens with one file, attaching it (or a small example that shows the same problem) makes it much easier to fix. Only attach files you are free to share: anything attached here is public.

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: APOST-3D itself (the calculations, its input and output)
+    url: https://github.com/mgimferrer/APOST3D/issues
+    about: Questions about APOST-3D's methods or results belong in the APOST-3D repository.

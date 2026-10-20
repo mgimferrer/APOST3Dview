@@ -1,0 +1,11 @@
+name: Suggestion
+description: Something you would like APOST3Dview to do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you would like
+      description: What you are trying to do, and what is missing or awkward today. An example (a figure from a paper, another program) helps.
+    validations:
+      required: true

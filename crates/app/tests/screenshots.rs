@@ -20,6 +20,17 @@ fn empty_window() {
 }
 
 #[test]
+fn about_window_tells_where_to_report_problems() {
+    use egui_kittest::kittest::Queryable;
+    let mut harness = app_with(Vec::new());
+    harness.get_by_label("About").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("Report a problem or suggest a feature");
+    harness.get_by_label_contains(&format!("APOST3Dview {} · ", env!("CARGO_PKG_VERSION")));
+    assert!(has_content(&screenshot(&mut harness, "about")));
+}
+
+#[test]
 fn molecule_and_orbital() {
     let mut harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/H2O-ccpVDZ-HOMO.cube")]);
     harness.run_steps(4);

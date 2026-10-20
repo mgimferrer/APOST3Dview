@@ -45,8 +45,24 @@ impl App {
                         .italics(),
                     );
                     ui.hyperlink_to("DOI: 10.1063/5.0206187", "https://doi.org/10.1063/5.0206187");
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(8.0);
+                    ui.hyperlink_to("Report a problem or suggest a feature", "https://github.com/mgimferrer/APOST3Dview/issues/new/choose");
+                    let details = self.system_details();
+                    ui.label(egui::RichText::new(&details).small().weak());
+                    if ui.small_button("Copy these details").on_hover_text("For a bug report: version, system and graphics").clicked() {
+                        ui.ctx().copy_text(details);
+                    }
                 });
             });
         self.show_about = open;
+    }
+
+    /// "APOST3Dview 0.9.0 · macos aarch64 · Apple M5 (Metal)": what a bug
+    /// report needs to say about where the app runs.
+    fn system_details(&self) -> String {
+        let info = self.render_state.adapter.get_info();
+        format!("APOST3Dview {} · {} {} · {} ({:?})", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH, info.name, info.backend)
     }
 }
