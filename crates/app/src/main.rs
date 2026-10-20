@@ -1,6 +1,6 @@
-
-
-
+// No console window next to the app on Windows (release builds; debug
+// builds keep it for messages).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 fn main() -> eframe::Result<()> {
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png"))

@@ -24,3 +24,6 @@ wgpu = "30.0.0"
 [dev-dependencies]
 egui_kittest = { version = "0.36.1", features = ["wgpu", "eframe"] }
 eframe = { version = "0.36.1", default-features = false, features = ["wgpu", "default_fonts", "persistence"] }
+
+[build-dependencies]
+winresource = "0.1"
