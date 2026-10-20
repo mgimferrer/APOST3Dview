@@ -478,6 +478,10 @@ pub enum OrbitalDetail {
     Efo {
         net: Option<f64>,
         gross: Option<f64>,
+        /// How closely the orbital in the `.fchk` reproduces the EFO, 100 x
+        /// (1 - |fit residual| / |weighted EFO|), a ratio of amplitudes.
+        /// For negative GEOS EFOs read from `recovered_percent` in files
+        /// before schema 0.13 (same quantity, renamed there).
         fit_percent: Option<f64>,
         /// Electrons the assignment gave it: 1 or 0, 2 or 0 (paired GEOS),
         /// or a fraction when shared at the frontier.
@@ -485,7 +489,6 @@ pub enum OrbitalDetail {
         /// A GEOS paired EFO with a clearly negative net occupation, left
         /// out of the assignment.
         negative: bool,
-        recovered_percent: Option<f64>,
     },
     /// An OSLO.
     Oslo { iteration: Option<f64>, foli: Option<f64> },
@@ -553,10 +556,9 @@ impl ApostResults {
                         OrbitalDetail::Efo {
                             net: t.number("net", row),
                             gross: t.number("gross", row),
-                            fit_percent: t.number("fit_percent", row),
+                            fit_percent: t.number("fit_percent", row).or_else(|| t.number("recovered_percent", row)),
                             electrons: t.number("electrons", row),
                             negative,
-                            recovered_percent: t.number("recovered_percent", row),
                         }
                     };
                     if labels.len() < index {

@@ -262,6 +262,31 @@ fn orbital_sets_map_onto_their_files() {
     let geos = set("NaBH3--B3LYP-GEOS");
     assert!(matches!(geos.alpha[163].as_ref().unwrap().detail, OrbitalDetail::Efo { negative: true, .. }));
     assert!(matches!(geos.alpha[164].as_ref().unwrap().detail, OrbitalDetail::Efo { negative: true, .. }));
+    // Their fit: `fit_percent` since schema 0.13 (`recovered_percent` before).
+    for (index, percent) in [(163, 74.0), (164, 81.0)] {
+        let OrbitalDetail::Efo { fit_percent: Some(fit), .. } = geos.alpha[index].as_ref().unwrap().detail else { panic!("no fit for EFO {}", index + 1) };
+        assert!((fit - percent).abs() < 0.5, "EFO {}: fit {fit}", index + 1);
+    }
+    // A file before 0.13 named the negative EFOs' column `recovered_percent`.
+    let text = std::fs::read_to_string(dir.join("NaBH3--B3LYP-GEOS.apost.json")).unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
+    value["schema_version"] = "0.12".into();
+    let negative = &mut value["analyses"]["geos"]["negative_efos"];
+    for column in negative["columns"].as_array_mut().unwrap() {
+        if column["key"] == "fit_percent" {
+            column["key"] = "recovered_percent".into();
+        }
+    }
+    let data = negative["data"].as_object_mut().unwrap();
+    let fits = data.remove("fit_percent").unwrap();
+    data.insert("recovered_percent".to_string(), fits);
+    let old_file = std::env::temp_dir().join(format!("apost3dview-geos-0.12-{}.apost.json", std::process::id()));
+    std::fs::write(&old_file, serde_json::to_string(&value).unwrap()).unwrap();
+    let old = load_apost_results(&old_file).unwrap();
+    std::fs::remove_file(&old_file).ok();
+    let old_geos = old.orbital_sets().remove(0);
+    let OrbitalDetail::Efo { fit_percent: Some(fit), .. } = old_geos.alpha[163].as_ref().unwrap().detail else { panic!("no fit from recovered_percent") };
+    assert!((fit - 74.0).abs() < 0.5, "{fit}");
     // EOS on a closed shell: alpha only.
     assert!(set("FeCO2-PBEPBE").beta.is_empty());
     // EOS, fractional assignment.

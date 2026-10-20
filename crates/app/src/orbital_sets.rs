@@ -103,19 +103,17 @@ fn fragments_text(results: &ApostResults, molecule: &Molecule, label: &OrbitalLa
 /// surfaces show"; checked there against the exact cubes).
 pub(crate) const APPROXIMATE_FIT_PERCENT: f64 = 60.0;
 
-/// How closely the orbital in the file reproduces the EFO: the table's
-/// word ("fit"; "recovered" for a negative GEOS EFO) and its percentage.
-fn fit_of(label: &OrbitalLabel) -> Option<(&'static str, f64)> {
+/// How closely the orbital in the file reproduces the EFO, in percent.
+fn fit_of(label: &OrbitalLabel) -> Option<f64> {
     match label.detail {
-        OrbitalDetail::Efo { negative: true, recovered_percent: Some(p), .. } => Some(("recovered", p)),
-        OrbitalDetail::Efo { negative: false, fit_percent: Some(p), .. } => Some(("fit", p)),
+        OrbitalDetail::Efo { fit_percent, .. } => fit_percent,
         _ => None,
     }
 }
 
 /// For an EFO the file reproduces poorly: why its surface is approximate.
 pub(crate) fn approximate_note(label: &OrbitalLabel) -> Option<String> {
-    let (_, percent) = fit_of(label).filter(|(_, p)| *p < APPROXIMATE_FIT_PERCENT)?;
+    let percent = fit_of(label).filter(|p| *p < APPROXIMATE_FIT_PERCENT)?;
     Some(format!(
         "Approximate shape: the orbital in the .fchk reproduces this EFO to {percent:.0}% only, and can show lobes the exact orbital doesn't have. \
          Its cube file (CUBE in # METHOD of the APOST-3D input) holds the exact shape."
@@ -134,7 +132,7 @@ fn detail_text(label: &OrbitalLabel) -> String {
         }
         OrbitalDetail::Oslo { foli, .. } => foli.map(|f| format!("FOLI {f:.3}")).unwrap_or_default(),
     };
-    let fit = fit_of(label).map(|(word, p)| format!("{word} {p:.0}%")).unwrap_or_default();
+    let fit = fit_of(label).map(|p| format!("fit {p:.0}%")).unwrap_or_default();
     [text, shares, fit].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(", ")
 }
 
