@@ -69,8 +69,8 @@ async fn run() {
     let mut changed = 0usize;
     let mut off_nonbackground = 0usize;
     let mut on_nonbackground = 0usize;
-    for px in off_pixels.chunks_exact(4).zip(on_pixels.chunks_exact(4)) {
-        let (a, b) = px;
+    for px in off_pixels.as_chunks::<4>().0.iter().zip(on_pixels.as_chunks::<4>().0) {
+        let (&a, &b) = px;
         if a != b {
             changed += 1;
         }

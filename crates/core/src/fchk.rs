@@ -117,7 +117,7 @@ pub fn parse_fchk_summary(path: &Path) -> io::Result<FchkSummary> {
     if coordinates.len() != atomic_numbers.len() * 3 {
         return Err(invalid_data("fchk coordinate count doesn't match 3x atom count"));
     }
-    let coordinates_bohr = coordinates.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
+    let coordinates_bohr = coordinates.as_chunks::<3>().0.to_vec();
 
     Ok(FchkSummary { atomic_numbers, coordinates_bohr, n_basis_functions, scf_energy })
 }

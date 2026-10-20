@@ -116,7 +116,7 @@ fn gradient_normal(grid: &ScalarGrid, fi: f32, fj: f32, fk: f32) -> Vec3 {
 /// (and a reopened session's picture differ by a level here and there).
 fn build_adjacency(vertex_count: usize, indices: &[u32]) -> Vec<Vec<u32>> {
     let mut neighbor_sets: Vec<std::collections::HashSet<u32>> = vec![std::collections::HashSet::new(); vertex_count];
-    for tri in indices.chunks_exact(3) {
+    for tri in indices.as_chunks::<3>().0 {
         for &(a, b) in &[(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {
             neighbor_sets[a as usize].insert(b);
             neighbor_sets[b as usize].insert(a);

@@ -132,7 +132,7 @@ impl AppRenderer {
         let data = buffer.slice(..).get_mapped_range().expect("mapped range");
         let mut pixels: Vec<u8> = data.chunks_exact(padded).flat_map(|row| row[..unpadded].iter().copied()).collect();
         if matches!(texture.format(), wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb) {
-            pixels.chunks_exact_mut(4).for_each(|px| px.swap(0, 2));
+            pixels.as_chunks_mut::<4>().0.iter_mut().for_each(|px| px.swap(0, 2));
         }
         RgbaImage::from_raw(width, height, pixels).expect("image")
     }
