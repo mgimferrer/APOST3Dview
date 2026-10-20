@@ -36,58 +36,31 @@ What's already here, usable today:
 
 ## Installation
 
-APOST3Dview is developed and tested on macOS. Windows and Linux builds should work through the same Rust/wgpu toolchain, but haven't been verified end-to-end yet. Feedback from anyone who tries either is very welcome.
+Download the file for your computer from the [latest release](https://github.com/mgimferrer/APOST3Dview/releases/latest). Nothing else needs to be installed.
 
-### macOS
+The downloads aren't signed with a paid certificate (APOST3Dview is free, and so is its distribution), so Windows and macOS ask once, the first time you open it. What to click is below.
 
-1. Install [Rust](https://rustup.rs/) via `rustup`.
-2. Install the Xcode Command Line Tools: `xcode-select --install`.
-3. Build (see [Building from source](#building-from-source) below).
+### Windows (64-bit)
 
-### Windows
+1. Download `APOST3Dview-<version>-windows-x86_64.zip`, right-click it and choose **Extract All**.
+2. Double-click `APOST3Dview.exe` in the extracted folder.
+3. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. Windows remembers this for the next time.
 
-The easiest path, for almost everyone: download and run [`rustup-init.exe`](https://rustup.rs/) and pick the default option (1). If Visual Studio's C++ Build Tools aren't already on your machine, rustup detects that and downloads and installs them for you automatically as part of the same install (about 1.5 GB, 5 to 15 minutes, no separate trip to the Visual Studio site needed). Then build (see [Building from source](#building-from-source) below).
+### macOS (11 or later, Apple Silicon and Intel)
 
-If you'd rather not have Visual Studio installed at all, there's a lighter alternative: [WinLibs](https://winlibs.com/) is a standalone GCC and MinGW-w64 build for Windows that needs no MSYS2 or Visual Studio.
+1. Download `APOST3Dview-<version>-macos-universal.dmg`, open it, and drag APOST3Dview onto Applications.
+2. Open APOST3Dview from Applications. The first time, macOS says it could not verify the app. Click **Done** (not Move to Trash).
+3. Open **System Settings**, then **Privacy & Security**, scroll down to the message about APOST3Dview, click **Open Anyway** and confirm. From then on it opens normally.
 
-1. Download a WinLibs release, extract it somewhere like `C:\mingw64`, and add its `bin` folder to your `PATH`.
-2. Run `rustup-init.exe`. At the "Rust Visual C++ prerequisites" step, choose option 3 ("Don't install the Visual C++ prerequisites"), then option 2 ("Customize installation") and set the default host triple to `x86_64-pc-windows-gnu`.
-3. Build as usual.
+### Linux (x86_64)
 
-This GNU-toolchain path is less commonly used than the MSVC one for Rust GUI apps, so treat it as the "don't want Visual Studio on my machine" option rather than the most battle-tested one. Either way, wgpu targets DirectX12/Vulkan on Windows.
-
-**What about WSL?** Windows Subsystem for Linux can run GPU-accelerated Linux GUI apps through WSLg, so building and running APOST3Dview inside a WSL Ubuntu install (see [Linux](#linux) below, once inside it) is technically possible. In practice it isn't simpler for most people: it's a whole Linux environment to set up, and Vulkan passthrough through WSLg is newer and less proven than either native option above. Worth trying only if you're already comfortable living in a Linux shell and would rather avoid Visual Studio and MinGW alike.
-
-A prebuilt Windows executable (no Rust toolchain needed at all) isn't available yet, but is the likely eventual path for non-developer users; this section will be updated once one exists.
-
-### Linux
-
-1. Install [Rust](https://rustup.rs/) via `rustup`.
-2. Install the system packages `eframe` (this app's UI framework) needs to build its window and native file dialogs, along with a C compiler. On Ubuntu/Debian:
-   ```bash
-   sudo apt-get install -y build-essential libclang-dev libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
-   ```
-   On Fedora:
-   ```bash
-   sudo dnf install gcc clang clang-devel clang-tools-extra libxkbcommon-devel pkg-config openssl-devel libxcb-devel gtk3-devel atk fontconfig-devel
-   ```
-   (Straight from [egui's own README](https://github.com/emilk/egui), the UI library APOST3Dview is built on.) If you're on a Wayland-only compositor without XWayland, you may additionally need `libwayland-dev` (Ubuntu/Debian) or the equivalent for native Wayland windowing support.
-3. Make sure a Vulkan driver is actually installed for your GPU, separate from the build itself: `mesa-vulkan-drivers` for open-source Mesa drivers, or your GPU vendor's proprietary driver package if you use one. Without this, the app can build fine but fail to find a GPU at runtime.
-4. Build (see [Building from source](#building-from-source) below).
+1. Download `APOST3Dview-<version>-linux-x86_64.tar.gz` and unpack it: `tar xzf APOST3Dview-*-linux-x86_64.tar.gz`.
+2. Run `./install.sh` in the unpacked folder to add APOST3Dview to your applications menu (for your user only, no root needed), or start `./apost3dview` directly.
+3. A Vulkan driver for your GPU is needed (Mesa's `mesa-vulkan-drivers`, or your GPU vendor's driver). Most desktops have one already.
 
 ### Building from source
 
-```bash
-git clone https://github.com/mgimferrer/APOST3Dview.git
-cd APOST3Dview
-cargo build --release -p apost3dview
-```
-
-The binary is then at `target/release/apost3dview` (`.exe` on Windows). For active development, `cargo run -p apost3dview` builds and launches in one step.
-
-**Tests**: `cargo test --workspace`. The tests that check APOST-3D's reference results need them copied from a local APOST-3D checkout first, with `scripts/sync-apost3d-fixtures.sh path/to/APOST3D`; without them, those tests are skipped.
-
-**Troubleshooting**: if `cargo`/`rustc` aren't found right after installing Rust, open a new terminal window. `rustup` adds `~/.cargo/bin` to `PATH` in your shell's startup file, which an already-open terminal won't have picked up yet.
+For development, or if a download doesn't work on your system: see [BUILDING.md](BUILDING.md).
 
 ## How to use
 
@@ -97,7 +70,7 @@ The binary is then at `target/release/apost3dview` (`.exe` on Windows). For acti
 4. **Surfaces** generates orbitals and densities from a `.fchk` or `.molden` file: tick the orbitals you want (HOMO/LUMO tagged, with energy and occupation), and the total density or, for an open shell, the spin density, and click Generate. When the `.fchk` holds a correlated density (Gaussian's MP2, CI or CC density, or the CASSCF, FCI, CISD or CCSD density matrix APOST-3D's `apost3d.py` script writes for PySCF), the densities come from it by default (a Density menu switches back to SCF when the file has both), and its natural orbitals are a set of their own in the Orbitals menu, listed by occupation. Generated orbitals and opened `.cube` files of the same molecule are listed together: click a name to show that surface alone, or tick several to show them together. Changes to the isovalue, refinement or colors show up immediately and stay with that surface (its isovalue is shown next to its name); new surfaces start at the default settings unless you click "Use for new surfaces". When APOST-3D wrote the orbitals of an EOS, GEOS or OSLO analysis, the Orbitals menu at the top switches from the SCF orbitals to those (for OSLO, also the OSLOs before orthogonalization when the run wrote them, the orbitals the FOLI values were computed for): each is listed with its fragment, occupation or FOLI, and drawn in the usual positive and negative colors. Tick "Color by fragment" to draw it in its fragment's color instead. EFO rows also show how closely the orbital in the `.fchk` reproduces the EFO (fit, or recovered for negative GEOS EFOs); below 60% they are marked approximate, since the fitted orbital can then show lobes the exact one doesn't have: open the EFO's cube file for its exact shape.
 5. **Measure** lists distances, angles and dihedrals (select 2, 3 or 4 atoms, then Add). Their labels sit beside the bond, or inside the angle, always readable over the molecule; drag a label to move it.
 6. **APOST-3D** shows the results of an APOST-3D run. At first nothing is drawn on the molecule; choose what to show in the **Show** menu: the fragments, or any value. The menu is grouped by where a value lives. *Fragment values* and *Atom values* are values on each fragment or atom, including the intra parts of the matrices (for example "Intra-atomic S² (local spin)", "Intra-fragment localization index", "Intra-atomic (self) energy"). *Between fragments* and *Between atoms* are the inter parts (for example "Inter-fragment bond order", "Inter-atomic S² (spin coupling)", "Inter-atomic interaction energy"): click a fragment or atom in the view to see the others from it. When two matrices name a part the same way, the menu adds which matrix it comes from, as in "(bond orders, TFVC)" and "(LI/DI from the 2-RDM, TFVC)". Values that follow from others (electron populations, valences, electron counts) and the Mulliken values printed for comparison are listed when "Also list other values", at the end of the menu, is ticked. Each value is printed with its atom's or fragment's name above it; untick "with names" for the values alone (atom names follow the Labels setting of the Molecule window). Labels never overlap: on a crowded view, a label of an atom hidden behind others is left out, and one that would cover another moves a line up or down, or is left out; every value is still in the window's tables, and turning or zooming the molecule brings labels back. Colors are automatic, or fixed to a range you choose (kept for that quantity in every open structure, so figures compare). "Bond thickness from bond orders" draws bonds by their bond order; it is off by default, since equal bonds usually look better in figures. Key numbers (such as the reliability index R of EOS) and the tables of the analysis (effective fragment orbitals, OSLOs, frontier occupations) are listed below; Draw on an orbital's row draws that orbital. For an energy decomposition (IQA), a Term menu chooses which energy term is shown, and the "Energy decomposition" section shows the integration errors.
-7. **Appearance** sets the look of the scene: Default or Publication, the background, ambient occlusion and depth of field; the fine-tuning sliders are under Advanced. Once you like a look, save it under a name: it's written as a plain TOML file under `presets/` at the root of this repository (not tracked by git), easy to find, back up, or hand to someone else, and appears as its own button next to Default and Publication.
+7. **Appearance** sets the look of the scene: Default or Publication, the background, ambient occlusion and depth of field; the fine-tuning sliders are under Advanced. Once you like a look, save it under a name: it appears as its own button next to Default and Publication, and is kept as a small plain-text file in your settings folder. **Open presets folder** shows that folder, to back a look up or hand it to someone else.
 8. **Export** saves the current view as a PNG at a given DPI and physical figure size (or a custom resolution), or a looping animated GIF of one full turn of the molecule, with your choice of width, duration and frame rate. The GIF works directly in PowerPoint, Keynote and Google Slides. With "Also save the session" ticked (the default), `figure.a3dview` is written next to `figure.png`.
 9. **Save** (Cmd+S, or Ctrl+S) saves the whole setup as a session (`.a3dview`). Open it again like any other file. A session points to your files rather than copying them, with paths relative to the session, so keep it in the same folder as the files (moving the whole folder is fine). Orbitals generated in the app are recalculated when the session opens. If a file is missing, or has changed since the session was saved, APOST3Dview opens the rest and tells you what it couldn't restore.
 
@@ -110,7 +83,7 @@ The binary is then at `target/release/apost3dview` (`.exe` on Windows). For acti
 - Cartesian g shells aren't implemented (pure/spherical g is). In practice, every basis set that reaches g is spherical by convention, so this hasn't been a real limitation so far.
 - APOST-3D's results file currently carries populations, bond orders, local spin, the EOS, GEOS and OSLO analyses with their orbitals, and the energy decomposition (IQA). The EFFAO orbitals have no orbital file yet, so their table is listed but not drawn.
 - Orbitals generated from a Q-Chem `.fchk` haven't been checked against a Q-Chem reference cube yet (Gaussian and PySCF files have, down to numerical noise).
-- Windows builds aren't verified end-to-end yet (see [Installation](#installation)).
+- The Windows and Linux downloads are new and haven't been tried on many computers yet. If one doesn't work for you, please [report it](https://github.com/mgimferrer/APOST3Dview/issues).
 
 ## Connection to APOST-3D
 
