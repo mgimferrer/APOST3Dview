@@ -1,15 +1,18 @@
-//! Evaluates a molecular orbital (or, later, density) at an arbitrary 3D
-//! point directly from a parsed `.fchk` basis set + MO coefficients — the
-//! actual "generate a cube ourselves" math for Phase 3.
+//! Evaluates basis functions, molecular orbitals and densities at points
+//! and on grids, directly from a parsed basis set + MO coefficients
+//! (`.fchk` or `.molden`) — the "generate a cube ourselves" math of
+//! Phase 3. S through pure g (Cartesian through f); each angular momentum
+//! was validated against real reference cubes one at a time, and anything
+//! else returns an error rather than a silently wrong result.
 //!
-//! Staged deliberately, S/P first: getting Cartesian-vs-pure-spherical
-//! conventions and cross-component normalization exactly right for d/f/g
-//! shells is the one place this kind of code is easy to get subtly wrong,
-//! so each angular momentum is added — and validated against a real
-//! reference `.cube` — one at a time rather than all at once. Only S and
-//! P are implemented so far; anything with a d/f/g shell in it returns an
-//! error rather than a silently-wrong result.
+//! Grids (backlog item 6, 2026-10-20): the basis is prepared once per grid
+//! (`PreparedBasis`: normalizations folded into the primitives, far-away
+//! primitives screened out below exp(-40)) and evaluated one line of
+//! points at a time, the orbitals coming out of one matrix product per
+//! line (`values_on_lines`).
 
+use faer::linalg::matmul::matmul;
+use faer::{Accum, Mat, MatRef, Par};
 use glam::{DVec3, Vec3};
 
 use crate::wavefunction::{BasisSet, MolecularOrbitals};
@@ -20,7 +23,10 @@ use crate::wavefunction::{BasisSet, MolecularOrbitals};
 ///
 /// N = (2*alpha/pi)^(3/4) * (4*alpha)^((l+m+n)/2) / sqrt((2l-1)!! (2m-1)!! (2n-1)!!)
 ///
-/// with the usual convention (2*0-1)!! = 1.
+/// with the usual convention (2*0-1)!! = 1. The evaluator uses it factored
+/// (`PreparedBasis` and `component_factor`); this whole form is the
+/// reference the tests check that against.
+#[cfg(test)]
 fn primitive_normalization(alpha: f64, l: u32, m: u32, n: u32) -> f64 {
     fn double_factorial(k: u32) -> f64 {
         if k == 0 {
@@ -34,20 +40,108 @@ fn primitive_normalization(alpha: f64, l: u32, m: u32, n: u32) -> f64 {
         / (double_factorial(l) * double_factorial(m) * double_factorial(n)).sqrt()
 }
 
-/// Contracted radial value for one specific Cartesian component (l, m, n)
-/// of a shell: sum over primitives of `c_i * N(alpha_i, l, m, n) *
-/// exp(-alpha_i * r^2)`. Each Cartesian component gets its own
-/// normalization computed from its *own* (l, m, n) split — not a single
-/// "canonical" one reused across the whole shell — which is what
-/// actually gets the relative scaling between e.g. a d shell's xx and xy
-/// components right.
-fn contracted_radial(shell: &crate::wavefunction::Shell, r2: f64, l: u32, m: u32, n: u32) -> f64 {
-    shell
-        .primitive_exponents
-        .iter()
-        .zip(&shell.contraction_coefficients)
-        .map(|(&alpha, &c)| c * primitive_normalization(alpha, l, m, n) * (-alpha * r2).exp())
-        .sum()
+/// (2k-1)!! for k = 0..=4, the double factorials in the normalization.
+const DOUBLE_FACTORIAL: [f64; 5] = [1.0, 1.0, 3.0, 15.0, 105.0];
+
+/// The part of a Cartesian component's normalization that depends on its
+/// split (l, m, n) and not on the exponent: `primitive_normalization` =
+/// (2*alpha/pi)^(3/4) * (4*alpha)^(L/2) (the same for every component of
+/// a shell, folded into the primitives once by `PreparedBasis`) times
+/// this. Each Cartesian component gets its own factor from its *own*
+/// (l, m, n) split — not a single "canonical" one reused across the whole
+/// shell — which is what gets the relative scaling between e.g. a d
+/// shell's xx and xy components right.
+fn component_factor(l: u32, m: u32, n: u32) -> f64 {
+    1.0 / (DOUBLE_FACTORIAL[l as usize] * DOUBLE_FACTORIAL[m as usize] * DOUBLE_FACTORIAL[n as usize]).sqrt()
+}
+
+/// A primitive is left out where exp(-alpha r^2) < exp(-40) = 4e-18: far
+/// below what a grid stored as f32 can hold next to the orbital's values
+/// near the molecule, even times the r^4 of a g function.
+const SCREENING_EXPONENT: f64 = 40.0;
+
+/// How many functions a shell has (Cartesian d 6, pure d 5, ...), or why
+/// it isn't supported.
+fn shell_function_count(shell: &crate::wavefunction::Shell) -> Result<usize, String> {
+    match (shell.angular_momentum, shell.is_pure) {
+        (0, _) => Ok(1),
+        (1, _) => Ok(3),
+        (2, false) => Ok(6),
+        (2, true) => Ok(5),
+        (3, false) => Ok(10),
+        (3, true) => Ok(7),
+        // Cartesian g deliberately isn't implemented: unlike Cartesian
+        // d/f (common in older Pople-style basis sets), a Cartesian g
+        // shell essentially never shows up in practice — every basis
+        // family that goes as high as g (def2-QZVPP, cc-pVQZ, ...) is
+        // spherical by convention — and there's no real reference cube
+        // available to validate a guessed Gaussian field ordering
+        // against, unlike every other case here. Fails loudly rather than
+        // risk an unverifiable-right-now guess.
+        (4, false) => Err("Cartesian g shells aren't implemented (pure/spherical g is) — see gto.rs module docs".to_string()),
+        (4, true) => Ok(9),
+        (l, _) => Err(format!("angular momentum {l} (h and above) not implemented yet — see gto.rs module docs")),
+    }
+}
+
+/// A basis set made ready for evaluation at many points (backlog item 6,
+/// 2026-10-20): each primitive's contraction coefficient times the part
+/// of its normalization that depends on the exponent, computed once
+/// (it was recomputed with `powf` for every component at every point,
+/// most of the evaluation time), and each shell's reach, beyond which it
+/// is zero.
+struct PreparedBasis<'a> {
+    shells: Vec<PreparedShell<'a>>,
+    /// The number of basis functions.
+    count: usize,
+}
+
+struct PreparedShell<'a> {
+    shell: &'a crate::wavefunction::Shell,
+    /// (exponent, coefficient x (2*alpha/pi)^(3/4) x (4*alpha)^(L/2)).
+    primitives: Vec<(f64, f64)>,
+    /// Beyond this squared distance (bohr^2) every primitive is screened out.
+    reach2: f64,
+    functions: usize,
+}
+
+impl<'a> PreparedBasis<'a> {
+    fn new(basis: &'a BasisSet) -> Result<Self, String> {
+        let mut shells = Vec::with_capacity(basis.shells.len());
+        let mut count = 0;
+        for shell in &basis.shells {
+            let functions = shell_function_count(shell)?;
+            let total_l = shell.angular_momentum as f64;
+            let primitives: Vec<(f64, f64)> = shell
+                .primitive_exponents
+                .iter()
+                .zip(&shell.contraction_coefficients)
+                .map(|(&alpha, &c)| (alpha, c * (2.0 * alpha / std::f64::consts::PI).powf(0.75) * (4.0 * alpha).powf(total_l / 2.0)))
+                .collect();
+            let least_exponent = shell.primitive_exponents.iter().copied().fold(f64::INFINITY, f64::min);
+            shells.push(PreparedShell { shell, primitives, reach2: SCREENING_EXPONENT / least_exponent, functions });
+            count += functions;
+        }
+        Ok(Self { shells, count })
+    }
+
+    /// The basis functions' values at `point` (bohr), in `out`.
+    fn evaluate(&self, point: DVec3, out: &mut Vec<f64>) {
+        out.clear();
+        for prepared in &self.shells {
+            let shell = prepared.shell;
+            let d = point - shell.center;
+            let r2 = d.length_squared();
+            if r2 > prepared.reach2 {
+                out.resize(out.len() + prepared.functions, 0.0);
+                continue;
+            }
+            let radial: f64 = prepared.primitives.iter().filter(|(alpha, _)| alpha * r2 <= SCREENING_EXPONENT).map(|(alpha, c)| c * (-alpha * r2).exp()).sum();
+            // One Cartesian component's contracted radial part.
+            let cr = |l: u32, m: u32, n: u32| radial * component_factor(l, m, n);
+            evaluate_shell(shell, d, cr, out);
+        }
+    }
 }
 
 /// Appends this basis set's function values at `point` (Bohr) to `out`,
@@ -55,29 +149,33 @@ fn contracted_radial(shell: &crate::wavefunction::Shell, r2: f64, l: u32, m: u32
 /// file order, and within a shell, Gaussian's own Cartesian component
 /// order — S: 1; P: x,y,z; Cartesian D: xx,yy,zz,xy,xz,yz.
 pub fn evaluate_basis_functions(basis: &BasisSet, point: DVec3, out: &mut Vec<f64>) -> Result<(), String> {
-    out.clear();
-    for shell in &basis.shells {
-        let d = point - shell.center;
-        let r2 = d.length_squared();
+    PreparedBasis::new(basis)?.evaluate(point, out);
+    Ok(())
+}
 
+/// Appends one shell's function values, given the vector `d` from its
+/// center and `cr(l, m, n)`, the contracted radial part of Cartesian
+/// component (l, m, n).
+fn evaluate_shell(shell: &crate::wavefunction::Shell, d: DVec3, cr: impl Fn(u32, u32, u32) -> f64, out: &mut Vec<f64>) {
+    {
         match (shell.angular_momentum, shell.is_pure) {
             (0, _) => {
-                out.push(contracted_radial(shell, r2, 0, 0, 0));
+                out.push(cr(0, 0, 0));
             }
             (1, _) => {
-                let radial = contracted_radial(shell, r2, 1, 0, 0); // same for any single-axis P component by symmetry
+                let radial = cr(1, 0, 0); // same for any single-axis P component by symmetry
                 out.push(radial * d.x);
                 out.push(radial * d.y);
                 out.push(radial * d.z);
             }
             (2, false) => {
                 // Cartesian d: xx, yy, zz, xy, xz, yz.
-                out.push(contracted_radial(shell, r2, 2, 0, 0) * d.x * d.x);
-                out.push(contracted_radial(shell, r2, 0, 2, 0) * d.y * d.y);
-                out.push(contracted_radial(shell, r2, 0, 0, 2) * d.z * d.z);
-                out.push(contracted_radial(shell, r2, 1, 1, 0) * d.x * d.y);
-                out.push(contracted_radial(shell, r2, 1, 0, 1) * d.x * d.z);
-                out.push(contracted_radial(shell, r2, 0, 1, 1) * d.y * d.z);
+                out.push(cr(2, 0, 0) * d.x * d.x);
+                out.push(cr(0, 2, 0) * d.y * d.y);
+                out.push(cr(0, 0, 2) * d.z * d.z);
+                out.push(cr(1, 1, 0) * d.x * d.y);
+                out.push(cr(1, 0, 1) * d.x * d.z);
+                out.push(cr(0, 1, 1) * d.y * d.z);
             }
             (2, true) => {
                 // Pure (spherical-harmonic) d: Gaussian's order is
@@ -93,12 +191,12 @@ pub fn evaluate_basis_functions(basis: &BasisSet, point: DVec3, out: &mut Vec<f6
                 // Cartesian components (⟨xx|zz⟩ etc. are not zero, unlike
                 // ⟨xx|xy⟩) rather than simple ad hoc weights — see the
                 // module-level comment for the derivation.
-                let xx = contracted_radial(shell, r2, 2, 0, 0) * d.x * d.x;
-                let yy = contracted_radial(shell, r2, 0, 2, 0) * d.y * d.y;
-                let zz = contracted_radial(shell, r2, 0, 0, 2) * d.z * d.z;
-                let xy = contracted_radial(shell, r2, 1, 1, 0) * d.x * d.y;
-                let xz = contracted_radial(shell, r2, 1, 0, 1) * d.x * d.z;
-                let yz = contracted_radial(shell, r2, 0, 1, 1) * d.y * d.z;
+                let xx = cr(2, 0, 0) * d.x * d.x;
+                let yy = cr(0, 2, 0) * d.y * d.y;
+                let zz = cr(0, 0, 2) * d.z * d.z;
+                let xy = cr(1, 1, 0) * d.x * d.y;
+                let xz = cr(1, 0, 1) * d.x * d.z;
+                let yz = cr(0, 1, 1) * d.y * d.z;
                 out.push(zz - 0.5 * xx - 0.5 * yy); // D0
                 out.push(xz); // D+1
                 out.push(yz); // D-1
@@ -108,16 +206,16 @@ pub fn evaluate_basis_functions(basis: &BasisSet, point: DVec3, out: &mut Vec<f6
             (3, false) => {
                 // Cartesian f, Gaussian's order: xxx, yyy, zzz, xyy, xxy,
                 // xxz, xzz, yzz, yyz, xyz.
-                out.push(contracted_radial(shell, r2, 3, 0, 0) * d.x * d.x * d.x);
-                out.push(contracted_radial(shell, r2, 0, 3, 0) * d.y * d.y * d.y);
-                out.push(contracted_radial(shell, r2, 0, 0, 3) * d.z * d.z * d.z);
-                out.push(contracted_radial(shell, r2, 1, 2, 0) * d.x * d.y * d.y);
-                out.push(contracted_radial(shell, r2, 2, 1, 0) * d.x * d.x * d.y);
-                out.push(contracted_radial(shell, r2, 2, 0, 1) * d.x * d.x * d.z);
-                out.push(contracted_radial(shell, r2, 1, 0, 2) * d.x * d.z * d.z);
-                out.push(contracted_radial(shell, r2, 0, 1, 2) * d.y * d.z * d.z);
-                out.push(contracted_radial(shell, r2, 0, 2, 1) * d.y * d.y * d.z);
-                out.push(contracted_radial(shell, r2, 1, 1, 1) * d.x * d.y * d.z);
+                out.push(cr(3, 0, 0) * d.x * d.x * d.x);
+                out.push(cr(0, 3, 0) * d.y * d.y * d.y);
+                out.push(cr(0, 0, 3) * d.z * d.z * d.z);
+                out.push(cr(1, 2, 0) * d.x * d.y * d.y);
+                out.push(cr(2, 1, 0) * d.x * d.x * d.y);
+                out.push(cr(2, 0, 1) * d.x * d.x * d.z);
+                out.push(cr(1, 0, 2) * d.x * d.z * d.z);
+                out.push(cr(0, 1, 2) * d.y * d.z * d.z);
+                out.push(cr(0, 2, 1) * d.y * d.y * d.z);
+                out.push(cr(1, 1, 1) * d.x * d.y * d.z);
             }
             (3, true) => {
                 // Pure f, Gaussian's order: F0, F+1, F-1, F+2, F-2, F+3,
@@ -127,16 +225,16 @@ pub fn evaluate_basis_functions(basis: &BasisSet, point: DVec3, out: &mut Vec<f6
                 // derived from the standard real solid harmonics
                 // (2z³-3x²z-3y²z, x(4z²-x²-y²), y(4z²-x²-y²), z(x²-y²),
                 // xyz, x³-3xy², 3x²y-y³) — see the module-level comment.
-                let xxx = contracted_radial(shell, r2, 3, 0, 0) * d.x * d.x * d.x;
-                let yyy = contracted_radial(shell, r2, 0, 3, 0) * d.y * d.y * d.y;
-                let zzz = contracted_radial(shell, r2, 0, 0, 3) * d.z * d.z * d.z;
-                let xyy = contracted_radial(shell, r2, 1, 2, 0) * d.x * d.y * d.y;
-                let xxy = contracted_radial(shell, r2, 2, 1, 0) * d.x * d.x * d.y;
-                let xxz = contracted_radial(shell, r2, 2, 0, 1) * d.x * d.x * d.z;
-                let xzz = contracted_radial(shell, r2, 1, 0, 2) * d.x * d.z * d.z;
-                let yzz = contracted_radial(shell, r2, 0, 1, 2) * d.y * d.z * d.z;
-                let yyz = contracted_radial(shell, r2, 0, 2, 1) * d.y * d.y * d.z;
-                let xyz = contracted_radial(shell, r2, 1, 1, 1) * d.x * d.y * d.z;
+                let xxx = cr(3, 0, 0) * d.x * d.x * d.x;
+                let yyy = cr(0, 3, 0) * d.y * d.y * d.y;
+                let zzz = cr(0, 0, 3) * d.z * d.z * d.z;
+                let xyy = cr(1, 2, 0) * d.x * d.y * d.y;
+                let xxy = cr(2, 1, 0) * d.x * d.x * d.y;
+                let xxz = cr(2, 0, 1) * d.x * d.x * d.z;
+                let xzz = cr(1, 0, 2) * d.x * d.z * d.z;
+                let yzz = cr(0, 1, 2) * d.y * d.z * d.z;
+                let yyz = cr(0, 2, 1) * d.y * d.y * d.z;
+                let xyz = cr(1, 1, 1) * d.x * d.y * d.z;
 
                 let sqrt5 = 5f64.sqrt();
                 let sqrt6 = 6f64.sqrt();
@@ -151,15 +249,7 @@ pub fn evaluate_basis_functions(basis: &BasisSet, point: DVec3, out: &mut Vec<f6
                 out.push(sqrt10 / 4.0 * xxx - 3.0 * 2f64.sqrt() / 4.0 * xyy); // F+3
                 out.push(3.0 * 2f64.sqrt() / 4.0 * xxy - sqrt10 / 4.0 * yyy); // F-3
             }
-            // Cartesian g deliberately isn't implemented: unlike Cartesian
-            // d/f (common in older Pople-style basis sets), a Cartesian g
-            // shell essentially never shows up in practice — every
-            // basis family that goes as high as g (def2-QZVPP, cc-pVQZ,
-            // ...) is spherical by convention — and there's no real
-            // reference cube available to validate a guessed Gaussian
-            // field ordering against, unlike every other case here. Fails
-            // loudly rather than risk an unverifiable-right-now guess.
-            (4, false) => return Err("Cartesian g shells aren't implemented (pure/spherical g is) — see gto.rs module docs".to_string()),
+            (4, false) => unreachable!("rejected by shell_function_count"),
             (4, true) => {
                 // Pure g, Gaussian's order: G0, G+1, G-1, G+2, G-2, G+3,
                 // G-3, G+4, G-4 (the same 0,+1,-1,...,+L,-L pattern
@@ -174,21 +264,21 @@ pub fn evaluate_basis_functions(basis: &BasisSet, point: DVec3, out: &mut Vec<f6
                 // much larger and more error-prone this stage is than d
                 // or f (9 components, several genuine 3+-term
                 // combinations) — see the module-level comment.
-                let xxxx = contracted_radial(shell, r2, 4, 0, 0) * d.x.powi(4);
-                let yyyy = contracted_radial(shell, r2, 0, 4, 0) * d.y.powi(4);
-                let zzzz = contracted_radial(shell, r2, 0, 0, 4) * d.z.powi(4);
-                let xxyy = contracted_radial(shell, r2, 2, 2, 0) * d.x.powi(2) * d.y.powi(2);
-                let xxzz = contracted_radial(shell, r2, 2, 0, 2) * d.x.powi(2) * d.z.powi(2);
-                let yyzz = contracted_radial(shell, r2, 0, 2, 2) * d.y.powi(2) * d.z.powi(2);
-                let xxxy = contracted_radial(shell, r2, 3, 1, 0) * d.x.powi(3) * d.y;
-                let xyyy = contracted_radial(shell, r2, 1, 3, 0) * d.x * d.y.powi(3);
-                let xxxz = contracted_radial(shell, r2, 3, 0, 1) * d.x.powi(3) * d.z;
-                let xzzz = contracted_radial(shell, r2, 1, 0, 3) * d.x * d.z.powi(3);
-                let yyyz = contracted_radial(shell, r2, 0, 3, 1) * d.y.powi(3) * d.z;
-                let yzzz = contracted_radial(shell, r2, 0, 1, 3) * d.y * d.z.powi(3);
-                let xxyz = contracted_radial(shell, r2, 2, 1, 1) * d.x.powi(2) * d.y * d.z;
-                let xyyz = contracted_radial(shell, r2, 1, 2, 1) * d.x * d.y.powi(2) * d.z;
-                let xyzz = contracted_radial(shell, r2, 1, 1, 2) * d.x * d.y * d.z.powi(2);
+                let xxxx = cr(4, 0, 0) * d.x.powi(4);
+                let yyyy = cr(0, 4, 0) * d.y.powi(4);
+                let zzzz = cr(0, 0, 4) * d.z.powi(4);
+                let xxyy = cr(2, 2, 0) * d.x.powi(2) * d.y.powi(2);
+                let xxzz = cr(2, 0, 2) * d.x.powi(2) * d.z.powi(2);
+                let yyzz = cr(0, 2, 2) * d.y.powi(2) * d.z.powi(2);
+                let xxxy = cr(3, 1, 0) * d.x.powi(3) * d.y;
+                let xyyy = cr(1, 3, 0) * d.x * d.y.powi(3);
+                let xxxz = cr(3, 0, 1) * d.x.powi(3) * d.z;
+                let xzzz = cr(1, 0, 3) * d.x * d.z.powi(3);
+                let yyyz = cr(0, 3, 1) * d.y.powi(3) * d.z;
+                let yzzz = cr(0, 1, 3) * d.y * d.z.powi(3);
+                let xxyz = cr(2, 1, 1) * d.x.powi(2) * d.y * d.z;
+                let xyyz = cr(1, 2, 1) * d.x * d.y.powi(2) * d.z;
+                let xyzz = cr(1, 1, 2) * d.x * d.y * d.z.powi(2);
 
                 let sqrt2 = 2f64.sqrt();
                 let sqrt3 = 3f64.sqrt();
@@ -211,10 +301,9 @@ pub fn evaluate_basis_functions(basis: &BasisSet, point: DVec3, out: &mut Vec<f6
                 out.push((sqrt35 / 8.0) * (xxxx + yyyy) - (3.0 * sqrt3 / 4.0) * xxyy); // G+4
                 out.push((sqrt5 / 2.0) * (xxxy - xyyy)); // G-4
             }
-            (l, _) => return Err(format!("angular momentum {l} (h and above) not implemented yet — see gto.rs module docs")),
+            _ => unreachable!("rejected by shell_function_count"),
         }
     }
-    Ok(())
 }
 
 /// Evaluates MO `mo_index` (0-based) at `point` (Bohr), from `orbitals` —
@@ -283,10 +372,7 @@ fn grid_in_angstrom(min: DVec3, dims: [usize; 3], spacing_bohr: f64, values: Vec
 /// `Wavefunction::total_density_weights`). In electrons/bohr^3, on the same
 /// kind of box as the orbitals (`generate_mo_grids`).
 pub fn generate_density_grid(basis: &BasisSet, terms: &[(&MolecularOrbitals, Vec<f64>)], spacing_bohr: f64, padding_bohr: f64) -> Result<crate::cube::ScalarGrid, String> {
-    use rayon::prelude::*;
-
     let (min, dims) = grid_box(basis, spacing_bohr, padding_bohr)?;
-    let total_points = dims[0] * dims[1] * dims[2];
     // Only the orbitals that contribute.
     let orbitals: Vec<(&[f64], f64)> = terms
         .iter()
@@ -295,69 +381,82 @@ pub fn generate_density_grid(basis: &BasisSet, terms: &[(&MolecularOrbitals, Vec
     if orbitals.is_empty() {
         return Err("no occupied orbitals".to_string());
     }
-    let values = (0..total_points)
-        .into_par_iter()
-        .map_init(Vec::new, |scratch, idx| -> Result<f32, String> {
-            let k = idx % dims[2];
-            let j = (idx / dims[2]) % dims[1];
-            let i = idx / (dims[1] * dims[2]);
-            let point = min + DVec3::new(i as f64, j as f64, k as f64) * spacing_bohr;
-            evaluate_basis_functions(basis, point, scratch)?;
-            let mut rho = 0.0f64;
-            for (coeffs, w) in &orbitals {
-                if scratch.len() != coeffs.len() {
-                    return Err(format!("basis function count ({}) doesn't match MO coefficient count ({})", scratch.len(), coeffs.len()));
-                }
-                let phi: f64 = scratch.iter().zip(*coeffs).map(|(&b, &c)| b * c).sum();
-                rho += w * phi * phi;
-            }
-            Ok(rho as f32)
-        })
-        .collect::<Result<Vec<f32>, String>>()?;
-    Ok(grid_in_angstrom(min, dims, spacing_bohr, values))
+    let prepared = PreparedBasis::new(basis)?;
+    let coefficients = coefficient_matrix(&prepared, orbitals.iter().map(|(c, _)| *c))?;
+    let weights: Vec<f64> = orbitals.iter().map(|(_, w)| *w).collect();
+    let lines = values_on_lines(&prepared, min, dims, spacing_bohr, coefficients.as_ref(), |values| {
+        (0..values.nrows()).map(|p| weights.iter().enumerate().map(|(k, w)| w * values[(p, k)] * values[(p, k)]).sum::<f64>() as f32).collect::<Vec<f32>>()
+    });
+    Ok(grid_in_angstrom(min, dims, spacing_bohr, lines.concat()))
 }
 
 pub fn generate_mo_grids(basis: &BasisSet, requests: &[(&MolecularOrbitals, usize)], spacing_bohr: f64, padding_bohr: f64) -> Result<Vec<crate::cube::ScalarGrid>, String> {
-    use rayon::prelude::*;
-
     let (min, dims) = grid_box(basis, spacing_bohr, padding_bohr)?;
     let total_points = dims[0] * dims[1] * dims[2];
+    let prepared = PreparedBasis::new(basis)?;
+    let coefficients = coefficient_matrix(&prepared, requests.iter().map(|(orbitals, mo_index)| orbitals.coefficients_for(*mo_index)))?;
+    // Each line's values, point by point, one column per requested orbital.
+    let lines = values_on_lines(&prepared, min, dims, spacing_bohr, coefficients.as_ref(), |values| values.to_owned());
 
-    let coefficients: Vec<&[f64]> = requests.iter().map(|(orbitals, mo_index)| orbitals.coefficients_for(*mo_index)).collect();
-
-    // One row per grid point, one column per requested orbital — point-major
-    // so the parallel iteration can hand each point to a worker independently.
-    let rows: Vec<Vec<f32>> = (0..total_points)
-        .into_par_iter()
-        .map(|idx| -> Result<Vec<f32>, String> {
-            let k = idx % dims[2];
-            let j = (idx / dims[2]) % dims[1];
-            let i = idx / (dims[1] * dims[2]);
-            let point = min + DVec3::new(i as f64, j as f64, k as f64) * spacing_bohr;
-
-            let mut scratch = Vec::new();
-            evaluate_basis_functions(basis, point, &mut scratch)?;
-            coefficients
-                .iter()
-                .map(|coeffs| {
-                    if scratch.len() != coeffs.len() {
-                        return Err(format!("basis function count ({}) doesn't match MO coefficient count ({})", scratch.len(), coeffs.len()));
-                    }
-                    Ok(scratch.iter().zip(*coeffs).map(|(&b, &c)| b * c).sum::<f64>() as f32)
-                })
-                .collect()
-        })
-        .collect::<Result<Vec<Vec<f32>>, String>>()?;
-
-    // Transpose point-major rows back into one flat orbital-major `values`
-    // buffer per request, the shape `ScalarGrid` expects.
     let mut grids: Vec<crate::cube::ScalarGrid> = requests.iter().map(|_| grid_in_angstrom(min, dims, spacing_bohr, vec![0.0; total_points])).collect();
-    for (point_idx, row) in rows.into_iter().enumerate() {
-        for (r, value) in row.into_iter().enumerate() {
-            grids[r].values[point_idx] = value;
+    let line_length = dims[2];
+    for (line, values) in lines.iter().enumerate() {
+        for (r, grid) in grids.iter_mut().enumerate() {
+            for p in 0..line_length {
+                grid.values[line * line_length + p] = values[(p, r)] as f32;
+            }
         }
     }
     Ok(grids)
+}
+
+/// The orbitals' coefficients as the columns of a matrix (basis functions
+/// by orbitals), checked against the basis.
+fn coefficient_matrix<'c>(prepared: &PreparedBasis, columns: impl Iterator<Item = &'c [f64]>) -> Result<Mat<f64>, String> {
+    let columns: Vec<&[f64]> = columns.collect();
+    if let Some(bad) = columns.iter().find(|c| c.len() != prepared.count) {
+        return Err(format!("basis function count ({}) doesn't match MO coefficient count ({})", prepared.count, bad.len()));
+    }
+    Ok(Mat::from_fn(prepared.count, columns.len(), |i, k| columns[k][i]))
+}
+
+/// The orbitals (the columns of `coefficients`) at every grid point, one
+/// line of points along z at a time: the basis functions at the line's
+/// points as the columns of a matrix, times the coefficients in one
+/// matrix product (faer), rather than one dot product per point and
+/// orbital — the density of an 83-atom complex (1844 basis functions,
+/// 152 occupied orbitals) went from 32 s to ~1 s at the default spacing
+/// (backlog item 6, 2026-10-20). Lines run in parallel (rayon), each
+/// product sequentially. `per_line` turns a line's values (points by
+/// orbitals) into its result; results come in grid order.
+fn values_on_lines<T: Send>(
+    prepared: &PreparedBasis,
+    min: DVec3,
+    dims: [usize; 3],
+    spacing_bohr: f64,
+    coefficients: MatRef<'_, f64>,
+    per_line: impl Fn(MatRef<'_, f64>) -> T + Sync,
+) -> Vec<T> {
+    use rayon::prelude::*;
+
+    let line_length = dims[2];
+    (0..dims[0] * dims[1])
+        .into_par_iter()
+        .map_init(
+            || (Vec::new(), Mat::<f64>::zeros(prepared.count, line_length), Mat::<f64>::zeros(line_length, coefficients.ncols())),
+            |(scratch, basis_values, values), line| {
+                let (i, j) = (line / dims[1], line % dims[1]);
+                for k in 0..line_length {
+                    prepared.evaluate(min + DVec3::new(i as f64, j as f64, k as f64) * spacing_bohr, scratch);
+                    for (b, &value) in scratch.iter().enumerate() {
+                        basis_values[(b, k)] = value;
+                    }
+                }
+                matmul(values.as_mut(), Accum::Replace, basis_values.transpose(), coefficients, 1.0, Par::Seq);
+                per_line(values.as_ref())
+            },
+        )
+        .collect()
 }
 
 #[cfg(test)]
@@ -374,6 +473,19 @@ mod tests {
         let n = primitive_normalization(alpha, 0, 0, 0);
         let self_overlap = n * n * (std::f64::consts::PI / (2.0 * alpha)).powf(1.5);
         assert!((self_overlap - 1.0).abs() < 1e-10, "expected self-overlap 1.0, got {self_overlap}");
+    }
+
+    /// The factored normalization the evaluator uses equals the whole one.
+    #[test]
+    fn factored_normalization_is_the_same() {
+        for alpha in [0.03, 0.7, 12.5, 4000.0] {
+            for (l, m, n) in [(0, 0, 0), (1, 0, 0), (2, 0, 0), (1, 1, 0), (3, 0, 0), (2, 1, 0), (1, 1, 1), (4, 0, 0), (2, 2, 0), (2, 1, 1)] {
+                let total_l = (l + m + n) as f64;
+                let factored = (2.0 * alpha / std::f64::consts::PI).powf(0.75) * (4.0 * alpha).powf(total_l / 2.0) * component_factor(l, m, n);
+                let whole = primitive_normalization(alpha, l, m, n);
+                assert!((factored / whole - 1.0).abs() < 1e-13, "alpha {alpha}, ({l},{m},{n}): {factored} vs {whole}");
+            }
+        }
     }
 
     #[test]
