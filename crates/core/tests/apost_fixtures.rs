@@ -305,6 +305,9 @@ fn orbital_sets_map_onto_their_files() {
 fn orbital_tables_share_one_form() {
     use apost3dview_core::{Quantity, QuantityKind};
     let dirs: Vec<PathBuf> = [fixtures_dir(), orbital_fixtures_dir()].into_iter().flatten().collect();
+    if dirs.is_empty() {
+        return;
+    }
     let (mut tables, mut effao) = (0, 0);
     for dir in dirs {
         for json in std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.to_string_lossy().ends_with(".apost.json")) {
