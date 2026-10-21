@@ -679,6 +679,12 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         static FIRST_FRAME: std::sync::Once = std::sync::Once::new();
         FIRST_FRAME.call_once(|| log::info!("first frame"));
+        // Always the dark theme, whatever the system's setting (egui would
+        // follow it): the look every window and color was designed in.
+        // Checked every frame, so nothing set later can switch it back.
+        if ui.ctx().options(|o| o.theme_preference) != egui::ThemePreference::Dark {
+            ui.ctx().set_theme(egui::Theme::Dark);
+        }
         if self.splash {
             let dismissed = ui.input(|i| i.pointer.any_click());
             if self.start_time.elapsed() < SPLASH_DURATION && !dismissed {
