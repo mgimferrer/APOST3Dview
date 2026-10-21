@@ -173,13 +173,15 @@ fn show_menu_names_every_part_once() {
     harness.get_all(By::new().role(egui::accesskit::Role::ComboBox)).next().unwrap().click_accesskit();
     harness.run_steps(3);
     for label in [
-        "Intra-fragment localization index (bond orders, TFVC)",
-        "Intra-fragment localization index (LI/DI from the 2-RDM, TFVC)",
-        "Intra-atomic localization index (bond orders, TFVC)",
-        "Intra-atomic localization index (new bond orders, TFVC)",
-        "Intra-atomic localization index (LI/DI from the 2-RDM, TFVC)",
-        "Inter-atomic bond order (bond orders, TFVC)",
-        "Inter-atomic bond order (new bond orders, TFVC)",
+        "Intra-fragment localization index (exchange-only bond orders, TFVC)",
+        "Intra-fragment localization index (improved bond orders, TFVC)",
+        "Intra-fragment localization index (exchange-correlation bond orders, DI, TFVC)",
+        "Intra-atomic localization index (exchange-only bond orders, TFVC)",
+        "Intra-atomic localization index (improved bond orders, TFVC)",
+        "Intra-atomic localization index (exchange-correlation bond orders, DI, TFVC)",
+        "Inter-fragment bond order (improved bond orders, TFVC)",
+        "Inter-atomic bond order (exchange-only bond orders, TFVC)",
+        "Inter-atomic bond order (improved bond orders, TFVC)",
         "Inter-atomic delocalization index (TFVC)",
         "Intra-atomic S\u{b2} (local spin) (TFVC)",
         "Inter-atomic S\u{b2} (spin coupling) (TFVC)",

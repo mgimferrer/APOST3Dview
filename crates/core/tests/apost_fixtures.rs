@@ -174,9 +174,11 @@ fn schema_0_3_particular_cases() {
     let Quantity::Vector(q) = iron.quantity(charges).unwrap() else { panic!() };
     assert_eq!(q.len(), 7);
 
-    // A correlated local spin analysis brings its own pair matrices.
+    // A correlated local spin analysis brings its own pair matrices (the
+    // DI, `li_di` before 0.14), and the 1-RDM Mayer's improved bond orders.
     let lih = load(&dir, "LiH-35-CAS22");
-    assert!(lih.index.iter().any(|e| e.id == "local_spin.atoms.li_di"));
+    assert!(lih.index.iter().any(|e| e.id == "local_spin.atoms.xc_bond_orders"));
+    assert!(lih.index.iter().any(|e| e.id == "bond_orders.atoms.improved_bond_orders"));
     // Overlap populations total all elements, unlike bond orders.
     let feco2 = load(&dir, "FeCO2-PBEPBE");
     let entry = feco2.index.iter().find(|e| e.id == "bond_orders.overlap_populations.fragments.matrix").unwrap();

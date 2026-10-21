@@ -609,8 +609,8 @@ fn part_meaning(results: &ApostResults, entry: &IndexEntry, diagonal: bool) -> O
 
 /// The parenthesis after a matrix part's name: the atomic definition
 /// ("(TFVC)"), and the matrix it comes from when another matrix's part
-/// has the same name ("(bond orders, TFVC)" against "(LI/DI from the
-/// 2-RDM, TFVC)").
+/// has the same name ("(exchange-only bond orders, TFVC)" against
+/// "(improved bond orders, TFVC)").
 pub(crate) fn part_source(results: &ApostResults, entry: &IndexEntry, diagonal: bool) -> String {
     let title = entry.title.as_str();
     let (name, scheme) = match title.rfind(" (").filter(|_| title.ends_with(')')) {
@@ -620,7 +620,7 @@ pub(crate) fn part_source(results: &ApostResults, entry: &IndexEntry, diagonal: 
     let meaning = part_meaning(results, entry, diagonal);
     let shared = results.entries(entry.kind).any(|other| other.id != entry.id && part_meaning(results, other, diagonal) == meaning);
     let source = shared.then(|| {
-        // "Fragment bond orders" -> "bond orders"; acronyms stay ("LI/DI").
+        // "Fragment bond orders" -> "bond orders"; acronyms stay ("DI").
         let name = name.strip_prefix("Fragment ").unwrap_or(name);
         let mut chars = name.chars();
         match (chars.next(), chars.next()) {
