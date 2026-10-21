@@ -211,6 +211,17 @@ impl App {
         let atomic_numbers = structure.molecule.atomic_numbers.clone();
         let n_atoms = atomic_numbers.len();
         let selected = structure.selected_atoms.clone();
+        // The first time the form is shown, make room for the fragment
+        // envelopes it draws (as for results with fragments), zooming out
+        // only if the view is tighter than that.
+        if structure.input_draft.is_none() {
+            let (center, radius) = structure.molecule.bounding_sphere();
+            let mut roomy = self.camera;
+            roomy.frame_bounds(center, radius + 2.2);
+            if roomy.distance > self.camera.distance {
+                self.camera.distance = roomy.distance;
+            }
+        }
         let draft = structure.input_draft.get_or_insert_with(|| InputDraft::new(&fchk, n_atoms));
 
         let input = draft.build();

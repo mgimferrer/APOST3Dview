@@ -209,14 +209,8 @@ impl App {
                 // weight on it. Worth flagging right away rather than
                 // only on the first failed "Generate" click.
                 let max_angular_momentum = wfn.basis.shells.iter().map(|s| s.angular_momentum).max().unwrap_or(0);
-                if wfn.alpha.num_orbitals() > 0 {
-                    structure.selected_alpha_mos.insert(wfn.alpha.homo_index() - 1);
-                }
-                if let Some(beta) = &wfn.beta
-                    && beta.num_orbitals() > 0
-                {
-                    structure.selected_beta_mos.insert(beta.homo_index() - 1);
-                }
+                // Nothing is ticked when a file opens (Martí, 2026-10-21):
+                // the generate button counts only what the user chose.
                 if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("fchk")) {
                     let (densities, problems) = crate::natural::load_densities(path, &wfn);
                     structure.densities = densities;

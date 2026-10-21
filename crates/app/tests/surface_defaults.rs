@@ -26,7 +26,9 @@ fn an_edited_isovalue_stays_with_its_surface() {
     let mut harness = app_with(vec![repo_dir().join("validation/gaussian/H2O-631G.fchk")]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
-    // The HOMO is ticked on opening.
+    // Tick the HOMO (nothing is ticked on opening).
+    harness.get_all(egui_kittest::kittest::By::new().role(egui::accesskit::Role::CheckBox).label_contains("Hartree")).find(|n| format!("{n:?}").contains("HOMO")).expect("the HOMO's row").click_accesskit();
+    harness.run_steps(2);
     harness.get_by_label("Generate 1 orbital(s)").click_accesskit();
     harness.run_steps(3);
     harness.get_by_label("\u{b1}0.075");

@@ -26,14 +26,15 @@ fn orca_casscf_molden_gives_orbitals_and_density_but_no_spin_density() {
     harness.run_steps(2);
     // Natural orbitals: occupations are spin-summed, no spin density.
     assert_eq!(harness.query_all_by_label("Spin density").count(), 0);
+    harness.get_by_label("HOMO/LUMO").click_accesskit();
+    harness.run_steps(2);
     harness.get_by_label("Total density").click_accesskit();
     harness.run_steps(2);
-    // The HOMO is ticked on opening.
-    harness.get_by_label("Generate 2 surface(s)").click_accesskit();
+    harness.get_by_label("Generate 3 surface(s)").click_accesskit();
     harness.run_steps(4);
     let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
-    assert_eq!(labels, vec!["HOMO", "Total density"]);
-    assert!(toasts(&harness).iter().any(|t| t == "1 orbital and the total density generated"), "{:?}", toasts(&harness));
+    assert_eq!(labels, vec!["HOMO", "LUMO", "Total density"]);
+    assert!(toasts(&harness).iter().any(|t| t == "2 orbitals and the total density generated"), "{:?}", toasts(&harness));
 }
 
 #[test]
@@ -44,6 +45,8 @@ fn orca_open_shell_and_ecp_moldens_open() {
         harness.get_by_label("Surfaces").click_accesskit();
         harness.run_steps(2);
         assert_eq!(harness.query_all_by_label("Spin density").count(), usize::from(spin), "{name}");
+        harness.get_by_label("HOMO/LUMO").click_accesskit();
+        harness.run_steps(2);
         harness.get_by_label_contains("orbital(s)").click_accesskit();
         harness.run_steps(4);
         assert!(!harness.state().surface_labels().is_empty(), "{name}: {:?}", toasts(&harness));

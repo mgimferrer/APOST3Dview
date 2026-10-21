@@ -10,7 +10,7 @@ Open the `.fchk` or `.molden` file, then open the **Surfaces** window (or click 
 
 <img class="window" src="images/surfaces-window.png" alt="The Surfaces window after generating the HOMO and LUMO of water">
 
-1. Tick the orbitals you want. When a file opens, its HOMO is ticked. **HOMO/LUMO** ticks the HOMO and LUMO (of both spins, for an unrestricted calculation); **Range:** with **Select range** ticks a range of orbitals; **Clear** unticks everything.
+1. Tick the orbitals you want (nothing is ticked when a file opens). **HOMO/LUMO** ticks the HOMO and LUMO (of both spins, for an unrestricted calculation); **Range:** with **Select range** ticks a range of orbitals; **Clear** unticks everything.
 2. Choose the grid: **Low**, **Medium** (the default, a grid spacing of 0.28 Bohr, close to Chemcraft's) or **High**, or **Custom** with a spacing of your own. **Box padding (Bohr)** is how far the grid reaches beyond the outermost atoms: if an orbital's surface looks cut flat on one side, raise it.
 3. Click **Generate 2 orbital(s)** (the button counts what is ticked).
 

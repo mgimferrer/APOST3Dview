@@ -132,6 +132,8 @@ fn every_window_open() {
     }
     // (Through accessibility: with every window open, these are scrolled
     // out of sight inside their windows.)
+    harness.get_all(egui_kittest::kittest::By::new().role(egui::accesskit::Role::CheckBox).label_contains("Hartree")).find(|n| format!("{n:?}").contains("HOMO")).expect("the HOMO's row").click_accesskit();
+    harness.run_steps(2);
     harness.get_by_label("Generate 1 orbital(s)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("2  CH3   C1, H3, H4, H5").click_accesskit();

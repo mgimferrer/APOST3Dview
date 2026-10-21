@@ -46,7 +46,7 @@ Open **Surfaces**, choose *GEOS EFOs* in the **Orbitals:** menu, click **Select 
 
 Water at CASSCF(4,4)/STO-3G, computed with PySCF, with TFVC atoms, the local spin and the energy decomposition of the correlated wavefunction.
 
-Open **Surfaces**, click **Clear** (the HOMO is ticked when a file opens), tick **Total density**, and click **Generate 1 surface(s)**. The density drawn is the CASSCF density, which APOST3Dview evaluates from the density matrix stored in the `.fchk`; the total density starts translucent, so the molecule shows through.
+Open **Surfaces**, tick **Total density**, and click **Generate 1 surface(s)**. The density drawn is the CASSCF density, which APOST3Dview evaluates from the density matrix stored in the `.fchk`; the total density starts translucent, so the molecule shows through.
 
 ![The CASSCF total density of water](images/tour-density.png)
 
