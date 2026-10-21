@@ -168,9 +168,17 @@ fn draw_text(pixels: &mut [u8], width: u32, height: u32, text: &str, x: f32, bas
 /// light on a dark one).
 pub fn draw_legend(pixels: &mut [u8], width: u32, height: u32, legend: &Legend, ink: [u8; 3]) {
     let unit = (height as f32 / 860.0).max(0.25);
-    let (bar_w, bar_h) = ((300.0 * unit) as u32, (14.0 * unit).max(3.0) as u32);
     let x0 = (40.0 * unit) as u32;
     let y0 = height.saturating_sub((76.0 * unit) as u32);
+    draw_legend_at(pixels, width, height, legend, ink, x0, y0, unit);
+}
+
+/// Draws `legend` with its color bar's top left corner at (`x0`, `y0`),
+/// sized by `unit` (the title is 20 units tall, the bar 300 units wide):
+/// the title above the bar, the end values below it.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_legend_at(pixels: &mut [u8], width: u32, height: u32, legend: &Legend, ink: [u8; 3], x0: u32, y0: u32, unit: f32) {
+    let (bar_w, bar_h) = ((300.0 * unit) as u32, (14.0 * unit).max(3.0) as u32);
     for x in 0..bar_w {
         let c = legend.scale.bar_color(x as f32 / (bar_w - 1).max(1) as f32);
         let c = [(c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8];
