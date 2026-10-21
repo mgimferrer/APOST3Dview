@@ -444,9 +444,72 @@ fn appearance_and_export() {
     settle(&mut guide);
     snap_tool_window(&mut guide, "appearance-window", "Appearance");
     click(&mut guide, "Export");
-    for label in ["Also save the session", "DPI", "Custom (pixels)", "Single column (3.25 in)", "Double column (6.75 in)", "Transparent background", "Render and save PNG...", "Render and save GIF..."] {
+    for label in ["Also save the session", "Image:", "Single image", "Panels", "DPI", "Custom (pixels)", "Single column (3.25 in)", "Double column (6.75 in)", "Transparent background", "Caption", "Render and save PNG...", "Render and save GIF..."] {
         sees(&guide, label);
     }
     settle(&mut guide);
     snap_tool_window(&mut guide, "export-window", "Export");
+}
+
+/// "Figures and videos", Panels: the OSLOs of ethane as a captioned grid.
+#[test]
+fn panels_of_orbitals() {
+    let mut guide = open_example("C2H6-OSLO-2CH3");
+    click(&mut guide, "Surfaces");
+    choose(&mut guide, "SCF orbitals", "OSLOs");
+    click(&mut guide, "Select all");
+    click(&mut guide, "Generate 9 orbital(s)");
+    frame(&mut guide, 0.45, 0.3, 0.75);
+    click(&mut guide, "Export");
+    click(&mut guide, "Panels");
+    for label in [
+        "Image:",
+        "Single image",
+        "Panels (9)",
+        "All surfaces",
+        "Captions",
+        "Full",
+        "Value and fragment",
+        "Text size:",
+        "Letters (a), (b), ...",
+        "Layout:",
+        "Automatic",
+        "Rows and columns",
+        "Panel shape:",
+        "Square",
+        "As the view",
+        "Gap:",
+        "Size:",
+        "Half page (3.25 in)",
+        "Full page (6.75 in)",
+        "Background:",
+        "White",
+        "Transparent",
+        "Render and save panels...",
+    ] {
+        sees(&guide, label);
+    }
+    assert!(guide.get_all(By::new().role(Role::ComboBox)).any(|n| n.value().as_deref() == Some("Add a panel")), "the Add a panel menu");
+    let captions = guide.state().panel_captions();
+    assert_eq!(captions[8], "OSLO 9 \u{b7} 1 CH3 + 2 CH3 \u{b7} FOLI 2.001");
+    click(&mut guide, "Value and fragment");
+    assert_eq!(guide.state().panel_captions()[8], "2.001 (CH3 + CH3)");
+    click(&mut guide, "Full");
+    // Only the Export window, so the picture shows it whole.
+    for window in ["Molecule", "Surfaces", "APOST-3D"] {
+        let ctx = guide.ctx.clone();
+        guide.state().set_window_collapsed(&ctx, window, true);
+    }
+    guide.run_steps(4);
+    assert!(guide.state().figure_preview_size().is_some(), "the preview is drawn");
+    settle(&mut guide);
+    snap_tool_window(&mut guide, "export-panels-window", "Export");
+    // The figure itself, as saved, scaled to the guide's width.
+    if let Some(dir) = images_dir() {
+        guide.state_mut().set_panel_figure(600, true, false);
+        let (w, h, pixels) = guide.state_mut().render_panel_figure().expect("the figure");
+        let image = image::RgbaImage::from_raw(w, h, pixels).unwrap();
+        let image = image::imageops::resize(&image, 1200, h * 1200 / w, image::imageops::FilterType::Lanczos3);
+        save(&dir, "panels-oslos", &image);
+    }
 }

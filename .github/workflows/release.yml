@@ -63,6 +63,7 @@ jobs:
           New-Item -ItemType Directory -Force $dir | Out-Null
           Copy-Item target/release/apost3dview.exe "$dir/APOST3Dview.exe"
           Copy-Item LICENSE "$dir/LICENSE.txt"
+          Copy-Item crates/render/assets/fonts/OFL.txt "$dir/Arimo-OFL.txt"
           Copy-Item -Recurse examples "$dir/examples"
           Copy-Item -Recurse docs/book "$dir/guide"
           Compress-Archive -Path $dir -DestinationPath "dist/APOST3Dview-windows.zip"

@@ -45,6 +45,12 @@ impl App {
                         .italics(),
                     );
                     ui.hyperlink_to("DOI: 10.1063/5.0206187", "https://doi.org/10.1063/5.0206187");
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new("Figure captions use the Arimo font, by the Arimo Project Authors, under the SIL Open Font License 1.1, whose text comes with the program as Arimo-OFL.txt.")
+                            .small()
+                            .weak(),
+                    );
                     ui.add_space(8.0);
                     ui.separator();
                     ui.add_space(8.0);

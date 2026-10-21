@@ -36,6 +36,8 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/APOST3Dview.icns"
 rm -rf "$iconset"
+# The license of the font figure captions are drawn with.
+cp crates/render/assets/fonts/OFL.txt "$app/Contents/Resources/Arimo-OFL.txt"
 
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --strict "$app"
