@@ -2,7 +2,9 @@
 # Refreshes examples/ from fixtures/, for when APOST-3D's reference results
 # change (above all when they are regenerated for schema 1.0 on APOST-3D's
 # release day). Run scripts/sync-apost3d-fixtures.sh first, then this, then
-# check the examples still open as examples/README.md describes and commit.
+# check the examples still open as the guide's tour describes (the tests
+# examples.rs and guide.rs do), regenerate its pictures if they changed
+# (scripts/guide-images.sh), and commit.
 #
 # Each example is one complete APOST-3D run folder: the input, the .fchk,
 # the text report, the results file and, where the analysis writes them,

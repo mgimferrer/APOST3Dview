@@ -1,6 +1,7 @@
 //! The committed examples (`examples/`): each opens from its results file
-//! with nothing to warn about, and shows what `examples/README.md` tells a
-//! new user to look at.
+//! with nothing to warn about, and shows what the user guide's five-minute
+//! tour (`docs/src/tour.md`, followed step by step by `tests/guide.rs`)
+//! tells a new user to look at.
 
 mod common;
 
@@ -18,7 +19,7 @@ fn open(job: &str) -> egui_kittest::Harness<'static, apost3dview::App> {
 }
 
 /// Opens the menu currently showing `value`, checks it offers every one of
-/// `options` (the names examples/README.md uses), and closes it again.
+/// `options` (the names the guide uses), and closes it again.
 fn menu_offers(harness: &mut egui_kittest::Harness<'_, apost3dview::App>, value: &str, options: &[&str]) {
     harness
         .get_all(By::new().role(egui::accesskit::Role::ComboBox))
