@@ -168,6 +168,16 @@ impl App {
                 set.selected_alpha.clear();
                 set.selected_beta.clear();
             }
+            // The frontier EFOs (APOST-3D 0.15 on): the ones that set R.
+            if let Some(frontier) = set.set.frontier.clone().filter(|f| !f.is_empty())
+                && ui
+                    .button("Frontier")
+                    .on_hover_text("The last occupied (LO) and first unoccupied (FU) EFOs: the ones that set the reliability index R (all of them, when several are degenerate)")
+                    .clicked()
+            {
+                set.selected_alpha = frontier.iter().filter(|f| !f.beta).map(|f| f.index).collect();
+                set.selected_beta = frontier.iter().filter(|f| f.beta).map(|f| f.index).collect();
+            }
         });
         let has_beta = set.labels(true).iter().any(Option::is_some);
         let list_height = if has_beta { 110.0 } else { 160.0 };

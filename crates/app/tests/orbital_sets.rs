@@ -133,6 +133,43 @@ fn geos_sets_name_paired_unpaired_and_negative_efos() {
     assert_eq!(harness.get_all_by_label("Draw").count(), 2);
 }
 
+/// Schema 0.15: Frontier ticks the frontier EFOs, the last occupied (LO)
+/// and first unoccupied (FU) ones that set R (also marked LO and FU in the
+/// list; those rows are scrolled out of sight here). CH3F
+/// GEOS: one LO (F, paired) and one FU (CH3), no unpaired electrons.
+#[test]
+fn frontier_ticks_the_lo_and_fu_efos() {
+    let dir = example("CH3F-GEOS");
+    let mut harness = app_with(vec![dir.join("CH3F-GEOS.apost.json")]);
+    harness.get_by_label("Surfaces").click_accesskit();
+    harness.run_steps(2);
+    choose_orbitals(&mut harness, "GEOS EFOs");
+    harness.get_by_label("Frontier").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("Generate 2 orbital(s)").click_accesskit();
+    harness.run_steps(4);
+    let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
+    assert_eq!(labels, vec!["EFO 9 paired \u{b7} 1 F", "EFO 10 paired \u{b7} 2 CH3"]);
+}
+
+/// Degenerate frontier EFOs all count: FeCO2's two CO fragments share the
+/// LO occupation (rows 25 and 26), Fe has the FU (row 27).
+#[test]
+fn degenerate_frontier_efos_are_all_ticked() {
+    let Some(dir) = orbital_fixtures() else { return };
+    let mut harness = app_with(vec![dir.join("FeCO2-PBEPBE.apost.json")]);
+    harness.get_by_label("Surfaces").click_accesskit();
+    harness.run_steps(2);
+    choose_orbitals(&mut harness, "EOS EFOs");
+    if harness.query_by_label("Frontier").is_none() {
+        eprintln!("fixtures/apost3d-orbitals/ predate APOST-3D 0.15: no frontier EFOs");
+        return;
+    }
+    harness.get_by_label("Frontier").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("Generate 3 orbital(s)");
+}
+
 #[test]
 fn a_closed_shell_eos_set_says_beta_equals_alpha() {
     let Some(dir) = orbital_fixtures() else { return };

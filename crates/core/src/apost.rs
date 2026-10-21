@@ -462,6 +462,51 @@ pub struct OrbitalSet {
     /// Why there are no beta orbitals, when the file says so: "same as
     /// alpha" (closed shell) or "no beta electrons".
     pub beta_note: Option<String>,
+    /// The frontier EFOs, the last occupied (LO) and first unoccupied (FU)
+    /// EFOs that set the reliability index R, as orbitals of the file
+    /// (since 0.15, `frontier_efos` of each EOS/GEOS channel); `None` for
+    /// OSLOs and for files written before.
+    pub frontier: Option<Vec<FrontierOrbital>>,
+}
+
+/// One frontier EFO, as an orbital of the analysis' orbital file.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrontierOrbital {
+    /// In the file's beta block (EOS beta, GEOS unpaired).
+    pub beta: bool,
+    /// 0-based orbital of that block (`.fchk` column - 1).
+    pub index: usize,
+    pub kind: FrontierKind,
+    pub occupation: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrontierKind {
+    LastOccupied,
+    FirstUnoccupied,
+}
+
+/// `frontier_efos` of one EOS/GEOS channel (since 0.15): the EFOs that set
+/// R. `last_occupied` holds the fragments' last occupied EFOs within the
+/// threshold of the smallest (λ_LO), `first_unoccupied` the other
+/// fragments' first unoccupied ones within it of the largest (λ_FU), so
+/// degenerate EFOs all appear; either list may be empty.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct FrontierEfos {
+    #[serde(default)]
+    pub last_occupied: Vec<FrontierEfo>,
+    #[serde(default)]
+    pub first_unoccupied: Vec<FrontierEfo>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FrontierEfo {
+    /// 1-based row of the channel's `efos` table.
+    pub efo_row: usize,
+    /// 1-based fragment number.
+    pub fragment: u32,
+    /// The gross occupation, as in the frontier table.
+    pub occupation: f64,
 }
 
 /// What an analysis orbital is.
@@ -521,6 +566,13 @@ impl ApostResults {
     /// of their orbitals (brief 04's mapping): EOS alpha/beta EFOs, GEOS
     /// paired EFOs (then the negative ones) as alpha and unpaired as beta,
     /// OSLO total or alpha OSLOs as alpha and beta OSLOs as beta.
+    /// `frontier_efos` of an EOS/GEOS channel ("alpha", "beta", "paired",
+    /// "unpaired"), when the file has it (since 0.15).
+    pub fn frontier_efos(&self, analysis: &str, channel: &str) -> Option<FrontierEfos> {
+        let value = self.raw.pointer(&format!("/analyses/{analysis}/{channel}/frontier_efos"))?;
+        serde_json::from_value(value.clone()).ok()
+    }
+
     pub fn orbital_sets(&self) -> Vec<OrbitalSet> {
         let mut sets = Vec::new();
         for analysis in ["eos", "geos", "oslo"] {
@@ -528,7 +580,7 @@ impl ApostResults {
             let Some(block) = self.raw.pointer(&base) else { continue };
             let Some(file) = block.get("orbital_file").and_then(Value::as_str) else { continue };
             let file_id = block.get("orbital_file_id").and_then(Value::as_str).map(str::to_string);
-            let mut set = OrbitalSet { analysis: analysis.to_string(), preortho: false, file: file.to_string(), file_id, alpha: Vec::new(), beta: Vec::new(), beta_note: None };
+            let mut set = OrbitalSet { analysis: analysis.to_string(), preortho: false, file: file.to_string(), file_id, alpha: Vec::new(), beta: Vec::new(), beta_note: None, frontier: None };
             let beta = block.get("beta");
             if beta.and_then(|b| b.get("same_as_alpha")).and_then(Value::as_bool) == Some(true) {
                 set.beta_note = Some("The \u{3b2} orbitals are the same as the \u{3b1} ones.".to_string());
@@ -567,6 +619,23 @@ impl ApostResults {
                         labels.resize(index, None);
                     }
                     labels[index - 1] = Some(OrbitalLabel { fragments, shares, detail });
+                }
+            }
+            // The frontier EFOs of each channel, through the row of the
+            // channel's EFO table they name.
+            for channel in ["alpha", "beta", "paired", "unpaired"] {
+                let Some(frontier) = self.frontier_efos(analysis, channel) else { continue };
+                let Some(table) = block.pointer(&format!("/{channel}/efos")).and_then(|t| serde_json::from_value::<TableObject>(t.clone()).ok()) else { continue };
+                let beta = table.fchk_orbitals.as_deref() == Some("beta");
+                let orbitals = set.frontier.get_or_insert_with(Vec::new);
+                let lists = [(FrontierKind::LastOccupied, &frontier.last_occupied), (FrontierKind::FirstUnoccupied, &frontier.first_unoccupied)];
+                for (kind, list) in lists {
+                    for efo in list {
+                        let Some(column) = efo.efo_row.checked_sub(1).and_then(|row| table.number("fchk_column", row)) else { continue };
+                        if column >= 1.0 {
+                            orbitals.push(FrontierOrbital { beta, index: column as usize - 1, kind, occupation: efo.occupation });
+                        }
+                    }
                 }
             }
             // The same OSLOs before orthogonalization, labeled alike.

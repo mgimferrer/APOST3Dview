@@ -7,7 +7,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use apost3dview_core::{check_orbital_file, check_orbital_file_id, orbital_file_run_id, parse_fchk_summary, parse_fchk_wavefunction, ApostResults, Molecule, OrbitalDetail, OrbitalLabel, OrbitalSet, Wavefunction};
+use apost3dview_core::{check_orbital_file, check_orbital_file_id, orbital_file_run_id, parse_fchk_summary, parse_fchk_wavefunction, ApostResults, FrontierKind, Molecule, OrbitalDetail, OrbitalLabel, OrbitalSet, Wavefunction};
 use egui::RichText;
 use glam::Vec3;
 
@@ -155,6 +155,12 @@ pub(crate) fn fragment_tint(results: &ApostResults, molecule: &Molecule, label: 
         .collect()
 }
 
+/// Whether orbital `index` of the set's `beta` (or alpha) block is a
+/// frontier EFO, and which.
+fn frontier_kind(set: &OrbitalSet, beta: bool, index: usize) -> Option<FrontierKind> {
+    set.frontier.as_ref()?.iter().find(|f| f.beta == beta && f.index == index).map(|f| f.kind)
+}
+
 /// The tick-box list of one channel of a set: only the orbitals the tables
 /// describe, each with its fragment colors, name and numbers.
 pub(crate) fn show_set_checklist(ui: &mut egui::Ui, set: &mut LoadedOrbitalSet, beta: bool, results: &ApostResults, molecule: &Molecule, height: f32) {
@@ -186,6 +192,13 @@ pub(crate) fn show_set_checklist(ui: &mut egui::Ui, set: &mut LoadedOrbitalSet, 
                 let text = format!("{}  {}", names[k], fragments_text(results, molecule, label));
                 ui.label(if negative { RichText::new(text).italics() } else { RichText::new(text) });
                 ui.label(RichText::new(detail_text(label)).small().weak());
+                if let Some(kind) = frontier_kind(&set.set, beta, *index) {
+                    let (tag, meaning) = match kind {
+                        FrontierKind::LastOccupied => ("LO", "The last occupied EFO (LO), one of the two that set the reliability index R"),
+                        FrontierKind::FirstUnoccupied => ("FU", "The first unoccupied EFO (FU), one of the two that set the reliability index R"),
+                    };
+                    ui.label(RichText::new(tag).small().strong()).on_hover_text(meaning);
+                }
                 if let Some(note) = approximate_note(label) {
                     ui.label(RichText::new("approximate").small().color(ui.visuals().warn_fg_color)).on_hover_text(note);
                 }

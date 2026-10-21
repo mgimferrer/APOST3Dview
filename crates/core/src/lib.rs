@@ -23,7 +23,7 @@ pub mod xyz;
 
 pub use apost::{
     check_against_fchk, check_orbital_file, check_orbital_file_id, orbital_file_run_id, find_results_for, fragment_coverage, fragment_of_atom, is_results_file, load_apost_results, parse_apost_results,
-    report_path_for, results_path_for, wavefunction_path_for, ApostResults, Enpart, EnpartFunctional, Fragment, FunctionalComponent, TwoElectronIntegration, ENPART_TERMS, FragmentCoverage, IndexEntry, MatrixObject, OrbitalDetail, OrbitalLabel, OrbitalSet,
+    report_path_for, results_path_for, wavefunction_path_for, ApostResults, Enpart, EnpartFunctional, Fragment, FunctionalComponent, TwoElectronIntegration, ENPART_TERMS, FragmentCoverage, FrontierEfo, FrontierEfos, FrontierKind, FrontierOrbital, IndexEntry, MatrixObject, OrbitalDetail, OrbitalLabel, OrbitalSet,
     Quantity, QuantityKind, TableCell, TableColumn, TableObject,
 };
 pub use apost_input::{read_apost_input, read_fchk_facts, AimScheme, ApostInput, DmFiles, EnpartMethod, EnpartOptions, FchkFacts, FchkProgram, OxidationStates, ReadInput, ENPART_FUNCTIONALS};

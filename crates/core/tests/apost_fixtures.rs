@@ -338,6 +338,73 @@ fn orbital_tables_share_one_form() {
     assert!(tables > 0 && effao > 0, "{tables} orbital tables, {effao} EFFAO");
 }
 
+/// Schema 0.15: `frontier_efos` of every EOS/GEOS channel names the EFOs
+/// that set R: R follows from λ_LO = the smallest last occupied and λ_FU =
+/// the largest first unoccupied (paired GEOS occupations run to 2), every
+/// row is in the channel's EFO table and belongs to its fragment, and each
+/// occupation is that fragment's in the frontier table. FeCO2-PBEPBE alpha
+/// as in APOST-3D's brief: two degenerate CO, R 96.598.
+#[test]
+fn frontier_efos_set_the_reliability_index() {
+    use apost3dview_core::{FrontierKind, TableObject};
+    let dirs: Vec<PathBuf> = [fixtures_dir(), orbital_fixtures_dir()].into_iter().flatten().collect();
+    let mut channels = 0;
+    for dir in &dirs {
+        for json in std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.to_string_lossy().ends_with(".apost.json")) {
+            let name = json.file_name().unwrap().to_string_lossy().into_owned();
+            let results = load_apost_results(&json).unwrap();
+            let raw: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+            for (analysis, channel) in [("eos", "alpha"), ("eos", "beta"), ("geos", "paired"), ("geos", "unpaired")] {
+                let Some(frontier) = results.frontier_efos(analysis, channel) else { continue };
+                channels += 1;
+                let base = format!("/analyses/{analysis}/{channel}");
+                let full = if channel == "paired" { 2.0 } else { 1.0 };
+                let lo = frontier.last_occupied.iter().map(|e| e.occupation).fold(full, f64::min);
+                let fu = frontier.first_unoccupied.iter().map(|e| e.occupation).fold(0.0, f64::max);
+                let r = 100.0 * (1.0f64).min(((lo - fu) / full + 0.5).max(0.0));
+                let stored = raw.pointer(&format!("{base}/reliability_percent")).and_then(|v| v.as_f64()).unwrap();
+                assert!((r - stored).abs() < 1e-3, "{name} {analysis} {channel}: R {r} from the frontier EFOs, {stored} stored");
+                let table = |key: &str| serde_json::from_value::<TableObject>(raw.pointer(&format!("{base}/{key}")).unwrap().clone()).unwrap();
+                let (efos, per_fragment) = (table("efos"), table("frontier"));
+                for (column, list) in [("last_occupied", &frontier.last_occupied), ("first_unoccupied", &frontier.first_unoccupied)] {
+                    for efo in list {
+                        let row = efo.efo_row - 1;
+                        assert!(row < efos.n_rows, "{name} {base}: row {}", efo.efo_row);
+                        assert!(efos.numbers("fragments", row).unwrap().contains(&(efo.fragment as f64)), "{name} {base}: row {} isn't of fragment {}", efo.efo_row, efo.fragment);
+                        let own = per_fragment.number(column, efo.fragment as usize - 1).unwrap();
+                        assert!((own - efo.occupation).abs() < 1e-9, "{name} {base} {column}: {} vs {own}", efo.occupation);
+                    }
+                }
+            }
+            // The orbital sets carry them as orbitals of the file.
+            for set in results.orbital_sets().iter().filter(|s| s.analysis != "oslo") {
+                if let Some(frontier) = &set.frontier {
+                    for f in frontier {
+                        let labels = if f.beta { &set.beta } else { &set.alpha };
+                        assert!(labels.get(f.index).is_some_and(Option::is_some), "{name}: frontier orbital {f:?} has no label");
+                    }
+                }
+            }
+            // (The reference runs copied from the pinned commit may predate
+            // 0.15; the orbital cases are at 0.15.)
+            if name == "FeCO2-PBEPBE.apost.json"
+                && let Some(alpha) = results.frontier_efos("eos", "alpha")
+            {
+                let rows = |l: &[apost3dview_core::FrontierEfo]| l.iter().map(|e| (e.efo_row, e.fragment)).collect::<Vec<_>>();
+                assert_eq!(rows(&alpha.last_occupied), vec![(25, 2), (26, 3)]);
+                assert_eq!(rows(&alpha.first_unoccupied), vec![(27, 1)]);
+                assert!(results.frontier_efos("eos", "beta").is_none(), "closed shell: beta is the same as alpha");
+                let set = results.orbital_sets().into_iter().find(|s| s.analysis == "eos").unwrap();
+                let kinds: Vec<FrontierKind> = set.frontier.unwrap().iter().map(|f| f.kind).collect();
+                assert_eq!(kinds, vec![FrontierKind::LastOccupied, FrontierKind::LastOccupied, FrontierKind::FirstUnoccupied]);
+            }
+        }
+    }
+    if orbital_fixtures_dir().is_some() {
+        assert!(channels > 0, "no results file with frontier_efos (APOST-3D 0.15)");
+    }
+}
+
 /// ENPART (0.10, 0.11): every term matrix adds up by its rule, the IQA
 /// matrix to the total energy, the additive energies too; the classical
 /// interaction is total minus xc off the diagonal; exchange + correlation
