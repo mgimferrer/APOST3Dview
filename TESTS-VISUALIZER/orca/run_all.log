@@ -1,0 +1,15 @@
+Using /opt_global/software/orca_6_1_1_linux_x86-64_shared_openmpi418_nodmrg/orca
+Cores per job: 48; memory per core: 3000 MB
+== BiCl3-ORCA-def2TZVPP
+   done: BiCl3-ORCA-def2TZVPP.molden, 2 cube file(s)
+== H2O-ORCA-CAS44-def2SVP
+   done: H2O-ORCA-CAS44-def2SVP.molden, 3 cube file(s)
+== H2O-ORCA-ccpVQZ
+   done: H2O-ORCA-ccpVQZ.molden, 2 cube file(s)
+== H2O-ORCA-ccpVTZ
+   done: H2O-ORCA-ccpVTZ.molden, 2 cube file(s)
+== H2O-ORCA-def2SVP
+   done: H2O-ORCA-def2SVP.molden, 2 cube file(s)
+== O2-ORCA-T-ccpVTZ
+   done: O2-ORCA-T-ccpVTZ.molden, 4 cube file(s)
+All jobs done.

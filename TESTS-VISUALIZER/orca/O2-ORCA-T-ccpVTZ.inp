@@ -1,0 +1,18 @@
+# O2-ORCA-T-ccpVTZ: see README.md (ORCA orbital check for APOST3Dview)
+! UHF cc-pVTZ TightSCF
+%pal nprocs 48 end
+%maxcore 3000
+%plots
+  Format Gaussian_Cube
+  dim1 80
+  dim2 80
+  dim3 80
+  MO("O2-ORCA-T-ccpVTZ-MO8.cube", 8, 0);
+  MO("O2-ORCA-T-ccpVTZ-MO9.cube", 9, 0);
+  MO("O2-ORCA-T-ccpVTZ-MO6b.cube", 6, 1);
+  MO("O2-ORCA-T-ccpVTZ-MO7b.cube", 7, 1);
+end
+* xyz 0 3
+O      0.00000000     0.00000000     0.60350000
+O      0.00000000     0.00000000    -0.60350000
+*

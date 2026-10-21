@@ -1,0 +1,23 @@
+$molecule
+0 1
+O    0.000000    0.000000    0.119209
+H    0.000000    0.759337   -0.476836
+H    0.000000   -0.759337   -0.476836
+$end
+
+$rem
+   JOBTYPE          SP
+   METHOD           HF
+   BASIS            cc-pVQZ
+   SCF_CONVERGENCE  10
+   GUI              2
+   SYM_IGNORE       TRUE
+   PLOTS            TRUE
+   MAKE_CUBE_FILES  TRUE
+$end
+
+$plots
+   grid_range   (-4,4) (-4,4) (-4,4)
+   grid_points  60 60 60
+   alpha_molecular_orbital  5-6
+$end

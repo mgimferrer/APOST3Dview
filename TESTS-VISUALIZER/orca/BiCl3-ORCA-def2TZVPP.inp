@@ -1,0 +1,18 @@
+# BiCl3-ORCA-def2TZVPP: see README.md (ORCA orbital check for APOST3Dview)
+! RHF def2-TZVPP TightSCF
+%pal nprocs 48 end
+%maxcore 3000
+%plots
+  Format Gaussian_Cube
+  dim1 80
+  dim2 80
+  dim3 80
+  MO("BiCl3-ORCA-def2TZVPP-MO36.cube", 36, 0);
+  MO("BiCl3-ORCA-def2TZVPP-MO37.cube", 37, 0);
+end
+* xyz 0 1
+Bi     0.00000000    -0.00000000     0.44597335
+Cl     0.00000000     2.15662716    -0.72579977
+Cl     1.86769391    -1.07831358    -0.72579977
+Cl    -1.86769391    -1.07831358    -0.72579977
+*

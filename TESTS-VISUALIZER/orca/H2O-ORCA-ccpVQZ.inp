@@ -1,0 +1,17 @@
+# H2O-ORCA-ccpVQZ: see README.md (ORCA orbital check for APOST3Dview)
+! RHF cc-pVQZ TightSCF
+%pal nprocs 48 end
+%maxcore 3000
+%plots
+  Format Gaussian_Cube
+  dim1 80
+  dim2 80
+  dim3 80
+  MO("H2O-ORCA-ccpVQZ-MO4.cube", 4, 0);
+  MO("H2O-ORCA-ccpVQZ-MO5.cube", 5, 0);
+end
+* xyz 0 1
+O     -0.00000000     0.00000000     0.11920860
+H      0.00000000     0.75933700    -0.47683440
+H     -0.00000000    -0.75933700    -0.47683440
+*
