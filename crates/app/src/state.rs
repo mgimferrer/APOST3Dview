@@ -131,6 +131,9 @@ pub(crate) struct LoadedStructure {
     pub(crate) active_orbital_set: usize,
     /// A new APOST-3D input being prepared for this `.fchk`.
     pub(crate) input_draft: Option<crate::input_generator::InputDraft>,
+    /// The view this structure was left with, given back when it becomes
+    /// the active one again (`App::view_for`); `None` before.
+    pub(crate) view: Option<apost3dview_render::OrbitCamera>,
 }
 
 impl LoadedStructure {
@@ -161,6 +164,7 @@ impl LoadedStructure {
             orbital_sets: Vec::new(),
             active_orbital_set: 0,
             input_draft: None,
+            view: None,
         }
     }
 

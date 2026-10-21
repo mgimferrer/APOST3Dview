@@ -7,7 +7,9 @@ use apost3dview_core::{generate_density_grid, generate_mo_grids, ApostResults, M
 use crate::app::App;
 use crate::isosurfaces::{density_settings, Surface, SurfaceSettings, SurfaceSource};
 use crate::natural::{Densities, NaturalOrbitals};
+use crate::names::fragment_formula_by_id;
 use crate::orbital_sets::{approximate_note, fragment_tint, LoadedOrbitalSet};
+use crate::panels::CaptionFacts;
 use crate::state::LoadedStructure;
 
 /// One spin channel's tick-box list in the "Generate orbitals" section —
@@ -209,10 +211,20 @@ pub(crate) fn orbital_surfaces(
             };
             let source = SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set };
             let mut surface = Surface::new(label, grid, settings, source);
-            if let OrbitalNames::Set(c) = &names {
-                let label = c.set.labels(choice.beta).get(choice.mo_index).and_then(Option::as_ref);
-                surface.fragment_tint = label.map(|l| fragment_tint(c.results, c.molecule, l));
-                surface.note = label.and_then(approximate_note);
+            match &names {
+                OrbitalNames::Set(c) => {
+                    let label = c.set.labels(choice.beta).get(choice.mo_index).and_then(Option::as_ref);
+                    surface.fragment_tint = label.map(|l| fragment_tint(c.results, c.molecule, l));
+                    surface.note = label.and_then(approximate_note);
+                    surface.caption_facts = label.map(|l| {
+                        let formulas = l.fragments.iter().map(|&f| fragment_formula_by_id(c.results, &c.molecule.atomic_numbers, f)).collect::<Vec<_>>().join(" + ");
+                        CaptionFacts::of_set_orbital(l, formulas)
+                    });
+                }
+                OrbitalNames::Natural(n) => {
+                    surface.caption_facts = n.orbitals.alpha.occupations.get(choice.mo_index).map(|&o| CaptionFacts::of_natural_orbital(o));
+                }
+                OrbitalNames::Scf => {}
             }
             surface
         })

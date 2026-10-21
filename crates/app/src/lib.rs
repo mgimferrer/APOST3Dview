@@ -15,6 +15,7 @@ mod names;
 mod natural;
 mod orbital_sets;
 mod orbitals;
+mod panels;
 mod presets;
 mod results;
 mod results_display;

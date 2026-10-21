@@ -52,6 +52,57 @@ struct SessionFile {
     color_ranges: BTreeMap<String, ColorScale>,
     #[serde(default)]
     structures: Vec<StructureState>,
+    /// The Export window's figure: panels, captions, layout (sessions
+    /// before panels have none, and get the defaults).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    figure: Option<FigureState>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FigureState {
+    settings: crate::panels::FigureSettings,
+    #[serde(default)]
+    panels: Vec<PanelState>,
+}
+
+/// A panel: a structure (1-based position in `structures`), the surface
+/// shown alone in it (absent: the structure as shown), its own caption
+/// (absent: automatic).
+#[derive(Serialize, Deserialize)]
+struct PanelState {
+    structure: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    surface: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    caption: String,
+}
+
+/// A camera: what it looks at, from how far, turned how.
+#[derive(Serialize, Deserialize, Clone, Copy)]
+struct CameraState {
+    target: [f32; 3],
+    distance: f32,
+    /// Quaternion, x y z w.
+    orientation: [f32; 4],
+}
+
+impl CameraState {
+    fn of(camera: &apost3dview_render::OrbitCamera) -> Self {
+        Self { target: camera.target.to_array(), distance: camera.distance, orientation: camera.orientation.to_array() }
+    }
+
+    /// `base` (field of view, clipping) turned and placed as saved.
+    fn apply(&self, base: &apost3dview_render::OrbitCamera) -> apost3dview_render::OrbitCamera {
+        let mut camera = *base;
+        camera.target = Vec3::from_array(self.target);
+        camera.distance = self.distance;
+        // Kept exactly as saved (re-normalizing would shift it by a
+        // rounding error and the picture by a pixel); only a damaged value
+        // is fixed.
+        let orientation = Quat::from_array(self.orientation);
+        camera.orientation = if orientation.is_normalized() { orientation } else { orientation.normalize() };
+        camera
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -63,6 +114,9 @@ struct ViewState {
     /// Screen direction of auto-spin and of the GIF turn.
     spin_direction: [f32; 2],
     spin_speed: f32,
+    /// "Keep the view when switching structures".
+    #[serde(default)]
+    keep_view: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -120,6 +174,9 @@ struct StructureState {
     measurements: Vec<MeasurementState>,
     #[serde(default)]
     surfaces: Vec<SurfaceState>,
+    /// The view this structure was left with, when it isn't the active one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    view: Option<CameraState>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -294,9 +351,33 @@ impl App {
                         .map(|m| MeasurementState { atoms: m.kind.atoms().iter().map(|a| a + 1).collect(), label_offset: [m.label_offset.x, m.label_offset.y] })
                         .collect(),
                     surfaces,
+                    view: structure.view.as_ref().map(CameraState::of),
                 })
             })
             .collect();
+        // Structures are saved only when they come from a file: their
+        // positions in the session, for the panels.
+        let positions: Vec<Option<usize>> = self
+            .structures
+            .iter()
+            .scan(0, |next, s| {
+                Some(s.source_path.as_ref().map(|_| {
+                    *next += 1;
+                    *next
+                }))
+            })
+            .collect();
+        let figure = &self.render_export.figure;
+        let figure = FigureState {
+            settings: figure.settings.clone(),
+            panels: figure
+                .panels
+                .iter()
+                .filter_map(|p| {
+                    Some(PanelState { structure: (*positions.get(p.structure)?)?, surface: p.surface.clone(), caption: p.caption.clone() })
+                })
+                .collect(),
+        };
 
         let camera = &self.camera;
         SessionFile {
@@ -310,6 +391,7 @@ impl App {
                 camera_orientation: camera.orientation.to_array(),
                 spin_direction: self.spin_direction.to_array(),
                 spin_speed: self.auto_spin_speed,
+                keep_view: self.keep_view,
             },
             appearance: AppearanceState {
                 ambient_occlusion: self.ao_enabled,
@@ -330,6 +412,7 @@ impl App {
             },
             color_ranges: self.color_ranges.clone(),
             structures,
+            figure: Some(figure),
         }
     }
 
@@ -436,12 +519,33 @@ impl App {
             self.set_active(active);
         }
         let view = &session.view;
-        self.camera.target = Vec3::from_array(view.camera_target);
-        self.camera.distance = view.camera_distance;
-        // Kept exactly as saved (re-normalizing would shift it by a rounding
-        // error and the picture by a pixel); only a damaged value is fixed.
-        let orientation = Quat::from_array(view.camera_orientation);
-        self.camera.orientation = if orientation.is_normalized() { orientation } else { orientation.normalize() };
+        let saved = CameraState { target: view.camera_target, distance: view.camera_distance, orientation: view.camera_orientation };
+        self.camera = saved.apply(&self.camera);
+        self.keep_view = view.keep_view;
+        for (position, state) in session.structures.iter().enumerate() {
+            if let (Some(&index), Some(camera)) = (opened.get(&position), &state.view) {
+                self.structures[index].view = Some(camera.apply(&self.camera));
+            }
+        }
+        let figure = &mut self.render_export.figure;
+        figure.preview = Default::default();
+        match &session.figure {
+            Some(state) => {
+                figure.settings = state.settings.clone();
+                figure.panels = state
+                    .panels
+                    .iter()
+                    .filter_map(|p| {
+                        let index = *opened.get(&p.structure.checked_sub(1)?)?;
+                        Some(crate::panels::Panel { structure: index, surface: p.surface.clone(), caption: p.caption.clone() })
+                    })
+                    .collect();
+            }
+            None => {
+                figure.settings = Default::default();
+                figure.panels.clear();
+            }
+        }
         self.spin_direction = Vec2::from_array(view.spin_direction).normalize_or(Vec2::X);
         self.auto_spin_speed = view.spin_speed;
         self.rebuild_measurements();

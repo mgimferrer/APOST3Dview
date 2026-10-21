@@ -62,7 +62,7 @@ impl App {
         self.rebuild_geometry();
     }
 
-    fn rebuild_results_display(&mut self) {
+    pub(crate) fn rebuild_results_display(&mut self) {
         let atom_scale = self.material.atom_scale;
         let mut vertices = Vec::new();
         let mut ranges = Vec::new();

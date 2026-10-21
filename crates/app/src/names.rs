@@ -17,6 +17,17 @@ pub(crate) fn fragment_name(fragment: &Fragment, atomic_numbers: &[u32]) -> Stri
     format!("{} {}", fragment.id, hill_formula(fragment.atoms.iter().filter_map(|&a| atomic_numbers.get(a - 1).copied())))
 }
 
+/// "CH3": a fragment's formula alone, from its id (the bare id if the
+/// run has no such fragment).
+pub(crate) fn fragment_formula_by_id(results: &ApostResults, atomic_numbers: &[u32], id: u32) -> String {
+    results
+        .fragments()
+        .iter()
+        .find(|f| f.id == id)
+        .map(|f| hill_formula(f.atoms.iter().filter_map(|&a| atomic_numbers.get(a - 1).copied())))
+        .unwrap_or_else(|| id.to_string())
+}
+
 /// The same from a fragment id (the bare id if the run has no such
 /// fragment).
 pub(crate) fn fragment_name_by_id(results: &ApostResults, atomic_numbers: &[u32], id: u32) -> String {

@@ -37,7 +37,7 @@ pub(crate) const TRANSLUCENT_ORBITAL_OPACITY: f32 = 0.5;
 pub(crate) const TRANSLUCENT_DENSITY_OPACITY: f32 = 0.35;
 
 /// How a surface is drawn: everything about it except its data.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct SurfaceSettings {
     pub(crate) isovalue: f32,
     /// 1x/2x/3x — see `apost3dview_core::refine_grid`.
@@ -132,6 +132,9 @@ pub(crate) struct Surface {
     /// A caveat shown with the surface's settings (an EFO whose orbital in
     /// the `.fchk` is only an approximate fit).
     pub(crate) note: Option<String>,
+    /// What a figure caption says beside its name (`panels.rs`), for
+    /// analysis and natural orbitals.
+    pub(crate) caption_facts: Option<crate::panels::CaptionFacts>,
     positive: Option<IsosurfaceMesh>,
     negative: Option<IsosurfaceMesh>,
     /// What `positive`/`negative` were extracted with; `None` before the
@@ -141,7 +144,7 @@ pub(crate) struct Surface {
 
 impl Surface {
     pub(crate) fn new(label: String, grid: ScalarGrid, settings: SurfaceSettings, source: SurfaceSource) -> Self {
-        Self { label, source, grid, visible: false, settings, fragment_tint: None, note: None, positive: None, negative: None, extracted_with: None }
+        Self { label, source, grid, visible: false, settings, fragment_tint: None, note: None, caption_facts: None, positive: None, negative: None, extracted_with: None }
     }
 
     /// A total or spin density, which has its own defaults
@@ -310,6 +313,16 @@ impl App {
         }
         if changed {
             self.rebuild_isosurface();
+        }
+    }
+
+    /// Extracts the shown surfaces of structure `index` whose meshes are
+    /// out of date, at once (an export can't wait for the next frame).
+    pub(crate) fn extract_shown_surfaces(&mut self, index: usize) {
+        if let Some(structure) = self.structures.get_mut(index) {
+            for surface in structure.surfaces.iter_mut().filter(|s| s.needs_extraction()) {
+                surface.extract();
+            }
         }
     }
 

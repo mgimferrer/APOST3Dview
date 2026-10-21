@@ -15,7 +15,6 @@ use crate::isosurfaces::SurfaceSettings;
 use crate::orbitals::OrbitalGenerationState;
 use crate::presets::list_style_presets;
 use crate::state::{AtomLabelMode, AtomLabelStyle, LoadedStructure, MeasurementStyle};
-use crate::util::molecules_share_geometry;
 use crate::windows::ToolWindow;
 use crate::viewport::DEFAULT_AUTO_SPIN_SPEED;
 
@@ -188,6 +187,10 @@ pub struct App {
     pub(crate) session_path: Option<PathBuf>,
     /// The window title last sent, to send it again only when it changes.
     shown_title: String,
+    /// "Keep the view when switching structures": the next structure is
+    /// seen with the same orientation and zoom, centered on it (see
+    /// `view_for`).
+    pub(crate) keep_view: bool,
 }
 
 impl App {
@@ -268,6 +271,7 @@ impl App {
             results_signature: String::new(),
             session_path: None,
             shown_title: String::new(),
+            keep_view: false,
         }
     }
 
@@ -405,30 +409,20 @@ impl App {
         self.rebuild_highlights();
     }
 
-    /// Switches the active structure. Re-frames the camera on it —
-    /// different opened files can be wildly different sizes/positions
-    /// (this is the main reason .xyz support exists: comparing unrelated
-    /// structures side by side) — *unless* the structure being switched
-    /// away from and the one being switched to share the same geometry
-    /// (the same molecule opened from two files), in which case reframing
-    /// on every switch would be an annoying reset of a view you just set
-    /// up. Surfaces not extracted yet are extracted on the next frame (see
-    /// `update_surfaces`).
+    /// Switches the active structure, with the view `view_for` gives it:
+    /// unchanged for the same geometry (the same molecule opened from two
+    /// files), the same orientation and zoom with "Keep the view", the
+    /// view it was left with, or else framed on it (opened files can be
+    /// wildly different sizes and positions). The structure left keeps
+    /// its view for when it comes back. Surfaces not extracted yet are
+    /// extracted on the next frame (see `update_surfaces`).
     pub(crate) fn set_active(&mut self, index: usize) {
-        let should_reframe = match (self.active_structure.and_then(|p| self.structures.get(p)), self.structures.get(index)) {
-            (Some(previous), Some(next)) => !molecules_share_geometry(&previous.molecule, &next.molecule),
-            _ => true,
-        };
-
-        self.active_structure = Some(index);
-        if should_reframe
-            && let Some(structure) = self.structures.get(index)
-        {
-            let (center, radius) = structure.molecule.bounding_sphere();
-            // Room for fragment envelopes and the values beside them.
-            let has_fragments = structure.apost.as_ref().and_then(|a| a.results.as_ref().ok()).is_some_and(|r| !r.fragments().is_empty());
-            self.camera.frame_bounds(center, if has_fragments { radius + 2.2 } else { radius });
+        let camera = self.view_for(index);
+        if let Some(previous) = self.active_structure.and_then(|p| self.structures.get_mut(p)) {
+            previous.view = Some(self.camera);
         }
+        self.active_structure = Some(index);
+        self.camera = camera;
         self.rebuild_geometry();
         self.rebuild_highlights();
         self.rebuild_measurements();
@@ -507,6 +501,7 @@ impl App {
             return;
         }
         self.structures.remove(index);
+        self.forget_structure_panels(index);
         match self.active_structure {
             Some(active) if active == index => {
                 self.active_structure = None;
@@ -731,6 +726,7 @@ impl eframe::App for App {
         self.handle_dropped_files(&ctx);
         self.update_surfaces(&ctx);
         self.update_results_display(&ctx);
+        self.update_figure_preview(&ctx);
 
         self.expand_requested_windows(&ctx);
         self.show_toolbar(ui);
@@ -742,6 +738,7 @@ impl eframe::App for App {
         self.show_apost_window(&ctx);
         self.show_appearance_window(&ctx);
         self.show_export_window(&ctx);
+        self.show_figure_preview_window(&ctx);
         self.show_coordinates_window(&ctx);
         self.show_about_window(&ctx);
 

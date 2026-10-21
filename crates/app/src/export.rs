@@ -52,6 +52,8 @@ pub(crate) struct RenderExportState {
     pub(crate) gif_width: u32,
     pub(crate) gif_seconds: f32,
     pub(crate) gif_fps: u32,
+    /// Panels, and the caption of a single image (`panels.rs`).
+    pub(crate) figure: crate::panels::PanelExportState,
 }
 
 impl Default for RenderExportState {
@@ -68,6 +70,7 @@ impl Default for RenderExportState {
             gif_width: 800,
             gif_seconds: 6.0,
             gif_fps: 20,
+            figure: Default::default(),
         }
     }
 }
@@ -108,7 +111,7 @@ impl App {
 
     /// Export settings of this size with the live view's look: ambient
     /// occlusion and depth of field as set, focused where the camera is.
-    fn export_settings(&self, width: u32, height: u32, supersample: u32, background: Option<[f32; 4]>) -> ExportSettings {
+    pub(crate) fn export_settings(&self, width: u32, height: u32, supersample: u32, background: Option<[f32; 4]>) -> ExportSettings {
         ExportSettings {
             width,
             height,
@@ -186,6 +189,12 @@ impl App {
     /// Blocks until the GPU is done (see `ViewportResources::
     /// render_offscreen`) — fine for an explicit, one-shot action.
     fn render_rgba(&self, active: usize, settings: &ExportSettings) -> Result<Vec<u8>, String> {
+        self.render_rgba_with(active, settings, true)
+    }
+
+    /// The same, with or without the results legend drawn into it (a
+    /// figure of panels can draw it once below them instead).
+    pub(crate) fn render_rgba_with(&self, active: usize, settings: &ExportSettings, legend: bool) -> Result<Vec<u8>, String> {
         let export_aspect = settings.width as f32 / settings.height.max(1) as f32;
         let mut uniforms = SceneUniforms::new(&self.camera, export_aspect, &self.ao_render_material());
         let target_format = self.render_state.target_format;
@@ -197,7 +206,9 @@ impl App {
         let mut pixels = resources.render_offscreen(&self.render_state.device, &self.render_state.queue, target_format, &uniforms, &label_instances, settings)?;
         apost3dview_render::readback_to_rgba(&mut pixels, target_format);
         drop(renderer);
-        self.draw_legend_into(&mut pixels, settings.width, settings.height);
+        if legend {
+            self.draw_legend_into(&mut pixels, settings.width, settings.height);
+        }
         Ok(pixels)
     }
 
@@ -206,16 +217,21 @@ impl App {
     /// Without a file — for tests, and later for rendering from the
     /// command line.
     pub fn render_image(&mut self, width: u32, height: u32) -> Result<Vec<u8>, String> {
+        self.render_image_supersampled(width, height, 1)
+    }
+
+    /// The same, rendered at `supersample` times the size and scaled down.
+    pub fn render_image_supersampled(&mut self, width: u32, height: u32, supersample: u32) -> Result<Vec<u8>, String> {
         let active = self.active_structure.ok_or("nothing open")?;
         let [r, g, b] = self.material.background;
-        let settings = self.export_settings(width, height, 1, Some([r, g, b, 1.0]));
+        let settings = self.export_settings(width, height, supersample, Some([r, g, b, 1.0]));
         self.render_rgba(active, &settings)
     }
 
     /// After an image is written: also writes the session next to it
     /// (same name, `.a3dview`) when "Also save the session" is ticked, so
     /// every figure keeps the exact setup that produced it.
-    fn report_saved_image(&mut self, image: &std::path::Path) {
+    pub(crate) fn report_saved_image(&mut self, image: &std::path::Path) {
         let image_name = crate::util::file_display_name(image);
         if !self.render_export.save_session_with_image {
             self.show_status(format!("Saved {image_name}"));

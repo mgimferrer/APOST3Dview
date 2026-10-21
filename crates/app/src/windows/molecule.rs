@@ -71,6 +71,10 @@ impl App {
                 });
             }
         });
+        if self.structures.len() > 1 {
+            ui.checkbox(&mut self.keep_view, "Keep the view when switching structures")
+                .on_hover_text("The next structure is seen with the same orientation and zoom, centered on it. Otherwise each structure keeps its own view.");
+        }
         if let Some(index) = switch_to {
             self.set_active(index);
         }

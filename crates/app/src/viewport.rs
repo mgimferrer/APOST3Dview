@@ -250,6 +250,7 @@ impl App {
         ui.painter()
             .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
         self.paint_legend(ui.painter(), rect);
+        self.paint_panel_frame(ui, rect);
         if let Some(drawn) = selection_box {
             let accent = ui.visuals().selection.bg_fill;
             ui.painter().rect(drawn, 0.0, accent.gamma_multiply(0.15), egui::Stroke::new(1.0, accent), egui::StrokeKind::Inside);
