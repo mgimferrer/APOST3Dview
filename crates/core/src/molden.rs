@@ -1,8 +1,8 @@
 //! Parses `.molden` files — plain-text, section-tagged (`[Atoms]`/`[GTO]`/
 //! `[MO]`), unlike `.fchk`'s fixed-width binary-ish dump. Targets the
-//! PySCF writer specifically for now (`pyscf.tools.molden`) — other
-//! programs (ORCA in particular) are known to deviate from the format for
-//! f/g functions, deliberately not handled here yet.
+//! PySCF writer (`pyscf.tools.molden`) and ORCA's `orca_2mkl` (2026-10-21,
+//! brought to PySCF's conventions by `from_orca_conventions`); other
+//! programs' files aren't tested.
 //!
 //! The one thing that made this straightforward rather than needing a new
 //! reordering layer: PySCF's own `order_ao_index` (in its molden writer)
@@ -88,6 +88,57 @@ fn read_sections(reader: impl BufRead, stop_after_atoms: bool) -> io::Result<Vec
         sections.push(sec);
     }
     Ok(sections)
+}
+
+/// Whether ORCA's `orca_2mkl` wrote the file: its `[Title]` says so
+/// ("Molden file created by orca_2mkl for BaseName=...").
+fn written_by_orca(sections: &[Section]) -> bool {
+    sections.iter().any(|s| s.tag == "TITLE" && s.lines.iter().any(|l| l.to_lowercase().contains("orca_2mkl")))
+}
+
+/// `orca_2mkl`'s two departures from the Molden conventions PySCF follows,
+/// found against ORCA 6.1.1's own cube files (2026-10-21; every orbital of
+/// six test cases then matches to numerical noise, see
+/// `TESTS-VISUALIZER/orca/`):
+/// - each contraction coefficient includes its primitive's normalization
+///   constant, (2a/pi)^(3/4) (4a)^(L/2) / sqrt((2L-1)!!): divided out here,
+///   and each contracted function normalized again;
+/// - the F+3, F-3 and G+3, G-3, G+4, G-4 components have the opposite sign
+///   (as Multiwfn and IOData also correct): their MO coefficients are
+///   negated here.
+fn from_orca_conventions(shells: &mut [Shell], orbitals: &mut [MoldenOrbital]) {
+    fn double_factorial(l: u32) -> f64 {
+        (1..=l).map(|i| (2 * i - 1) as f64).product()
+    }
+    let mut flipped = Vec::new();
+    let mut offset = 0;
+    for shell in shells.iter_mut() {
+        let l = shell.angular_momentum;
+        for (c, &alpha) in shell.contraction_coefficients.iter_mut().zip(&shell.primitive_exponents) {
+            *c /= (2.0 * alpha / std::f64::consts::PI).powf(0.75) * (4.0 * alpha).powf(l as f64 / 2.0) / double_factorial(l).sqrt();
+        }
+        // Self-overlap of the contraction of normalized primitives.
+        let mut norm = 0.0;
+        for (ci, ai) in shell.contraction_coefficients.iter().zip(&shell.primitive_exponents) {
+            for (cj, aj) in shell.contraction_coefficients.iter().zip(&shell.primitive_exponents) {
+                norm += ci * cj * (2.0 * (ai * aj).sqrt() / (ai + aj)).powf(l as f64 + 1.5);
+            }
+        }
+        shell.contraction_coefficients.iter_mut().for_each(|c| *c /= norm.sqrt());
+        if shell.is_pure {
+            match l {
+                3 => flipped.extend([offset + 5, offset + 6]),
+                4 => flipped.extend([offset + 5, offset + 6, offset + 7, offset + 8]),
+                _ => {}
+            }
+        }
+        offset += shell_component_count(l, shell.is_pure);
+    }
+    for orbital in orbitals.iter_mut() {
+        for &index in &flipped {
+            orbital.coefficients[index] = -orbital.coefficients[index];
+        }
+    }
 }
 
 struct MoldenAtom {
@@ -302,7 +353,9 @@ pub fn parse_molden_geometry(path: &Path) -> io::Result<(Vec<u32>, Vec<glam::Vec
 
 /// Full parse — basis set + MO coefficients, ready for
 /// `gto::evaluate_mo`/`generate_mo_grids`, same contract as
-/// `parse_fchk_wavefunction`. Restricted vs unrestricted is detected the
+/// `parse_fchk_wavefunction`. A file written by ORCA's `orca_2mkl` is
+/// brought to the standard conventions first (`from_orca_conventions`).
+/// Restricted vs unrestricted is detected the
 /// same way as the `.fchk` path: by whether any `Spin= Beta` orbital was
 /// actually present, not by electron count/multiplicity.
 pub fn parse_molden_wavefunction(path: &Path) -> io::Result<Wavefunction> {
@@ -318,7 +371,11 @@ pub fn parse_molden_wavefunction(path: &Path) -> io::Result<Wavefunction> {
     let num_basis_functions: usize = shells.iter().map(|s| shell_component_count(s.angular_momentum, s.is_pure)).sum();
 
     let mo_section = sections.iter().find(|s| s.tag == "MO").ok_or_else(|| invalid_data(".molden file missing [MO] section"))?;
-    let orbitals = parse_mo_section(mo_section, num_basis_functions)?;
+    let mut orbitals = parse_mo_section(mo_section, num_basis_functions)?;
+    let mut shells = shells;
+    if written_by_orca(&sections) {
+        from_orca_conventions(&mut shells, &mut orbitals);
+    }
 
     let (alpha_orbitals, beta_orbitals): (Vec<_>, Vec<_>) = orbitals.into_iter().partition(|o| !o.spin_beta);
     if alpha_orbitals.is_empty() {
@@ -345,4 +402,27 @@ pub fn parse_molden_wavefunction(path: &Path) -> io::Result<Wavefunction> {
     let beta = if beta_orbitals.is_empty() { None } else { Some(build_channel(beta_orbitals)) };
 
     Ok(Wavefunction { basis: BasisSet { shells }, alpha, beta })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ORCA's conventions undone: a single s primitive written as c x N
+    /// comes back as a normalized contraction (coefficient 1), and the
+    /// F+3/F-3 coefficients of an f shell change sign, the others don't.
+    #[test]
+    fn orca_conventions_undone() {
+        let alpha: f64 = 1.7;
+        let n_s = (2.0 * alpha / std::f64::consts::PI).powf(0.75);
+        let s = Shell { angular_momentum: 0, is_pure: false, center: DVec3::ZERO, primitive_exponents: vec![alpha], contraction_coefficients: vec![0.4 * n_s] };
+        let f = Shell { angular_momentum: 3, is_pure: true, center: DVec3::ZERO, primitive_exponents: vec![0.9], contraction_coefficients: vec![2.0] };
+        let mut shells = vec![s, f];
+        let mut orbitals = vec![MoldenOrbital { energy: 0.0, spin_beta: false, occupation: 0.0, coefficients: (1..=8).map(f64::from).collect() }];
+        from_orca_conventions(&mut shells, &mut orbitals);
+        assert!((shells[0].contraction_coefficients[0] - 1.0).abs() < 1e-12, "{:?}", shells[0].contraction_coefficients);
+        assert!((shells[1].contraction_coefficients[0] - 1.0).abs() < 1e-12);
+        // s (index 0), then F0, F+1, F-1, F+2, F-2, F+3, F-3 (indices 1-7).
+        assert_eq!(orbitals[0].coefficients, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, -7.0, -8.0]);
+    }
 }
