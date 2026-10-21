@@ -209,7 +209,6 @@ fn tour() {
 
     let mut guide = open_example("H2O-CAS44");
     click(&mut guide, "Surfaces");
-    click(&mut guide, "Clear");
     click(&mut guide, "Total density");
     click(&mut guide, "Generate 1 surface(s)");
     assert_eq!(guide.state().surface_labels(), vec![("Total density (CASSCF)".to_string(), true)]);
@@ -263,7 +262,6 @@ fn orbitals_and_densities() {
 
     let mut guide = open(vec![validation("gaussian/H2O-T-ccpVTZ.fchk")]);
     click(&mut guide, "Orbitals...");
-    click(&mut guide, "Clear");
     click(&mut guide, "Total density");
     click(&mut guide, "Spin density");
     click(&mut guide, "Generate 2 surface(s)");
@@ -343,7 +341,7 @@ fn local_spin() {
 #[test]
 fn energy_decomposition() {
     let mut guide = open_example("H2O-Dimer-B3LYP");
-    frame(&mut guide, 0.0, 0.0, 0.5);
+    frame(&mut guide, 0.0, 0.0, 0.6);
     choose(&mut guide, "Nothing", "Inter-fragment interaction energy (TFVC)");
     settle(&mut guide);
     snap_figure(&mut guide, "iqa-fragments", 1200, 750);
@@ -394,7 +392,7 @@ fn making_an_input() {
     let fchk = dir.join("FeCN5NO3.fchk");
     std::fs::copy(example("FeCN5NO3--UBLYP").join("FeCN5NO3--UBLYP.fchk"), &fchk).unwrap();
     let mut guide = open(vec![fchk]);
-    frame(&mut guide, 0.0, 0.45, 1.6);
+    frame(&mut guide, 0.0, 0.45, 1.0);
     click(&mut guide, "APOST-3D input...");
     for label in ["Results", "New input", "Atoms in molecules", "Analyses", "Effective oxidation states", "Separate molecules", "Input file", "Copy input"] {
         sees(&guide, label);

@@ -127,6 +127,7 @@ impl App {
 
         let aspect_ratio = if rect.height() > 0.0 { rect.width() / rect.height() } else { 1.0 };
         self.last_aspect_ratio = aspect_ratio;
+        self.last_viewport_height = rect.height();
 
         let mut selection_box = None;
         if let Some(start) = self.box_select_start {

@@ -33,7 +33,7 @@ pub(crate) struct MeasurementStyle {
 impl Default for MeasurementStyle {
     fn default() -> Self {
         Self {
-            font_size: 24.0,
+            font_size: 30.0,
             decimal_places: 2,
             text_color: Color32::from_rgb(20, 20, 20),
             line_color: [0.05, 0.05, 0.05],

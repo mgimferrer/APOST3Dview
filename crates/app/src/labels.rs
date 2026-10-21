@@ -42,6 +42,9 @@ pub(crate) const VALUE_LABEL_EDGE: f32 = 0.40;
 const MIN_VISIBLE_FRACTION: f32 = 0.3;
 /// A name above a value is this much smaller than the value.
 const NAME_OVER_VALUE: f32 = 0.8;
+/// A value on an atom, against one on a fragment (atoms are smaller and
+/// closer together).
+const ATOM_VALUE_SIZE: f32 = 0.85;
 /// An atom name may be this much wider than its atom before it shrinks,
 /// and shrinks at most to this fraction of its size.
 const NAME_WIDTH_PER_DIAMETER: f32 = 1.6;
@@ -87,10 +90,17 @@ impl App {
     /// `0, 0, width, height` for an export), placed so none overlaps, as
     /// glyphs drawn on top. Also where each measurement label landed on
     /// screen, for dragging it in the live view.
+    ///
+    /// Text sizes (measurement and value labels, in pixels of the live
+    /// view) are scaled with the view's height against the live view's, so
+    /// an export of any size shows the labels as large, against the
+    /// molecule, as the screen does (before, a 3250 px figure had them at
+    /// screen pixels, a third of the size), the same as the legend.
     pub(crate) fn scene_labels(&self, active: usize, camera: &OrbitCamera, viewport: Rect) -> SceneLabels {
         let structure = &self.structures[active];
         let molecule = &structure.molecule;
         let aspect = viewport.width() / viewport.height().max(1.0);
+        let text_scale = viewport.height() / self.last_viewport_height.max(1.0);
         let eye = camera.eye();
         let (right, up) = camera.screen_basis();
         let world_per_px = |p: Vec3| camera.world_units_per_pixel((p - eye).length(), viewport.height());
@@ -110,7 +120,7 @@ impl App {
         for (index, measurement) in structure.measurements.iter().enumerate() {
             let anchor = measurement_anchor(molecule, measurement.kind);
             let wpp = world_per_px(anchor);
-            let px = self.measurement_style.font_size;
+            let px = self.measurement_style.font_size * text_scale;
             let text = format_measurement(measurement.kind, measure(molecule, measurement.kind), self.coordinate_unit, self.measurement_style.decimal_places);
             let scale = glyph_scale_for_font_size(px, wpp);
             let (width, height) = label_extent(&self.glyph_atlas, &text, scale);
@@ -119,8 +129,8 @@ impl App {
             let clearance = match measurement.kind {
                 MeasurementKind::Angle(_, v, _) => crate::util::drawn_radius(molecule.atomic_numbers[v], self.material.atom_scale) / wpp,
                 _ => self.material.bond_radius / wpp,
-            } + 4.0;
-            let shift = measurement_shift(measurement.kind, molecule, &project, molecule_center, size, clearance) + measurement.label_offset;
+            } + 4.0 * text_scale;
+            let shift = measurement_shift(measurement.kind, molecule, &project, molecule_center, size, clearance) + measurement.label_offset * text_scale;
             pending.push(Pending {
                 anchor,
                 shift,
@@ -154,7 +164,7 @@ impl App {
                 };
                 let Some(position) = label_position(label.anchor, results, molecule, self.material.atom_scale, eye) else { continue };
                 let wpp = world_per_px(position);
-                let px = if on_atom { view.label_size * 0.72 } else { view.label_size };
+                let px = text_scale * if on_atom { view.label_size * ATOM_VALUE_SIZE } else { view.label_size };
                 let focus = label.color == FOCUS_COLOR;
                 let color = if label.color == [0.0; 3] { ink } else { label.color };
                 let line = |text: String, px: f32, color: [f32; 3]| Line {
@@ -244,8 +254,17 @@ impl App {
         let mut hits = Vec::new();
         let mut placed_boxes = Vec::new();
         for (&i, offset) in shown.iter().zip(placed) {
-            let Some(offset) = offset else { continue };
+            let Some(mut offset) = offset else { continue };
             let (p, request) = (&pending[i], requests[i].unwrap());
+            // Kept inside the view (a label pushed out from the molecule's
+            // center could leave the picture), a few pixels from its edge.
+            let margin = 4.0 * text_scale;
+            let inside = viewport.shrink(margin);
+            let rect = Rect::from_center_size(request.center + offset, sizes[i]);
+            if rect.width() <= inside.width() && rect.height() <= inside.height() {
+                offset.x += (inside.left() - rect.left()).max(0.0) - (rect.right() - inside.right()).max(0.0);
+                offset.y += (inside.top() - rect.top()).max(0.0) - (rect.bottom() - inside.bottom()).max(0.0);
+            }
             let shift = p.shift + offset;
             let center = p.anchor + right * (shift.x * p.world_per_px) - up * (shift.y * p.world_per_px);
             let mut y = -sizes[i].y / 2.0;

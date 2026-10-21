@@ -140,7 +140,7 @@ impl ResultsView {
             focus: 0,
             labels: true,
             decimals: None,
-            label_size: 26.0,
+            label_size: 34.0,
             bond_thickness: false,
             log_scale: false,
             energy_unit: EnergyUnit::default(),

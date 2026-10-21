@@ -110,6 +110,9 @@ pub struct App {
     /// since it doesn't have direct access to the viewport rect) so the
     /// DPI preset can derive its height from the current on-screen view.
     pub(crate) last_aspect_ratio: f32,
+    /// The live view's height in points, updated with `last_aspect_ratio`:
+    /// what exports scale their labels against (`scene_labels`).
+    pub(crate) last_viewport_height: f32,
 
     /// Isosurface lighting response — deliberately separate from
     /// `material` (the atom/bond one), shared across every structure the
@@ -242,6 +245,7 @@ impl App {
             render_export: RenderExportState::default(),
             orbital_generation: OrbitalGenerationState::default(),
             last_aspect_ratio: 16.0 / 9.0,
+            last_viewport_height: 860.0,
             isosurface_material: IsosurfaceMaterial::default(),
             ao_enabled: true,
             ao_settings: AoSettings::default(),
