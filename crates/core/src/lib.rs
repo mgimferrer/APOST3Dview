@@ -3,12 +3,14 @@
 //! couple parsing logic to wgpu or egui.
 
 pub mod apost;
+pub mod apost_input;
 pub mod coordinates;
 pub mod cube;
 pub mod density_matrix;
 pub mod element;
 pub mod envelope;
 pub mod fchk;
+pub mod fragmentation;
 pub mod gto;
 pub mod interpolation;
 pub mod isosurface;
@@ -24,6 +26,8 @@ pub use apost::{
     report_path_for, results_path_for, wavefunction_path_for, ApostResults, Enpart, EnpartFunctional, Fragment, FunctionalComponent, TwoElectronIntegration, ENPART_TERMS, FragmentCoverage, IndexEntry, MatrixObject, OrbitalDetail, OrbitalLabel, OrbitalSet,
     Quantity, QuantityKind, TableCell, TableColumn, TableObject,
 };
+pub use apost_input::{read_apost_input, read_fchk_facts, AimScheme, ApostInput, DmFiles, EnpartMethod, EnpartOptions, FchkFacts, FchkProgram, OxidationStates, ReadInput, ENPART_FUNCTIONALS};
+pub use fragmentation::{fragments_around, separate_molecules};
 pub use coordinates::{format_coordinates, CoordinateFormat};
 pub use cube::{parse_cube, CubeFile, ScalarGrid};
 pub use density_matrix::{natural_orbitals, read_fchk_density, scan_fchk_densities, DensityMatrix, FchkDensities};

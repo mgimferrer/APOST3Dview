@@ -5,6 +5,8 @@
 #     <job>.apost.json   the results files
 #     <job>.apost        their text reports
 #     <job>.fchk         the wavefunctions they were computed from
+#     <job>.inp          every reference input (the input generator's
+#                        tests), with its .fchk
 #   fixtures/apost3d-orbitals/: the cases with EOS/GEOS/OSLO orbital files,
 #     from VIEWER-HANDOFF/orbital-fixtures/ (next to the APOST3D checkout),
 #     each complete like a run's folder: results, report, orbital .fchk, and
@@ -42,6 +44,14 @@ for json in "$src"/tests/reference/*.apost.json; do
     fi
     count=$((count + 1))
 done
+inputs=0
+for inp in "$src"/tests/inputs/*.inp; do
+    job=$(basename "$inp" .inp)
+    cp "$inp" "$dest/"
+    [ -f "$dest/$job.fchk" ] || [ ! -f "$src/tests/inputs/$job.fchk" ] || cp "$src/tests/inputs/$job.fchk" "$dest/"
+    inputs=$((inputs + 1))
+done
+echo "Copied $inputs reference inputs."
 commit=$(git -C "$src" rev-parse --short HEAD 2>/dev/null || echo unknown)
 echo "Copied $count results files from $src (commit $commit) into $dest."
 echo "$commit" > "$dest/APOST3D-COMMIT"
