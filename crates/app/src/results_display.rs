@@ -13,7 +13,12 @@ use crate::state::LoadedStructure;
 
 impl App {
     /// The active structure's results scene, if it has results and a view.
+    /// None while the input generator is shown: its fragments are drawn
+    /// instead.
     pub(crate) fn results_scene(&self, structure: &LoadedStructure) -> Option<ResultsScene> {
+        if self.editing_input() {
+            return None;
+        }
         let attachment = structure.apost.as_ref()?;
         let results = attachment.results.as_ref().ok()?;
         let view = attachment.view.as_ref()?;
@@ -21,6 +26,9 @@ impl App {
     }
 
     pub(crate) fn bond_scales(&self, structure: &LoadedStructure) -> Option<Vec<f32>> {
+        if self.editing_input() {
+            return None;
+        }
         let attachment = structure.apost.as_ref()?;
         let view = attachment.view.as_ref()?;
         if !view.bond_thickness {
@@ -38,7 +46,8 @@ impl App {
             let mut hidden: Vec<usize> = s.hidden_atoms.iter().copied().collect();
             hidden.sort_unstable();
             let view = s.apost.as_ref().and_then(|a| a.view.clone());
-            format!("{:?}|{view:?}|{}|{hidden:?}|{:?}", self.active_structure, self.material.atom_scale, self.color_ranges)
+            let draft = self.editing_input().then(|| s.input_draft.as_ref().map(|d| d.fragments.clone())).flatten();
+            format!("{:?}|{view:?}|{}|{hidden:?}|{:?}|{draft:?}", self.active_structure, self.material.atom_scale, self.color_ranges)
         });
         let signature = signature.unwrap_or_default();
         if signature == self.results_signature {
@@ -58,7 +67,25 @@ impl App {
         let mut vertices = Vec::new();
         let mut ranges = Vec::new();
         let mut halos = Vec::new();
-        if let Some(active) = self.active_structure {
+        let editing = self.editing_input();
+        if let Some(active) = self.active_structure
+            && editing
+        {
+            let structure = &self.structures[active];
+            if let Some(draft) = &structure.input_draft {
+                // Atoms in no fragment get a gray envelope of their own.
+                let mut groups = draft.fragments.clone();
+                let rest: Vec<usize> = (0..structure.molecule.positions.len()).filter(|a| !groups.iter().any(|g| g.contains(a))).collect();
+                let n = groups.len();
+                if n > 0 && !rest.is_empty() {
+                    groups.push(rest);
+                }
+                let meshes = crate::results_view::atom_group_envelopes(&groups, &structure.molecule, atom_scale, &structure.hidden_atoms);
+                let gray = crate::results::UNASSIGNED_COLOR.map(|c| c as f32 / 255.0);
+                let scene = ResultsScene { envelopes: (0..meshes.len()).map(|f| (f, if f < n { crate::results_view::fragment_rgb(f) } else { gray })).collect(), ..Default::default() };
+                (vertices, ranges) = envelope_vertices(&scene, &meshes);
+            }
+        } else if let Some(active) = self.active_structure {
             let scene = self.structures.get(active).and_then(|s| self.results_scene(s));
             let structure = &mut self.structures[active];
             if let (Some(scene), Some(attachment)) = (scene, structure.apost.as_mut())
@@ -83,6 +110,12 @@ impl App {
             resources.update_envelopes(&self.render_state.device, &vertices, &ranges);
             resources.update_halos(&self.render_state.device, &halos);
         });
+    }
+
+    /// Whether the input generator is on screen (its fragments are then
+    /// drawn instead of the results).
+    pub(crate) fn editing_input(&self) -> bool {
+        self.show_apost && self.apost_tab_shown() == crate::input_generator::ApostTab::Input
     }
 
     /// Value labels for the active structure, sized for a view
@@ -139,6 +172,9 @@ impl App {
     /// on its fragment) instead of selecting it. Returns whether the click
     /// was used that way.
     pub(crate) fn focus_on_clicked_atom(&mut self, atom: usize) -> bool {
+        if self.editing_input() {
+            return false;
+        }
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return false };
         let Some(attachment) = structure.apost.as_mut() else { return false };
         let Ok(results) = &attachment.results else { return false };

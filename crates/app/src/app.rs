@@ -171,6 +171,12 @@ pub struct App {
     pub(crate) window_column: crate::windows::column::WindowColumn,
     /// The table chosen in the APOST-3D window's Tables section (entry id).
     pub(crate) apost_table: Option<String>,
+    /// The APOST-3D window's part shown; `None`: the new input for a
+    /// structure without results (loaded or next to it), the results
+    /// otherwise.
+    pub(crate) apost_tab: Option<crate::input_generator::ApostTab>,
+    /// Where an Alt/Option-drag box selection started, while one is drawn.
+    pub(crate) box_select_start: Option<egui::Pos2>,
     /// What the results display was last built for (see
     /// `update_results_display`).
     pub(crate) results_signature: String,
@@ -250,6 +256,8 @@ impl App {
             windows_to_expand: Vec::new(),
             window_column: Default::default(),
             apost_table: None,
+            apost_tab: None,
+            box_select_start: None,
             results_signature: String::new(),
             session_path: None,
             shown_title: String::new(),

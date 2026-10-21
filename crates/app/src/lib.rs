@@ -7,6 +7,7 @@
 mod app;
 mod export;
 mod files;
+mod input_generator;
 mod isosurfaces;
 mod label_layout;
 mod labels;

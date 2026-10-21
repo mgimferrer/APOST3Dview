@@ -86,11 +86,17 @@ impl App {
         let structure = &self.structures[active];
         let has_orbitals = structure.wavefunction.is_some();
         let has_results = structure.apost.is_some() || structure.results_nearby.is_some();
+        let is_fchk = structure.source_path.as_ref().is_some_and(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("fchk")));
         ui.horizontal_wrapped(|ui| {
             if has_orbitals && ui.button("Orbitals...").on_hover_text("Generate and show orbitals (Surfaces window)").clicked() {
                 self.open_window(ToolWindow::Surfaces);
             }
             if has_results && ui.button("APOST-3D results...").clicked() {
+                self.apost_tab = Some(crate::input_generator::ApostTab::Results);
+                self.open_window(ToolWindow::Apost);
+            }
+            if is_fchk && !has_results && ui.button("APOST-3D input...").on_hover_text("Prepare an APOST-3D input for this calculation").clicked() {
+                self.apost_tab = Some(crate::input_generator::ApostTab::Input);
                 self.open_window(ToolWindow::Apost);
             }
             if ui.button("Coordinates...").on_hover_text("Cartesian coordinates, to copy or save as .xyz").clicked() {

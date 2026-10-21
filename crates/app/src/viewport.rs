@@ -13,6 +13,22 @@ pub(crate) const ARROW_ROTATE_SPEED: f32 = 1.2;
 pub(crate) const DEFAULT_AUTO_SPIN_SPEED: f32 = 0.5;
 
 impl App {
+    /// Adds the visible atoms whose centers fall inside `drawn` (screen
+    /// points, in the viewport `rect`) to the active structure's selection.
+    pub(crate) fn box_select(&mut self, active: usize, drawn: egui::Rect, rect: egui::Rect, aspect_ratio: f32) {
+        let camera = self.camera;
+        let structure = &mut self.structures[active];
+        for (atom, &position) in structure.molecule.positions.iter().enumerate() {
+            if structure.hidden_atoms.contains(&atom) || structure.selected_atoms.contains(&atom) {
+                continue;
+            }
+            if crate::util::project_to_screen(&camera, aspect_ratio, rect, position).is_some_and(|p| drawn.contains(p)) {
+                structure.selected_atoms.push(atom);
+            }
+        }
+        self.rebuild_highlights();
+    }
+
     /// The 3D viewport (central panel): camera input, picking, labels, and
     /// the wgpu paint callback.
     pub(crate) fn show_viewport(&mut self, ui: &mut egui::Ui) {
@@ -41,7 +57,13 @@ impl App {
         // drag is awkward or unavailable. Dragging a measurement
         // label still moves the label, since labels are registered
         // later, on top of the viewport.
-        let camera_dragging = response.dragged_by(egui::PointerButton::Primary) || response.dragged_by(egui::PointerButton::Secondary);
+        // Alt/Option+drag (either button, or the trackpad) draws a box
+        // instead: the atoms inside it join the selection (`box_select`).
+        if response.drag_started() && ui.input(|i| i.modifiers.alt) {
+            self.box_select_start = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos());
+        }
+        let camera_dragging =
+            self.box_select_start.is_none() && (response.dragged_by(egui::PointerButton::Primary) || response.dragged_by(egui::PointerButton::Secondary));
         let drag_delta = response.drag_delta();
         if camera_dragging {
             if ui.input(|i| i.modifiers.shift) {
@@ -105,6 +127,18 @@ impl App {
 
         let aspect_ratio = if rect.height() > 0.0 { rect.width() / rect.height() } else { 1.0 };
         self.last_aspect_ratio = aspect_ratio;
+
+        let mut selection_box = None;
+        if let Some(start) = self.box_select_start {
+            let current = ui.input(|i| i.pointer.interact_pos()).unwrap_or(start);
+            let drawn = egui::Rect::from_two_pos(start, current);
+            if response.drag_stopped() || !ui.input(|i| i.pointer.any_down()) {
+                self.box_select_start = None;
+                self.box_select(active, drawn, rect, aspect_ratio);
+            } else {
+                selection_box = Some(drawn);
+            }
+        }
 
         // Left-click always does something useful: in Measure
         // mode it extends the pending pick, otherwise it selects
@@ -215,6 +249,11 @@ impl App {
         ui.painter()
             .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
         self.paint_legend(ui.painter(), rect);
+        if let Some(drawn) = selection_box {
+            let accent = ui.visuals().selection.bg_fill;
+            ui.painter().rect(drawn, 0.0, accent.gamma_multiply(0.15), egui::Stroke::new(1.0, accent), egui::StrokeKind::Inside);
+            ui.ctx().request_repaint();
+        }
 
         if camera_dragging || scroll_delta != 0.0 || zoom_factor != 1.0 || keyboard_rotating || auto_spinning || any_label_dragged {
             ui.ctx().request_repaint();

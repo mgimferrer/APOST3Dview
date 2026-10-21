@@ -129,6 +129,8 @@ pub(crate) struct LoadedStructure {
     /// The orbitals the Surfaces window generates from: 0 the SCF ones,
     /// i the set `orbital_sets[i - 1]`.
     pub(crate) active_orbital_set: usize,
+    /// A new APOST-3D input being prepared for this `.fchk`.
+    pub(crate) input_draft: Option<crate::input_generator::InputDraft>,
 }
 
 impl LoadedStructure {
@@ -158,6 +160,7 @@ impl LoadedStructure {
             results_nearby: None,
             orbital_sets: Vec::new(),
             active_orbital_set: 0,
+            input_draft: None,
         }
     }
 

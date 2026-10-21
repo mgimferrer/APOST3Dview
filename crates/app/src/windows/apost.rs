@@ -267,6 +267,10 @@ impl App {
         let response = self
             .column_window(ctx, ToolWindow::Apost, &mut open)
             .show(ctx, |ui| {
+                if self.show_apost_tabs(ui) == crate::input_generator::ApostTab::Input {
+                    self.show_input_generator(ui);
+                    return;
+                }
                 if !self.show_apost_header(ui) {
                     return;
                 }
@@ -295,6 +299,30 @@ impl App {
         self.record_column_window(ctx, ToolWindow::Apost, response.map(|r| r.response));
         self.show_apost = open;
         self.apply_fragment_action(fragment_action);
+    }
+
+    /// The part of the window shown now (`apost_tab`).
+    pub(crate) fn apost_tab_shown(&self) -> crate::input_generator::ApostTab {
+        use crate::input_generator::ApostTab;
+        self.apost_tab.unwrap_or_else(|| match self.active_structure.and_then(|i| self.structures.get(i)) {
+            Some(s) if s.apost.is_none() && s.results_nearby.is_none() => ApostTab::Input,
+            _ => ApostTab::Results,
+        })
+    }
+
+    /// Results | New input, at the top of the window.
+    fn show_apost_tabs(&mut self, ui: &mut egui::Ui) -> crate::input_generator::ApostTab {
+        use crate::input_generator::ApostTab;
+        let mut tab = self.apost_tab_shown();
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut tab, ApostTab::Results, RichText::new("Results").strong());
+            ui.selectable_value(&mut tab, ApostTab::Input, RichText::new("New input").strong());
+        });
+        ui.separator();
+        if tab != self.apost_tab_shown() {
+            self.apost_tab = Some(tab);
+        }
+        tab
     }
 
     /// Banners, then the run in one line, with the details folded away.

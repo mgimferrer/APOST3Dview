@@ -467,11 +467,16 @@ pub(crate) fn drawn_radius(molecule: &Molecule, i: usize, atom_scale: f32) -> f3
 /// One envelope mesh per fragment, around its visible atoms. Kept until
 /// the atom size or the hidden atoms change.
 pub(crate) fn fragment_envelopes(results: &ApostResults, molecule: &Molecule, atom_scale: f32, hidden: &std::collections::HashSet<usize>) -> Vec<IsosurfaceMesh> {
-    results
-        .fragments()
+    let groups: Vec<Vec<usize>> = results.fragments().iter().map(|f| f.atoms.iter().map(|a| a - 1).collect()).collect();
+    atom_group_envelopes(&groups, molecule, atom_scale, hidden)
+}
+
+/// One envelope per group of atoms (0-based).
+pub(crate) fn atom_group_envelopes(groups: &[Vec<usize>], molecule: &Molecule, atom_scale: f32, hidden: &std::collections::HashSet<usize>) -> Vec<IsosurfaceMesh> {
+    groups
         .iter()
-        .map(|fragment| {
-            let atoms: Vec<usize> = fragment.atoms.iter().map(|a| a - 1).filter(|a| *a < molecule.positions.len() && !hidden.contains(a)).collect();
+        .map(|group| {
+            let atoms: Vec<usize> = group.iter().copied().filter(|a| *a < molecule.positions.len() && !hidden.contains(a)).collect();
             let centers: Vec<Vec3> = atoms.iter().map(|&a| molecule.positions[a]).collect();
             let radii: Vec<f32> = atoms.iter().map(|&a| drawn_radius(molecule, a, atom_scale) + ENVELOPE_MARGIN).collect();
             envelope_mesh(&centers, &radii)

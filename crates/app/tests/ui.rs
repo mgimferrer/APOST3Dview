@@ -127,9 +127,13 @@ fn a_fchk_opens_without_its_results_which_are_offered() {
     assert!(toasts(&harness).iter().any(|m| m == "APOST-3D results loaded from CH3F.apost.json"), "{:?}", toasts(&harness));
     harness.get_by_label("Fragments (2)");
 
-    // Without results next to it: how to see them.
+    // Without results next to it: the window opens on a new input for it,
+    // and its Results tab says how to see results.
     let mut harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk")]);
     harness.get_by_label("APOST-3D").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("Input for H2O-631G.fchk");
+    harness.get_by_label("Results").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("No APOST-3D results loaded.");
 }
