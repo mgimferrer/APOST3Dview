@@ -43,7 +43,7 @@ impl App {
                             }
                         });
                         ui.label(
-                            egui::RichText::new("300 DPI is the common journal minimum — raise it for larger print sizes. Embeds the physical size in the PNG.")
+                            egui::RichText::new("300 DPI is the common journal minimum: raise it for larger print sizes. Embeds the physical size in the PNG.")
                                 .small()
                                 .weak(),
                         );
