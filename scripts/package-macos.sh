@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds dist/APOST3Dview-<version>-macos-universal.dmg: one APOST3Dview.app
 # holding both an Apple Silicon (arm64) and an Intel (x86_64) build,
-# ad-hoc signed (free; Apple Silicon refuses to run unsigned code at all).
+# ad-hoc signed (free; Apple Silicon refuses to run unsigned code at all),
+# next to the examples/ folder.
 # Used by .github/workflows/release.yml; runs the same on a Mac by hand.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -36,10 +37,12 @@ rm -rf "$iconset"
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --strict "$app"
 
-# The disk image: the app plus a shortcut to drag it onto.
+# The disk image: the app plus a shortcut to drag it onto, and the
+# examples to try it with.
 staging=dist/dmg
 mkdir -p "$staging"
 cp -R "$app" "$staging/"
+cp -R examples "$staging/"
 ln -s /Applications "$staging/Applications"
 hdiutil create -quiet -volname "APOST3Dview $version" -srcfolder "$staging" -ov -format UDZO \
     "dist/APOST3Dview-$version-macos-universal.dmg"

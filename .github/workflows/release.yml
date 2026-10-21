@@ -1,5 +1,6 @@
-# Downloadable builds. A pushed tag vX.Y.Z (equal to the version in
-# Cargo.toml) builds all three and makes a draft GitHub Release with them,
+# Downloadable builds, each with the examples/ folder. A pushed tag vX.Y.Z
+# (equal to the version in Cargo.toml) builds all three and makes a draft
+# GitHub Release with them,
 # to be checked and published by hand. Run by hand ("Run workflow"), it
 # only builds: the packages are then under the run's Artifacts.
 name: Release
@@ -43,6 +44,7 @@ jobs:
           New-Item -ItemType Directory -Force $dir | Out-Null
           Copy-Item target/release/apost3dview.exe "$dir/APOST3Dview.exe"
           Copy-Item LICENSE "$dir/LICENSE.txt"
+          Copy-Item -Recurse examples "$dir/examples"
           Compress-Archive -Path $dir -DestinationPath "$dir.zip"
       - uses: actions/upload-artifact@v7
         with:

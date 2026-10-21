@@ -109,6 +109,6 @@ wavefunction.
 
 They are APOST-3D's own test cases. The C2H6 and CH3F folders are runs made
 for APOST3Dview with the orbital files written; the others are APOST-3D's
-reference results. They're refreshed when APOST-3D's results format
-changes (`scripts/update-examples.sh`), so they always open in the version
-of APOST3Dview they come with.
+reference results. They're refreshed whenever APOST-3D's results format
+changes (with `scripts/update-examples.sh` in the source repository), so
+they always open in the version of APOST3Dview they come with.

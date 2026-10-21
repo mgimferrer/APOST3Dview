@@ -37,7 +37,7 @@ What's already here, usable today:
 
 ## Installation
 
-Download the file for your computer from the [latest release](https://github.com/mgimferrer/APOST3Dview/releases/latest). Nothing else needs to be installed.
+Download the file for your computer from the [latest release](https://github.com/mgimferrer/APOST3Dview/releases/latest). Nothing else needs to be installed. Each download also holds an `examples` folder: five APOST-3D calculations to try the app with (see [How to use](#how-to-use)).
 
 The downloads aren't signed with a paid certificate (APOST3Dview is free, and so is its distribution), so Windows and macOS ask once, the first time you open it. What to click is below.
 
@@ -49,7 +49,7 @@ The downloads aren't signed with a paid certificate (APOST3Dview is free, and so
 
 ### macOS (11 or later, Apple Silicon and Intel)
 
-1. Download `APOST3Dview-<version>-macos-universal.dmg`, open it, and drag APOST3Dview onto Applications.
+1. Download `APOST3Dview-<version>-macos-universal.dmg`, open it, and drag APOST3Dview onto Applications. Drag the `examples` folder somewhere of yours too (Documents, say) to keep it.
 2. Open APOST3Dview from Applications. The first time, macOS says it could not verify the app. Click **Done** (not Move to Trash).
 3. Open **System Settings**, then **Privacy & Security**, scroll down to the message about APOST3Dview, click **Open Anyway** and confirm. From then on it opens normally.
 
@@ -71,7 +71,7 @@ For development, or if a download doesn't work on your system: see [BUILDING.md]
 
 ## How to use
 
-To try it before running a calculation of your own, [`examples/`](examples/) has five complete APOST-3D calculations (fragments and bond orders, an energy decomposition, OSLOs, effective fragment orbitals, a CASSCF density); its README says what to look at in each.
+To try it before running a calculation of your own, the `examples` folder (in every download, and [here](examples/)) has five complete APOST-3D calculations (fragments and bond orders, an energy decomposition, OSLOs, effective fragment orbitals, a CASSCF density); its README says what to look at in each.
 
 1. Launch the app (`apost3dview`, optionally followed by files to open) and open files with **Open** in the toolbar, Cmd+O (Ctrl+O on Windows and Linux), or by dragging them onto the window. `.fchk`, `.molden`, `.xyz`, `.cube` and APOST-3D `.apost.json` files are recognized by their name; the Open menu can also show one kind of file at a time. The windows (Molecule, Surfaces, Measure, APOST-3D, Appearance, Export, opened from the toolbar) stack in a column at the top right, all the same size, so they never cover the middle of the molecule: collapse one with its triangle and the ones below move up, resize one by its border, or drag one anywhere. **Arrange windows** in the toolbar puts them all back in the column at their default size.
 2. Drag with the mouse or trackpad to rotate (freely, in any direction, including over the top), shift+drag to pan, and scroll or pinch to zoom. The arrow keys rotate too, two at once for a diagonal, and the Space bar starts or stops a continuous spin in the direction of the last arrow pressed, handy for presentations. Click atoms or bonds to select them, or Alt+drag (Option+drag on a Mac) a box to select every atom inside it; Esc clears the selection. The bar along the bottom shows what is open and selected.
