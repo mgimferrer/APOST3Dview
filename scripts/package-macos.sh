@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Builds dist/APOST3Dview-<version>-macos-universal.dmg: one APOST3Dview.app
+# Builds dist/APOST3Dview-macos.dmg (no version in the file name, so the
+# README can link to the latest release's file directly): one APOST3Dview.app
 # holding both an Apple Silicon (arm64) and an Intel (x86_64) build,
 # ad-hoc signed (free; Apple Silicon refuses to run unsigned code at all),
 # next to the examples/ folder.
@@ -45,6 +46,6 @@ cp -R "$app" "$staging/"
 cp -R examples "$staging/"
 ln -s /Applications "$staging/Applications"
 hdiutil create -quiet -volname "APOST3Dview $version" -srcfolder "$staging" -ov -format UDZO \
-    "dist/APOST3Dview-$version-macos-universal.dmg"
+    dist/APOST3Dview-macos.dmg
 rm -rf "$staging"
-echo "dist/APOST3Dview-$version-macos-universal.dmg"
+echo dist/APOST3Dview-macos.dmg

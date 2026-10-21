@@ -4,6 +4,8 @@
 
 <p align="center">APOST3Dview is being built as the visual companion to <a href="https://github.com/mgimferrer/APOST3D">APOST-3D</a>: reading the results file APOST-3D writes next to every run and presenting the chemical bonding indicators it computes (fragment analysis, effective oxidation states, IQA energy decomposition, and more) on the molecule, in a clear, user-friendly way. Fragments, populations, bond orders, local spin, effective oxidation states, effective fragment orbitals and OSLOs, and the IQA energy decomposition are shown on the molecule. Today, it already renders real-time, GPU-rendered geometry, <code>.cube</code> isosurfaces, and orbitals generated directly from a <code>.fchk</code> or <code>.molden</code> file, no external <code>cubegen</code>/Multiwfn step required.</p>
 
+<p align="center"><b>Download, free:</b> <a href="https://github.com/mgimferrer/APOST3Dview/releases/latest/download/APOST3Dview-windows.zip">Windows</a> · <a href="https://github.com/mgimferrer/APOST3Dview/releases/latest/download/APOST3Dview-macos.dmg">macOS</a> · <a href="https://github.com/mgimferrer/APOST3Dview/releases/latest/download/APOST3Dview-linux.tar.gz">Linux</a><br><sub>Then see <a href="#installation">Installation</a> for the first start.</sub></p>
+
 <!-- Screenshots section: coming soon, once a representative set of images is chosen. -->
 
 ## Shortcuts
@@ -37,27 +39,35 @@ What's already here, usable today:
 
 ## Installation
 
-Download the file for your computer from the [latest release](https://github.com/mgimferrer/APOST3Dview/releases/latest). Nothing else needs to be installed. Each download also holds an `examples` folder: five APOST-3D calculations to try the app with (see [How to use](#how-to-use)).
+APOST3Dview is free, and nothing else needs to be installed. Download the file for your computer:
 
-The downloads aren't signed with a paid certificate (APOST3Dview is free, and so is its distribution), so Windows and macOS ask once, the first time you open it. What to click is below.
+| Your computer | Download |
+|---|---|
+| **Windows** 10 or 11 | [APOST3Dview-windows.zip](https://github.com/mgimferrer/APOST3Dview/releases/latest/download/APOST3Dview-windows.zip) |
+| **macOS** 11 or later (Apple Silicon and Intel) | [APOST3Dview-macos.dmg](https://github.com/mgimferrer/APOST3Dview/releases/latest/download/APOST3Dview-macos.dmg) |
+| **Linux** (x86_64) | [APOST3Dview-linux.tar.gz](https://github.com/mgimferrer/APOST3Dview/releases/latest/download/APOST3Dview-linux.tar.gz) |
 
-### Windows (64-bit)
+Each download also holds an `examples` folder: five ready APOST-3D calculations to try the app with (see [How to use](#how-to-use)). Earlier versions are on the [releases page](https://github.com/mgimferrer/APOST3Dview/releases).
 
-1. Download `APOST3Dview-<version>-windows-x86_64.zip`, right-click it and choose **Extract All**.
-2. Double-click `APOST3Dview.exe` in the extracted folder.
-3. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. Windows remembers this for the next time.
+The first time you open it, Windows and macOS ask once whether to trust it. That's because APOST3Dview isn't signed with a paid certificate, not because anything is wrong. What to click:
 
-### macOS (11 or later, Apple Silicon and Intel)
+### Windows
 
-1. Download `APOST3Dview-<version>-macos-universal.dmg`, open it, and drag APOST3Dview onto Applications. Drag the `examples` folder somewhere of yours too (Documents, say) to keep it.
-2. Open APOST3Dview from Applications. The first time, macOS says it could not verify the app. Click **Done** (not Move to Trash).
-3. Open **System Settings**, then **Privacy & Security**, scroll down to the message about APOST3Dview, click **Open Anyway** and confirm. From then on it opens normally.
+1. Right-click the downloaded `APOST3Dview-windows.zip` and choose **Extract All**.
+2. Open the extracted folder and double-click **APOST3Dview.exe**.
+3. The first time only, Windows shows "Windows protected your PC". Click **More info**, then **Run anyway**.
 
-### Linux (x86_64)
+### macOS
 
-1. Download `APOST3Dview-<version>-linux-x86_64.tar.gz` and unpack it: `tar xzf APOST3Dview-*-linux-x86_64.tar.gz`.
-2. Run `./install.sh` in the unpacked folder to add APOST3Dview to your applications menu (for your user only, no root needed), or start `./apost3dview` directly.
-3. A Vulkan driver for your GPU is needed (Mesa's `mesa-vulkan-drivers`, or your GPU vendor's driver). Most desktops have one already.
+1. Open the downloaded `APOST3Dview-macos.dmg` and drag **APOST3Dview** onto **Applications**. Drag the `examples` folder somewhere of yours too (Documents, say) to keep it.
+2. Open APOST3Dview from Applications. The first time only, macOS says it could not verify the app: click **Done** (not Move to Trash).
+3. Open **System Settings**, then **Privacy & Security**. Scroll down to the message about APOST3Dview, click **Open Anyway** and confirm. From then on it opens like any other app.
+
+### Linux
+
+1. Unpack the download: `tar xzf APOST3Dview-linux.tar.gz`.
+2. In the unpacked folder, run `./install.sh` to add APOST3Dview to your applications menu (for your user only, no root needed), or start `./apost3dview` directly.
+3. A Vulkan driver for your graphics card is needed (Mesa's `mesa-vulkan-drivers`, or your card maker's driver). Most desktops have one already.
 
 ### If it doesn't start
 

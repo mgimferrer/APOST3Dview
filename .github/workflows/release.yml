@@ -40,12 +40,12 @@ jobs:
         shell: pwsh
         run: |
           cargo build --release --locked -p apost3dview
-          $dir = "dist/APOST3Dview-${{ needs.version.outputs.version }}-windows-x86_64"
+          $dir = "dist/APOST3Dview-${{ needs.version.outputs.version }}"
           New-Item -ItemType Directory -Force $dir | Out-Null
           Copy-Item target/release/apost3dview.exe "$dir/APOST3Dview.exe"
           Copy-Item LICENSE "$dir/LICENSE.txt"
           Copy-Item -Recurse examples "$dir/examples"
-          Compress-Archive -Path $dir -DestinationPath "$dir.zip"
+          Compress-Archive -Path $dir -DestinationPath "dist/APOST3Dview-windows.zip"
       - uses: actions/upload-artifact@v7
         with:
           name: windows
