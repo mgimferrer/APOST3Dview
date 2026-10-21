@@ -138,7 +138,7 @@ impl InputDraft {
         }
         if let Some(enpart) = &input.enpart {
             if self.facts.as_ref().is_ok_and(|f| !f.reference_energies) {
-                notes.push("The .fchk has no reference energies: ENPART runs, without its integration-error checks. For Gaussian, append them with utils/get_energy_g16.".into());
+                notes.push("The .fchk has no reference energies: ENPART still runs, without the zero-error correction of the integration. For Gaussian, append them with utils/get_energy_g16.".into());
             }
             if enpart.fast_grid {
                 notes.push("The faster two-electron grid is for tests and large systems: check the integration error in the output.".into());

@@ -294,15 +294,17 @@ impl ApostInput {
     }
 
     /// Fills in what the `.fchk` decides by itself, for job `job`: `QCHEM`
-    /// for a Q-Chem file; for a correlated wavefunction the RDM files
-    /// (`DM 2`, which also does the local spin analysis) when SPIN or
-    /// ENPART need them, or always for an open shell, and CASSCF as the
-    /// ENPART method; otherwise the ENPART functional named in the file,
-    /// if it has not been chosen yet.
+    /// for a Q-Chem file; for a correlated (pySCF) wavefunction always the
+    /// RDM files (`DM 2`, which also does the local spin analysis;
+    /// APOST-3D's rule, 2026-10-21) and CASSCF as the ENPART method;
+    /// otherwise the ENPART functional named in the file, if it has not
+    /// been chosen yet.
     pub fn apply_fchk(&mut self, facts: &FchkFacts, job: &str) {
         self.qchem = facts.program == FchkProgram::QChem;
-        let needs_rdms = facts.correlated && (self.spin || self.enpart.is_some() || facts.open_shell);
-        if needs_rdms {
+        // A correlated pySCF file always gets DM 2 and its RDM files,
+        // whatever the analyses (APOST-3D, 2026-10-21); DM 2 also switches
+        // on the local spin section.
+        if facts.correlated {
             if self.dm.is_none() {
                 self.dm = Some(DmFiles { dm1: format!("{job}.dm1"), dm2: format!("{job}.dm2") });
             }

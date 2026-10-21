@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use apost3dview_core::{
-    fragments_around, load_apost_results, read_apost_input, read_fchk_facts, separate_molecules, ApostInput, EnpartOptions, Molecule, OxidationStates,
+    fragments_around, load_apost_results, read_apost_input, read_fchk_facts, separate_molecules, ApostInput, DmFiles, EnpartOptions, Molecule, OxidationStates,
 };
 
 fn fixtures_dir() -> Option<PathBuf> {
@@ -92,7 +92,7 @@ const DELIBERATELY_INCOMPLETE: [(&str, &str); 1] =
 #[test]
 fn rebuilds_the_reference_inputs_from_their_fchk() {
     let Some(dir) = fixtures_dir() else { return };
-    let (mut rebuilt, mut outside, mut functional_chosen) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut rebuilt, mut outside, mut functional_chosen, mut dm_added) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for path in files(&dir, ".inp") {
         let job = job(&path, ".inp");
         let fchk = dir.join(format!("{job}.fchk"));
@@ -124,12 +124,22 @@ fn rebuilds_the_reference_inputs_from_their_fchk() {
             enpart.method = wanted.method.clone();
             functional_chosen.push(job.clone());
         }
-        assert_eq!(input.normalized(), reference.input.normalized(), "{job}: rebuilt from {job}.fchk");
+        // A correlated pySCF file always gets DM 2 with its RDM files
+        // (APOST-3D, 2026-10-21), also where a reference input left it out.
+        let mut expected = reference.input.clone();
+        if facts.correlated && expected.dm.is_none() {
+            expected.dm = Some(DmFiles { dm1: format!("{job}.dm1"), dm2: format!("{job}.dm2") });
+            dm_added.push(job.clone());
+        }
+        assert_eq!(input.normalized(), expected.normalized(), "{job}: rebuilt from {job}.fchk");
         rebuilt.push(job);
     }
     println!("rebuilt from their .fchk ({}): {}", rebuilt.len(), rebuilt.join(", "));
     if !functional_chosen.is_empty() {
         println!("functional picked by the user (pySCF): {}", functional_chosen.join(", "));
+    }
+    if !dm_added.is_empty() {
+        println!("DM 2 added to the reference (correlated pySCF file): {}", dm_added.join(", "));
     }
     println!("outside the generator ({}):\n  {}", outside.len(), outside.join("\n  "));
     assert!(rebuilt.len() >= 25, "only {} inputs rebuilt", rebuilt.len());

@@ -72,7 +72,13 @@ fn show_analyses(ui: &mut egui::Ui, draft: &mut InputDraft) {
     let oslo_possible = (real && !correlated) || input.oslo;
     ui.add_enabled(oslo_possible, egui::Checkbox::new(&mut input.oslo, "Oxidation states from localized orbitals (OSLO)"))
         .on_disabled_hover_text(if correlated { "OSLO needs a single-determinant wavefunction (HF or DFT)" } else { "OSLO needs a real-space atomic definition (TFVC)" });
-    ui.checkbox(&mut input.spin, "Local spin (SPIN)");
+    if correlated {
+        // DM 2 is always written for a correlated file, and does SPIN too.
+        ui.add_enabled(false, egui::Checkbox::new(&mut true, "Local spin (SPIN)"))
+            .on_disabled_hover_text("Always done for a correlated wavefunction: its density matrices (DM 2) include the local spin analysis");
+    } else {
+        ui.checkbox(&mut input.spin, "Local spin (SPIN)");
+    }
     let mut enpart = input.enpart.is_some();
     if ui.add_enabled(real || enpart, egui::Checkbox::new(&mut enpart, "Energy decomposition, IQA (ENPART)")).on_disabled_hover_text("ENPART needs a real-space atomic definition (TFVC)").changed() {
         input.enpart = enpart.then_some(EnpartOptions { method: None, fast_grid: false });

@@ -8,7 +8,7 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use common::{app_with, fixtures_dir, scratch_dir, screenshot, toasts};
-use egui_kittest::kittest::{By, Queryable};
+use egui_kittest::kittest::{By, NodeT, Queryable};
 use egui::accesskit::Role;
 use egui_kittest::Harness;
 
@@ -123,8 +123,11 @@ fn a_correlated_wavefunction_gets_its_rdm_files() {
     let fchk = copy_fchk(&dir, "H2O-CAS44", "input-cas", "cas");
     let mut harness = generator(&fchk);
     harness.get_by_label("pySCF \u{b7} CASSCF \u{b7} correlated");
-    click(&mut harness, "Local spin (SPIN)");
-    assert_eq!(harness.state().input_text().unwrap(), "# METHOD\nTFVC\nSPIN\nDM 2\n#\n# DM\ncas.dm1\ncas.dm2\npySCF\n#\n");
+    // DM 2 with the RDM files from the start, whatever the analyses
+    // (APOST-3D's rule); it does the local spin analysis too, so SPIN is
+    // shown ticked and can't be unticked.
+    assert_eq!(harness.state().input_text().unwrap(), "# METHOD\nTFVC\nDM 2\n#\n# DM\ncas.dm1\ncas.dm2\npySCF\n#\n");
+    assert!(harness.get_by_label("Local spin (SPIN)").accesskit_node().is_disabled());
     harness.get_by_label("cas.dm1 (written by APOST-3D's pySCF script with the .fchk) is not next to the .fchk.");
     click(&mut harness, "Energy decomposition, IQA (ENPART)");
     harness.get_by_label("Energy of the CASSCF wavefunction (also FCI and CISD from pySCF), from its RDMs.");
