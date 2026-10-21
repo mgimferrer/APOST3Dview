@@ -17,12 +17,29 @@
 # by git.
 #
 # Usage: scripts/sync-apost3d-fixtures.sh [path/to/APOST3D]
+#        scripts/sync-apost3d-fixtures.sh --pinned
 # Default: the APOST3D checkout next to this repository
-# (../APOST3D-MAJORCHANGE/APOST3D).
+# (../APOST3D-MAJORCHANGE/APOST3D). With --pinned, the commit named in
+# scripts/apost3d-commit is fetched from GitHub instead (tests/ only, about
+# 20 MB, into fixtures/apost3d-source/): what CI does, and no APOST-3D
+# checkout needed. The orbital-file cases come from the handoff folder,
+# which isn't in that repository, so they are then left as they are.
 set -eu
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
-src=${1:-"$repo/../APOST3D-MAJORCHANGE/APOST3D"}
+pinned=$(grep -v '^#' "$repo/scripts/apost3d-commit" | head -n 1 | tr -d '[:space:]')
+if [ "${1:-}" = "--pinned" ]; then
+    src="$repo/fixtures/apost3d-source"
+    rm -rf "$src"
+    git init -q "$src"
+    git -C "$src" config core.autocrlf false
+    git -C "$src" remote add origin https://github.com/mgimferrer/APOST3D.git
+    git -C "$src" sparse-checkout set tests/reference tests/inputs
+    git -C "$src" fetch -q --depth 1 --filter=blob:none origin "$pinned"
+    git -C "$src" checkout -q FETCH_HEAD
+else
+    src=${1:-"$repo/../APOST3D-MAJORCHANGE/APOST3D"}
+fi
 if [ ! -d "$src/tests/reference" ] || [ ! -d "$src/tests/inputs" ]; then
     echo "No APOST3D checkout at $src (expected tests/reference and tests/inputs)." >&2
     echo "Usage: $0 [path/to/APOST3D]" >&2
@@ -59,6 +76,10 @@ echo "Copied $inputs reference inputs."
 commit=$(git -C "$src" rev-parse --short HEAD 2>/dev/null || echo unknown)
 echo "Copied $count results files from $src (commit $commit) into $dest."
 echo "$commit" > "$dest/APOST3D-COMMIT"
+case "$pinned" in
+    "$commit"*) ;;
+    *) echo "Note: CI tests against APOST-3D $pinned (scripts/apost3d-commit), not $commit." ;;
+esac
 
 handoff="$src/../VIEWER-HANDOFF/orbital-fixtures"
 orbitals="$repo/fixtures/apost3d-orbitals"

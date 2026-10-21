@@ -38,7 +38,7 @@ The executable is then `target/release/apost3dview` (`.exe` on Windows). Files n
 cargo test --workspace
 ```
 
-- The tests that check APOST-3D's reference results need them copied from a local APOST-3D checkout first: `scripts/sync-apost3d-fixtures.sh path/to/APOST3D`. Without them, those tests skip themselves.
+- The tests that check APOST-3D's reference results need them copied into `fixtures/` first: `scripts/sync-apost3d-fixtures.sh --pinned` fetches them from GitHub at the APOST-3D commit CI tests against (`scripts/apost3d-commit`), or `scripts/sync-apost3d-fixtures.sh path/to/APOST3D` copies them from a local APOST-3D checkout. Without them, those tests skip themselves. CI runs them on every push; to move to newer APOST-3D results, put the new commit in `scripts/apost3d-commit`.
 - The app tests (`-p apost3dview`) render with the real GPU pipelines, so they need a GPU (or a software one). The core and render tests don't.
 - `crates/app/tests/input_runs.rs` runs inputs made with the input generator through APOST-3D itself and opens their results; it needs an APOST-3D checkout with the program built, `APOST3D_DIR=path/to/APOST3D cargo test -p apost3dview --test input_runs`, and skips itself otherwise (so it doesn't run in CI).
 - Reference scenes (pixel-by-pixel comparisons before and after a renderer change): see the comments at the top of `crates/app/tests/render_reference.rs`.

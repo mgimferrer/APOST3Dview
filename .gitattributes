@@ -1,0 +1,5 @@
+# Shell scripts keep LF line endings on Windows checkouts too (sh refuses
+# CRLF); calculation files are kept byte for byte on every system.
+*.sh text eol=lf
+/examples/** -text
+/validation/** -text

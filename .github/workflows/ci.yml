@@ -1,7 +1,9 @@
 # Every push to main: build and check on Windows, macOS and Linux, and run
 # the tests that need no GPU. The app tests run on a software GPU (WARP on
 # Windows, lavapipe on Linux): every render pipeline built and drawn through
-# DX12 and Vulkan, which this Mac never exercises.
+# DX12 and Vulkan, which this Mac never exercises. Both jobs first copy
+# APOST-3D's reference results at the commit in scripts/apost3d-commit, so
+# the tests that need them run too.
 name: CI
 
 on:
@@ -31,6 +33,9 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: APOST-3D reference results (the commit in scripts/apost3d-commit)
+        shell: bash
+        run: sh scripts/sync-apost3d-fixtures.sh --pinned
       - run: cargo test --locked -p apost3dview-core -p apost3dview-render
 
   app-tests:
@@ -48,4 +53,7 @@ jobs:
       - name: Linux build packages and lavapipe (software Vulkan)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev mesa-vulkan-drivers
+      - name: APOST-3D reference results (the commit in scripts/apost3d-commit)
+        shell: bash
+        run: sh scripts/sync-apost3d-fixtures.sh --pinned
       - run: cargo test --locked -p apost3dview
