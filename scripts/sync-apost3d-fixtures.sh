@@ -6,7 +6,8 @@
 #     <job>.apost        their text reports
 #     <job>.fchk         the wavefunctions they were computed from
 #     <job>.inp          every reference input (the input generator's
-#                        tests), with its .fchk
+#                        tests), with its .fchk and, for a correlated
+#                        wavefunction, its RDM files (.dm1, .dm2)
 #   fixtures/apost3d-orbitals/: the cases with EOS/GEOS/OSLO orbital files,
 #     from VIEWER-HANDOFF/orbital-fixtures/ (next to the APOST3D checkout),
 #     each complete like a run's folder: results, report, orbital .fchk, and
@@ -49,6 +50,9 @@ for inp in "$src"/tests/inputs/*.inp; do
     job=$(basename "$inp" .inp)
     cp "$inp" "$dest/"
     [ -f "$dest/$job.fchk" ] || [ ! -f "$src/tests/inputs/$job.fchk" ] || cp "$src/tests/inputs/$job.fchk" "$dest/"
+    for rdm in "$src/tests/inputs/$job.dm1" "$src/tests/inputs/$job.dm2"; do
+        [ ! -f "$rdm" ] || cp "$rdm" "$dest/"
+    done
     inputs=$((inputs + 1))
 done
 echo "Copied $inputs reference inputs."
@@ -58,8 +62,8 @@ echo "$commit" > "$dest/APOST3D-COMMIT"
 
 handoff="$src/../VIEWER-HANDOFF/orbital-fixtures"
 orbitals="$repo/fixtures/apost3d-orbitals"
-rm -rf "$orbitals"
 if [ -d "$handoff" ]; then
+    rm -rf "$orbitals"
     mkdir -p "$orbitals"
     cp "$handoff"/* "$orbitals/"
     cases=0
@@ -74,5 +78,5 @@ if [ -d "$handoff" ]; then
     done
     echo "Copied $cases orbital-file cases from $handoff into $orbitals."
 else
-    echo "No $handoff: orbital-file cases not copied." >&2
+    echo "No $handoff: fixtures/apost3d-orbitals left as it was." >&2
 fi

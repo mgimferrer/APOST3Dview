@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use egui_kittest::kittest::{By, Queryable};
 
-use common::{app_with, repo_dir, scratch_dir, screenshot, toasts};
+use common::{app_with, example, repo_dir, scratch_dir, screenshot, toasts};
 
 fn orbital_fixtures() -> Option<PathBuf> {
     let dir = repo_dir().join("fixtures/apost3d-orbitals");
@@ -32,7 +32,7 @@ fn choose_orbitals(harness: &mut egui_kittest::Harness<'_, apost3dview::App>, op
 
 #[test]
 fn oslos_are_generated_with_their_fragments() {
-    let Some(dir) = orbital_fixtures() else { return };
+    let dir = example("C2H6-OSLO-2CH3");
     let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.apost.json")]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
@@ -57,7 +57,7 @@ fn oslos_are_generated_with_their_fragments() {
 
 #[test]
 fn oslos_before_orthogonalization_are_a_set_of_their_own() {
-    let Some(dir) = orbital_fixtures() else { return };
+    let dir = example("C2H6-OSLO-2CH3");
     let scratch = scratch_dir("orbital-set-preortho");
     let session = scratch.join("preortho.a3dview");
     {
@@ -95,7 +95,7 @@ fn oslos_before_orthogonalization_are_a_set_of_their_own() {
 
 #[test]
 fn a_table_row_draws_its_orbital() {
-    let Some(dir) = orbital_fixtures() else { return };
+    let dir = example("C2H6-OSLO-2CH3");
     let mut harness = app_with(vec![dir.join("C2H6-OSLO-2CH3.apost.json")]);
     harness.get_by_label("Key numbers");
     harness.get_by_label("Sum of the FOLI values, total");
@@ -154,13 +154,13 @@ fn a_closed_shell_eos_set_says_beta_equals_alpha() {
 
 #[test]
 fn an_orbital_file_of_another_molecule_is_refused() {
-    let Some(dir) = orbital_fixtures() else { return };
+    let dir = example("C2H6-OSLO-2CH3");
     let scratch = scratch_dir("orbital-set-mismatch");
     for name in ["C2H6-OSLO-2CH3.fchk", "C2H6-OSLO-2CH3.apost.json"] {
         std::fs::copy(dir.join(name), scratch.join(name)).unwrap();
     }
     // The orbital file of another system, under the expected name.
-    std::fs::copy(dir.join("H2-S-OSLO-OSLOs.fchk"), scratch.join("C2H6-OSLO-2CH3-OSLOs.fchk")).unwrap();
+    std::fs::copy(example("CH3F-GEOS").join("CH3F-GEOS-GEOS-EFOs.fchk"), scratch.join("C2H6-OSLO-2CH3-OSLOs.fchk")).unwrap();
     let mut harness = app_with(vec![scratch.join("C2H6-OSLO-2CH3.apost.json")]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
@@ -176,7 +176,7 @@ fn an_orbital_file_of_another_molecule_is_refused() {
 
 #[test]
 fn an_orbital_file_of_another_run_is_refused() {
-    let Some(dir) = orbital_fixtures() else { return };
+    let dir = example("C2H6-OSLO-2CH3");
     let scratch = scratch_dir("orbital-set-stale");
     for name in ["C2H6-OSLO-2CH3.fchk", "C2H6-OSLO-2CH3.apost.json"] {
         std::fs::copy(dir.join(name), scratch.join(name)).unwrap();
@@ -207,7 +207,7 @@ fn effao_tables_are_listed_but_not_drawable() {
 
 #[test]
 fn sessions_keep_analysis_orbitals() {
-    let Some(dir) = orbital_fixtures() else { return };
+    let dir = example("C2H6-OSLO-2CH3");
     let scratch = scratch_dir("orbital-set-session");
     let session = scratch.join("oslo.a3dview");
     {

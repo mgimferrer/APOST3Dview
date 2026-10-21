@@ -46,6 +46,7 @@ cargo test --workspace
 ## Test data
 
 - `validation/`: committed. Calculations from Gaussian, PySCF, Q-Chem and ORCA with the programs' own orbital cubes, one folder per program with a README; `crates/core/tests/reference_cubes.rs` checks APOST3Dview's orbitals against them.
+- `examples/`: committed. Five complete APOST-3D runs for new users (see its README), also opened by the app's tests (`crates/app/tests/examples.rs`, `orbital_sets.rs`). Refreshed from `fixtures/` with `scripts/update-examples.sh` when APOST-3D's results change.
 - `fixtures/`: not committed. `fixtures/apost3d/` and `fixtures/apost3d-orbitals/` hold APOST-3D's reference results, copied by `scripts/sync-apost3d-fixtures.sh`. Unpublished test systems go in their own subfolder here (for example `fixtures/bi-dianion-osd/`); tests and reference scenes that need one skip themselves without it.
 
 ## Developer tools

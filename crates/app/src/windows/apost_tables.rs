@@ -149,6 +149,10 @@ impl App {
                     ui.label(RichText::new("Draw shows the orbital as a surface.").small().weak());
                 } else if by_orbital && channel.is_none() {
                     ui.label(RichText::new("No orbital file for these orbitals.").small().weak());
+                } else if let Some((analysis, _)) = channel.filter(|_| by_orbital && set.is_none())
+                    && let Some(file) = results.orbital_sets().into_iter().find(|s| s.analysis == analysis && !s.preortho).map(|s| s.file)
+                {
+                    ui.label(RichText::new(format!("Their orbital file, {file}, isn't next to the results: they can't be drawn.")).small().weak());
                 }
             });
             egui::ScrollArea::both().id_salt(("apost_table_rows", &chosen.id)).max_height(260.0).show(ui, |ui| {

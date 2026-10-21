@@ -71,6 +71,8 @@ For development, or if a download doesn't work on your system: see [BUILDING.md]
 
 ## How to use
 
+To try it before running a calculation of your own, [`examples/`](examples/) has five complete APOST-3D calculations (fragments and bond orders, an energy decomposition, OSLOs, effective fragment orbitals, a CASSCF density); its README says what to look at in each.
+
 1. Launch the app (`apost3dview`, optionally followed by files to open) and open files with **Open** in the toolbar, Cmd+O (Ctrl+O on Windows and Linux), or by dragging them onto the window. `.fchk`, `.molden`, `.xyz`, `.cube` and APOST-3D `.apost.json` files are recognized by their name; the Open menu can also show one kind of file at a time. The windows (Molecule, Surfaces, Measure, APOST-3D, Appearance, Export, opened from the toolbar) stack in a column at the top right, all the same size, so they never cover the middle of the molecule: collapse one with its triangle and the ones below move up, resize one by its border, or drag one anywhere. **Arrange windows** in the toolbar puts them all back in the column at their default size.
 2. Drag with the mouse or trackpad to rotate (freely, in any direction, including over the top), shift+drag to pan, and scroll or pinch to zoom. The arrow keys rotate too, two at once for a diagonal, and the Space bar starts or stops a continuous spin in the direction of the last arrow pressed, handy for presentations. Click atoms or bonds to select them, or Alt+drag (Option+drag on a Mac) a box to select every atom inside it; Esc clears the selection. The bar along the bottom shows what is open and selected.
 3. **Molecule** lists the open structures and sets how the active one is drawn: atom and bond size, labels, hidden hydrogens. While something is selected, it offers what to do with it: hide it, create or hide a bond between two atoms, make bonds dashed (transition states), or add a measurement.
@@ -82,7 +84,7 @@ For development, or if a download doesn't work on your system: see [BUILDING.md]
 9. **Export** saves the current view as a PNG at a given DPI and physical figure size (or a custom resolution), or a looping animated GIF of one full turn of the molecule, with your choice of width, duration and frame rate. The GIF works directly in PowerPoint, Keynote and Google Slides. With "Also save the session" ticked (the default), `figure.a3dview` is written next to `figure.png`.
 10. **Save** (Cmd+S, or Ctrl+S) saves the whole setup as a session (`.a3dview`). Open it again like any other file. A session points to your files rather than copying them, with paths relative to the session, so keep it in the same folder as the files (moving the whole folder is fine). Orbitals generated in the app are recalculated when the session opens. If a file is missing, or has changed since the session was saved, APOST3Dview opens the rest and tells you what it couldn't restore.
 
-`validation/` in this repository has `.fchk`, `.molden` and `.cube` files from Gaussian, PySCF, Q-Chem and ORCA (water, O2 and BiCl3 at several basis sets, open-shell triplets, a CASSCF): the data APOST3Dview's orbitals are checked against. They open like any other file.
+Besides [`examples/`](examples/), `validation/` in this repository has `.fchk`, `.molden` and `.cube` files from Gaussian, PySCF, Q-Chem and ORCA (water, O2 and BiCl3 at several basis sets, open-shell triplets, a CASSCF): the data APOST3Dview's orbitals are checked against. They open like any other file.
 
 ## Known limitations
 

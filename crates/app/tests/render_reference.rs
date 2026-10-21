@@ -56,7 +56,7 @@ const H2O: &[&str] = &["validation/gaussian/H2O-ccpVTZ.fchk"];
 const H2O_T: &[&str] = &["validation/gaussian/H2O-T-ccpVTZ.fchk"];
 const FE: &[&str] = &["fixtures/apost3d/FeCN5NO3--UBLYP.apost.json"];
 const C2H6: &[&str] = &["fixtures/apost3d/C2H6-B3LYP.apost.json"];
-const C2H6_OSLO: &[&str] = &["fixtures/apost3d-orbitals/C2H6-OSLO-2CH3.apost.json"];
+const C2H6_OSLO: &[&str] = &["examples/C2H6-OSLO-2CH3/C2H6-OSLO-2CH3.apost.json"];
 const CH3F: &[&str] = &["fixtures/apost3d/CH3F.apost.json"];
 /// APOST-3D EOS (Löwdin) on the 83-atom Bi complex, run locally
 /// (2026-10-19); not in git, so the scene is skipped without it.

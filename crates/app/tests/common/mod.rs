@@ -36,6 +36,12 @@ pub fn fixtures_dir() -> Option<PathBuf> {
     }
 }
 
+/// One of the committed examples (`examples/<job>/`), a complete APOST-3D
+/// run folder; always present, unlike `fixtures/`.
+pub fn example(job: &str) -> PathBuf {
+    repo_dir().join("examples").join(job)
+}
+
 /// A fresh scratch directory for one test.
 pub fn scratch_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("apost3dview-ui-{name}-{}", std::process::id()));
