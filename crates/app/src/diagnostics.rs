@@ -69,9 +69,10 @@ pub fn start() {
 
 /// The graphics adapters this computer offers, written to the log before
 /// the window is created (which one eframe then picks is logged by the app).
-pub fn log_adapters() {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
-    let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()));
+pub fn log_adapters(backends: wgpu::Backends) {
+    log::info!("graphics APIs tried: {backends:?}");
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends, ..wgpu::InstanceDescriptor::new_without_display_handle_from_env() });
+    let adapters = pollster::block_on(instance.enumerate_adapters(backends));
     if adapters.is_empty() {
         log::warn!("no graphics adapter found");
     }

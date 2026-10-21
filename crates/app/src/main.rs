@@ -6,7 +6,8 @@ mod diagnostics;
 
 fn main() -> eframe::Result<()> {
     diagnostics::start();
-    diagnostics::log_adapters();
+    let backends = graphics_backends();
+    diagnostics::log_adapters(backends);
 
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png"))
         .expect("bundled icon.png should be a valid image");
@@ -18,6 +19,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]).with_icon(icon),
         depth_buffer: apost3dview_render::DEPTH_BUFFER_BITS,
         multisampling: apost3dview_render::MSAA_SAMPLES as u16,
+        wgpu_options: wgpu_options(backends),
         ..Default::default()
     };
 
@@ -31,4 +33,23 @@ fn main() -> eframe::Result<()> {
         diagnostics::show_error(&format!("APOST3Dview could not start:\n\n{err}"));
     }
     result
+}
+
+/// The graphics APIs wgpu may use: `WGPU_BACKEND` when set (`dx12`,
+/// `vulkan`, `gl`, `metal`), otherwise DX12 alone on Windows and eframe's
+/// default elsewhere. On Windows, eframe's default also tries Vulkan and
+/// OpenGL, and on a laptop with AMD + NVIDIA graphics (2026-10-21) asking
+/// those for their adapters never returned: the app hung before opening
+/// its window. DX12 is always there on Windows 10/11 (with Microsoft's
+/// software renderer as a last resort), and it is what CI tests.
+fn graphics_backends() -> wgpu::Backends {
+    wgpu::Backends::from_env().unwrap_or(if cfg!(windows) { wgpu::Backends::DX12 } else { wgpu::Backends::PRIMARY | wgpu::Backends::GL })
+}
+
+fn wgpu_options(backends: wgpu::Backends) -> egui_wgpu::WgpuConfiguration {
+    let mut options = egui_wgpu::WgpuConfiguration::default();
+    if let egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_setup {
+        setup.instance_descriptor.backends = backends;
+    }
+    options
 }
