@@ -18,9 +18,9 @@
 //! (mimicking a real toolbar + side panel layout), and checks the two
 //! agree after accounting for the offset.
 
-use apost3dview_core::parse_xyz;
+use apost3dview_core::Molecule;
 use apost3dview_render::{AoSettings, GlyphAtlas, Material, OrbitCamera, SceneUniforms, ViewportResources};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     pollster::block_on(run());
@@ -30,8 +30,8 @@ async fn run() {
     let path = std::env::args()
         .nth(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("../../TESTS-VISUALIZER/BiCl3-def2QZVPP.xyz"));
-    let molecule = parse_xyz(&path).expect("failed to parse real xyz file");
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../validation/gaussian/BiCl3-def2QZVPP.fchk"));
+    let molecule = Molecule::from_fchk(&path).expect("failed to parse real fchk geometry");
 
     let instance = wgpu::Instance::default();
     let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).await.expect("no adapter");

@@ -99,7 +99,7 @@ fn written_by_orca(sections: &[Section]) -> bool {
 /// `orca_2mkl`'s two departures from the Molden conventions PySCF follows,
 /// found against ORCA 6.1.1's own cube files (2026-10-21; every orbital of
 /// six test cases then matches to numerical noise, see
-/// `TESTS-VISUALIZER/orca/`):
+/// `validation/orca/`):
 /// - each contraction coefficient includes its primitive's normalization
 ///   constant, (2a/pi)^(3/4) (4a)^(L/2) / sqrt((2L-1)!!): divided out here,
 ///   and each contracted function normalized again;

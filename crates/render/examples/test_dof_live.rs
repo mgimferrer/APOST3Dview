@@ -17,7 +17,7 @@
 
 use apost3dview_core::Molecule;
 use apost3dview_render::{AoSettings, DofSettings, GlyphAtlas, Material, OrbitCamera, SceneUniforms, ViewportResources};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     pollster::block_on(run());
@@ -27,7 +27,7 @@ async fn run() {
     let path = std::env::args()
         .nth(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("TESTS-VISUALIZER/Bi-dianion-OSD.fchk"));
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/bi-dianion-osd/Bi-dianion-OSD.fchk"));
     let molecule = Molecule::from_fchk(&path).expect("failed to parse real fchk geometry");
 
     let instance = wgpu::Instance::default();

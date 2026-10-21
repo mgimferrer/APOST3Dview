@@ -43,6 +43,29 @@ cargo test --workspace
 - `crates/app/tests/input_runs.rs` runs inputs made with the input generator through APOST-3D itself and opens their results; it needs an APOST-3D checkout with the program built, `APOST3D_DIR=path/to/APOST3D cargo test -p apost3dview --test input_runs`, and skips itself otherwise (so it doesn't run in CI).
 - Reference scenes (pixel-by-pixel comparisons before and after a renderer change): see the comments at the top of `crates/app/tests/render_reference.rs`.
 
+## Test data
+
+- `validation/`: committed. Calculations from Gaussian, PySCF, Q-Chem and ORCA with the programs' own orbital cubes, one folder per program with a README; `crates/core/tests/reference_cubes.rs` checks APOST3Dview's orbitals against them.
+- `fixtures/`: not committed. `fixtures/apost3d/` and `fixtures/apost3d-orbitals/` hold APOST-3D's reference results, copied by `scripts/sync-apost3d-fixtures.sh`. Unpublished test systems go in their own subfolder here (for example `fixtures/bi-dianion-osd/`); tests and reference scenes that need one skip themselves without it.
+
+## Developer tools
+
+Small programs kept in the crates' `examples/` folders, run with `cargo run --release -p <crate> --example <name> -- <arguments>`. They aren't part of `cargo test`.
+
+In `apost3dview-core`:
+
+- `parse_fchk`, `parse_wavefunction`, `parse_molden`, `parse_cube`: print what APOST3Dview reads from a file.
+- `compare_cube`, `compare_cube_molden`: one orbital of a `.fchk` or `.molden` against a cube file of it (RMS and largest difference); see `validation/README.md`.
+- `time_grids`: timings of orbitals, densities, isosurfaces and envelopes on a large molecule (needs `fixtures/`).
+
+In `apost3dview-render`, checks of the rendering, most of them on a real GPU device, each ending in "ALL CHECKS PASSED" (pictures are written to the current folder, or to the folder in `AO_TEST_OUT_DIR`, `DOF_TEST_OUT_DIR` or `TURNTABLE_TEST_OUT_DIR`):
+
+- `test_export`, `test_glyph_atlas`, `test_label_layout`, `test_isosurface`: offscreen PNG export, the label font atlas and layout, the isosurface pipeline.
+- `test_ao`, `test_ao_live`, `test_dof`, `test_dof_live`: ambient occlusion and depth of field, export and live paths (the depth-of-field ones on a large molecule, from `fixtures/`, or a `.fchk` given as argument).
+- `test_turntable_gif`: GIF export, decoded back and checked for a seamless loop.
+- `test_real_cube_render <file.cube>`: a cube file's isosurface, rendered.
+- `test_picking <file.fchk>`, `test_occlusion <file.fchk>`: atom and bond picking, and which atoms are visible; meant for a large molecule, to compare the counts with earlier runs.
+
 ## Packages and releases
 
 `.github/workflows/release.yml` builds the downloadable packages:

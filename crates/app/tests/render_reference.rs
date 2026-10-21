@@ -50,10 +50,10 @@ fn scene(name: &'static str, files: &'static [&'static str], patch: &str) -> Sce
     Scene { name, files, patch: patch.to_string(), select: &[], window: false, zoom_out: 1.0 }
 }
 
-const BI: &[&str] = &["TESTS-VISUALIZER/Bi-dianion-OSD.fchk"];
-const BICL3: &[&str] = &["TESTS-VISUALIZER/BiCl3-def2TZVPP.fchk"];
-const H2O: &[&str] = &["TESTS-VISUALIZER/H2O-ccpVTZ.fchk"];
-const H2O_T: &[&str] = &["TESTS-VISUALIZER/H2O-T-ccpVTZ.fchk"];
+const BI: &[&str] = &["fixtures/bi-dianion-osd/Bi-dianion-OSD.fchk"];
+const BICL3: &[&str] = &["validation/gaussian/BiCl3-def2TZVPP.fchk"];
+const H2O: &[&str] = &["validation/gaussian/H2O-ccpVTZ.fchk"];
+const H2O_T: &[&str] = &["validation/gaussian/H2O-T-ccpVTZ.fchk"];
 const FE: &[&str] = &["fixtures/apost3d/FeCN5NO3--UBLYP.apost.json"];
 const C2H6: &[&str] = &["fixtures/apost3d/C2H6-B3LYP.apost.json"];
 const C2H6_OSLO: &[&str] = &["fixtures/apost3d-orbitals/C2H6-OSLO-2CH3.apost.json"];

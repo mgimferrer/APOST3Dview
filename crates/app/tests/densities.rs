@@ -9,7 +9,7 @@ use egui_kittest::kittest::{By, Queryable};
 use common::{app_with, fixtures_dir, repo_dir, scratch_dir, screenshot, toasts};
 
 fn testdata(name: &str) -> std::path::PathBuf {
-    repo_dir().join("TESTS-VISUALIZER").join(name)
+    repo_dir().join("validation/gaussian").join(name)
 }
 
 #[test]

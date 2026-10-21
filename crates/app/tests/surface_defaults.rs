@@ -23,7 +23,7 @@ fn set_isovalue(harness: &mut egui_kittest::Harness<'_, apost3dview::App>, value
 
 #[test]
 fn an_edited_isovalue_stays_with_its_surface() {
-    let mut harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk")]);
+    let mut harness = app_with(vec![repo_dir().join("validation/gaussian/H2O-631G.fchk")]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     // The HOMO is ticked on opening.

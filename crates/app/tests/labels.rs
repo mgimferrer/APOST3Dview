@@ -23,7 +23,7 @@ fn assert_no_overlap(labels: &[(String, egui::Rect)]) {
 
 #[test]
 fn measurements_are_always_shown() {
-    let mut harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/BiCl3-def2TZVPP.fchk")]);
+    let mut harness = app_with(vec![repo_dir().join("validation/gaussian/BiCl3-def2TZVPP.fchk")]);
     for atoms in [&[0, 1][..], &[0, 2], &[1, 0, 2], &[2, 0, 3]] {
         harness.state_mut().select_atoms(atoms);
         harness.run_steps(2);
@@ -37,7 +37,7 @@ fn measurements_are_always_shown() {
 
 #[test]
 fn atom_names_never_overlap() {
-    let path = repo_dir().join("TESTS-VISUALIZER/Bi-dianion-OSD.fchk");
+    let path = repo_dir().join("fixtures/bi-dianion-osd/Bi-dianion-OSD.fchk");
     if !path.is_file() {
         eprintln!("Bi-dianion-OSD.fchk not found; test skipped");
         return;

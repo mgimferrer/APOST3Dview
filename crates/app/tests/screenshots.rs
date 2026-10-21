@@ -32,7 +32,7 @@ fn about_window_tells_where_to_report_problems() {
 
 #[test]
 fn molecule_and_orbital() {
-    let mut harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/H2O-ccpVDZ-HOMO.cube")]);
+    let mut harness = app_with(vec![repo_dir().join("validation/gaussian/H2O-ccpVDZ-HOMO.cube")]);
     harness.run_steps(4);
     assert!(has_content(&screenshot(&mut harness, "cube")));
 }
@@ -91,7 +91,7 @@ fn fragment_envelopes_leave_the_atoms_alone() {
 #[test]
 fn surfaces_update_by_themselves() {
     use egui_kittest::kittest::Queryable;
-    let path = |name: &str| repo_dir().join("TESTS-VISUALIZER").join(name);
+    let path = |name: &str| repo_dir().join("validation/gaussian").join(name);
     let mut harness = app_with(vec![path("H2O-ccpVDZ-HOMO.cube"), path("H2O-ccpVDZ-LUMO.cube")]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.remove_cursor();

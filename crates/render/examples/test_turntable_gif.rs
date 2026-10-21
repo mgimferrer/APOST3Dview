@@ -11,7 +11,7 @@ use apost3dview_render::{
     TurntableSettings, ViewportResources,
 };
 use glam::Vec2;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     pollster::block_on(run());
@@ -65,7 +65,7 @@ fn rms(a: &[u8], b: &[u8]) -> f64 {
 }
 
 async fn run() {
-    let path = std::env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("TESTS-VISUALIZER/H2O-ccpVTZ.fchk"));
+    let path = std::env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../validation/gaussian/H2O-ccpVTZ.fchk"));
     let molecule = Molecule::from_fchk(&path).expect("failed to parse fchk geometry");
     let wfn = parse_fchk_wavefunction(&path).expect("failed to parse wavefunction");
     let mo = wfn.alpha.homo_index() - 2;

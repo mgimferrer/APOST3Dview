@@ -25,7 +25,7 @@ fn fixture(name: &str) -> Option<PathBuf> {
 }
 
 fn testdata(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../TESTS-VISUALIZER").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../validation/gaussian").join(name)
 }
 
 /// Compares the density of `orbitals` (weights = their occupations) with

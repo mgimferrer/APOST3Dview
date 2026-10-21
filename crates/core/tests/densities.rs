@@ -11,7 +11,7 @@ use apost3dview_core::{evaluate_basis_functions, generate_density_grid, parse_fc
 use glam::DVec3;
 
 fn testdata(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../TESTS-VISUALIZER").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../validation/gaussian").join(name)
 }
 
 /// A lower-triangle density matrix block of a `.fchk`, as a full matrix.

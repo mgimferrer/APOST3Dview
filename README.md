@@ -1,4 +1,4 @@
-<p align="center"><img width=22% src="media/logo.png"></p>
+<p align="center"><img width=22% src="crates/app/assets/logo.png"></p>
 
 <h3 align="center">A molecular and orbital/density visualizer for APOST-3D</h3>
 
@@ -82,7 +82,7 @@ For development, or if a download doesn't work on your system: see [BUILDING.md]
 9. **Export** saves the current view as a PNG at a given DPI and physical figure size (or a custom resolution), or a looping animated GIF of one full turn of the molecule, with your choice of width, duration and frame rate. The GIF works directly in PowerPoint, Keynote and Google Slides. With "Also save the session" ticked (the default), `figure.a3dview` is written next to `figure.png`.
 10. **Save** (Cmd+S, or Ctrl+S) saves the whole setup as a session (`.a3dview`). Open it again like any other file. A session points to your files rather than copying them, with paths relative to the session, so keep it in the same folder as the files (moving the whole folder is fine). Orbitals generated in the app are recalculated when the session opens. If a file is missing, or has changed since the session was saved, APOST3Dview opens the rest and tells you what it couldn't restore.
 
-`TESTS-VISUALIZER/` in this repository has real committed `.fchk`/`.cube`/`.molden` test files (H2O and BiCl3 at several basis sets, an open-shell triplet, and a real APOST-3D bismuth complex), good for opening something right away.
+`validation/` in this repository has `.fchk`, `.molden` and `.cube` files from Gaussian, PySCF, Q-Chem and ORCA (water, O2 and BiCl3 at several basis sets, open-shell triplets, a CASSCF): the data APOST3Dview's orbitals are checked against. They open like any other file.
 
 ## Known limitations
 

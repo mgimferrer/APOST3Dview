@@ -35,7 +35,7 @@ fn rotate(harness: &mut Harness<'_, App>) {
 #[test]
 fn a_session_reopens_to_the_same_picture() {
     let dir = scratch_dir("session-round-trip");
-    let fchk = copy_into(&dir, &repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk"));
+    let fchk = copy_into(&dir, &repo_dir().join("validation/gaussian/H2O-631G.fchk"));
     let mut first = app_with(vec![fchk]);
 
     // Two generated orbitals, the first refined; element labels; no depth
@@ -123,7 +123,7 @@ fn missing_and_changed_files_are_reported() {
     let Some(fixtures) = fixtures_dir() else { return };
     let dir = scratch_dir("session-problems");
     let fchk = copy_into(&dir, &fixtures.join("CH3F.fchk"));
-    let cube = copy_into(&dir, &repo_dir().join("TESTS-VISUALIZER/H2O-ccpVDZ-HOMO.cube"));
+    let cube = copy_into(&dir, &repo_dir().join("validation/gaussian/H2O-ccpVDZ-HOMO.cube"));
     let mut first = app_with(vec![fchk.clone(), cube.clone()]);
     first.get_by_label("Hide hydrogens").click_accesskit();
     first.run_steps(2);
@@ -131,7 +131,7 @@ fn missing_and_changed_files_are_reported() {
 
     // The cube disappears; the .fchk is replaced by another molecule.
     std::fs::remove_file(&cube).unwrap();
-    std::fs::copy(repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk"), &fchk).unwrap();
+    std::fs::copy(repo_dir().join("validation/gaussian/H2O-631G.fchk"), &fchk).unwrap();
     let second = app_with(vec![dir.join("s.a3dview")]);
     let messages = toasts(&second).join("\n");
     assert!(messages.contains("H2O-ccpVDZ-HOMO.cube was not found"), "{messages}");
@@ -142,7 +142,7 @@ fn missing_and_changed_files_are_reported() {
 #[test]
 fn a_session_is_opened_from_the_open_menu_like_any_file() {
     let dir = scratch_dir("session-kind");
-    let fchk = copy_into(&dir, &repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk"));
+    let fchk = copy_into(&dir, &repo_dir().join("validation/gaussian/H2O-631G.fchk"));
     let first = app_with(vec![fchk]);
     first.state().save_session_to(&dir.join("x.a3dview")).unwrap();
     let mut harness = app_with(Vec::new());
@@ -159,7 +159,7 @@ fn a_session_is_opened_from_the_open_menu_like_any_file() {
 /// which is what lets a reopened session reproduce a figure exactly.
 #[test]
 fn surfaces_are_extracted_identically_every_time() {
-    let fchk = repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk");
+    let fchk = repo_dir().join("validation/gaussian/H2O-631G.fchk");
     let generated = || {
         let mut harness = app_with(vec![fchk.clone()]);
         harness.get_by_label("Surfaces").click_accesskit();

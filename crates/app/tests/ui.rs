@@ -32,7 +32,7 @@ fn stays_dark_when_the_system_is_light() {
 
 #[test]
 fn a_fchk_without_results_opens_quietly() {
-    let harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk")]);
+    let harness = app_with(vec![repo_dir().join("validation/gaussian/H2O-631G.fchk")]);
     assert_eq!(harness.state().structure_labels(), vec!["H2O-631G.fchk"]);
     assert!(toasts(&harness).is_empty(), "no warning for a .fchk without results: {:?}", toasts(&harness));
 }
@@ -139,7 +139,7 @@ fn a_fchk_opens_without_its_results_which_are_offered() {
 
     // Without results next to it: the window opens on a new input for it,
     // and its Results tab says how to see results.
-    let mut harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk")]);
+    let mut harness = app_with(vec![repo_dir().join("validation/gaussian/H2O-631G.fchk")]);
     harness.get_by_label("APOST-3D").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("Input for H2O-631G.fchk");
@@ -186,7 +186,7 @@ fn a_run_without_fragments_says_so() {
 }
 
 fn testdata(name: &str) -> std::path::PathBuf {
-    repo_dir().join("TESTS-VISUALIZER").join(name)
+    repo_dir().join("validation/gaussian").join(name)
 }
 
 #[test]
@@ -261,7 +261,7 @@ fn a_selection_can_be_measured_from_the_molecule_window() {
 /// on the toolbar button of an open window closes it.
 #[test]
 fn windows_asked_for_again_come_back_expanded() {
-    let mut harness = app_with(vec![repo_dir().join("TESTS-VISUALIZER/H2O-631G.fchk")]);
+    let mut harness = app_with(vec![repo_dir().join("validation/gaussian/H2O-631G.fchk")]);
     let collapse = |harness: &mut egui_kittest::Harness<'_, apost3dview::App>| {
         harness.state().set_window_collapsed(&harness.ctx, "Surfaces", true);
         harness.run_steps(2);

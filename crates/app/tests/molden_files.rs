@@ -10,7 +10,7 @@ use egui_kittest::kittest::Queryable;
 use common::{app_with, repo_dir, toasts};
 
 fn orca(name: &str) -> Option<std::path::PathBuf> {
-    let path = repo_dir().join("TESTS-VISUALIZER/orca").join(name);
+    let path = repo_dir().join("validation/orca").join(name);
     path.is_file().then_some(path).or_else(|| {
         eprintln!("{name} not found; test skipped");
         None

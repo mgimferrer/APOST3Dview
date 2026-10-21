@@ -1,85 +1,38 @@
-# Rust build artifacts
+# Build output: cargo, and the packages of scripts/package-*.sh
 /target
+/dist
 
-# macOS
-.DS_Store
-
-# Editor
-.vscode/
-
-# Python (later phases' scripts)
-__pycache__/
-*.pyc
-
-# Local AI working notes (mirrors the APOST3D convention — delete either
-# line if you'd rather track these in the repo, nothing in them is sensitive)
-CLAUDE.md
-PROJECT-ROADMAP.md
-
-# Claude Code local tool config (permission allowlist etc.) — local
-# working setup, not project source, nothing here is sensitive either
-.claude/
-
-# APOST-3D test data (.fchk/.inp/.xyz/.cube) dropped anywhere else in the
-# repo for ad hoc local testing — not committed, your own calculation
-# files, not project source. (The curated Phase 3 validation set in
-# TESTS-VISUALIZER/ is the deliberate exception below.)
-*.fchk
-*.inp
-*.xyz
-*.cube
-
-# Phase 3 validation set (TESTS-VISUALIZER/): the .fchk/.cube pairs (real
-# Chemcraft/Gaussian output — H2O at 4 basis sets, BiCl3 at 2, the
-# open-shell H2O-T triplet) ARE committed on purpose — the reference data
-# `compare_cube`/`parse_wavefunction` validate the GTO evaluator against,
-# so a future change can be reverified without needing this data handed
-# over again. The raw Gaussian job artifacts alongside them (.chk binary
-# checkpoints, .log full output, .com/.com.sh job scripts) stay
-# untracked — nothing in this codebase reads them, and they'd roughly
-# double the committed size for no functional benefit.
-!/TESTS-VISUALIZER/*.fchk
-!/TESTS-VISUALIZER/*.cube
-# Unpublished systems stay local, even though they are .fchk/.cube files.
-/TESTS-VISUALIZER/Bi-dianion-OSD*
-/TESTS-VISUALIZER/*.chk
-/TESTS-VISUALIZER/*.log
-/TESTS-VISUALIZER/*.com
-/TESTS-VISUALIZER/*.com.sh
-
-# .molden validation set (TESTS-VISUALIZER/molden-pyscf/): same reasoning
-# as the Phase 3 set above, for the .molden parser — PySCF-generated
-# .molden files plus their own independently-generated reference .cube
-# files (compare_cube_molden validates against these), and the exact
-# gen_molden.py script + pinned pyscf version that produced them, so the
-# whole set is reproducible from one place.
-!/TESTS-VISUALIZER/molden-pyscf/*.cube
-# Q-Chem and ORCA validation sets (2026-10-21): inputs, outputs, the
-# .fchk/.molden files and the programs' own cubes that
-# crates/core/tests/reference_cubes.rs compares against (not remakeable
-# without the programs, Q-Chem being licensed). ORCA's intermediate files
-# stay out.
-!/TESTS-VISUALIZER/qchem/*.fchk
-!/TESTS-VISUALIZER/qchem/*.plots/*.cube
-!/TESTS-VISUALIZER/orca/*.inp
-!/TESTS-VISUALIZER/orca/*.cube
-/TESTS-VISUALIZER/orca/*.gbw
-/TESTS-VISUALIZER/orca/*.densities
-/TESTS-VISUALIZER/orca/*.densitiesinfo
-/TESTS-VISUALIZER/orca/*.property.txt
-/TESTS-VISUALIZER/orca/*.bibtex
-/TESTS-VISUALIZER/orca/*.plot.tmp
-/TESTS-VISUALIZER/orca/*_atom83.*
-/TESTS-VISUALIZER/qchem/*.sh
-
-# Saved Custom style presets (Style window) — local to your own machine,
-# not tracked, so they don't clutter `git status` while you're tuning one.
-/presets/
-
-# APOST-3D reference results (.apost.json/.apost/.fchk) for the viewer's
-# own tests, copied from a local APOST3D checkout by
-# scripts/sync-apost3d-fixtures.sh. Local only: rerun the script to get them.
+# Local test data, never committed: APOST-3D's reference results (copied by
+# scripts/sync-apost3d-fixtures.sh) and unpublished test systems
 /fixtures/
 
-# Release packages built by scripts/package-*.sh
-/dist/
+# Calculation files dropped anywhere for a quick look stay local; the
+# committed ones are in validation/ and examples/
+*.fchk
+*.cube
+*.inp
+*.xyz
+!/validation/**
+!/examples/**
+
+# The programs' scratch and job files next to the validation data
+*.chk
+*.gbw
+*.densities
+*.densitiesinfo
+*.property.txt
+*.bibtex
+*.plot.tmp
+*_atom83.*
+/validation/gaussian/*.log
+/validation/gaussian/*.com.sh
+/validation/qchem/*.sh
+
+# Local notes and tool settings
+CLAUDE.md
+PROJECT-ROADMAP.md
+.claude/
+.vscode/
+.DS_Store
+__pycache__/
+*.pyc

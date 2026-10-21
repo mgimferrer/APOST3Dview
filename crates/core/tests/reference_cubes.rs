@@ -1,6 +1,8 @@
-//! Orbitals evaluated by APOST3Dview against the cube files the programs
+//! Orbitals evaluated by APOST3Dview against cube files written by other
+//! programs: Gaussian `.fchk` files against Chemcraft's cubes
+//! (`validation/gaussian/`), and against the cube files the programs
 //! that computed them wrote themselves (2026-10-21): PySCF `.molden` files
-//! (`TESTS-VISUALIZER/molden-pyscf/`, s-p, Cartesian d, pure through g, an
+//! (`validation/pyscf/`, s-p, Cartesian d, pure through g, an
 //! unrestricted triplet; kept here so the ORCA corrections can't change
 //! them unnoticed), Q-Chem 6.3 `.fchk`
 //! files (pure d/f, Cartesian d, pure g, an unrestricted triplet) and
@@ -8,8 +10,8 @@
 //! unrestricted triplet, BiCl3 with an ECP, CASSCF natural orbitals), plus
 //! ORCA's CASSCF density against the density of the natural orbitals with
 //! their occupations. Each must match to numerical noise. The data is in
-//! `TESTS-VISUALIZER/qchem/` and `TESTS-VISUALIZER/orca/` (inputs and
-//! READMEs there); the test passes with a notice when it's absent.
+//! `validation/`, one folder per program (inputs and READMEs there); a test
+//! passes with a notice when its folder is absent.
 
 use std::path::{Path, PathBuf};
 
@@ -18,9 +20,9 @@ use apost3dview_core::{evaluate_basis_functions, parse_cube, parse_fchk_wavefunc
 use glam::DVec3;
 
 fn data(folder: &str) -> Option<PathBuf> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../TESTS-VISUALIZER").join(folder);
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../validation").join(folder);
     dir.is_dir().then_some(dir).or_else(|| {
-        eprintln!("TESTS-VISUALIZER/{folder} not found; test skipped");
+        eprintln!("validation/{folder} not found; test skipped");
         None
     })
 }
@@ -113,9 +115,40 @@ fn orca_casscf_density_from_natural_occupations() {
     assert!(error < 1e-5, "RMS {error:e} of peak");
 }
 
+/// Gaussian 16 `.fchk` files against Chemcraft's cubes of the same orbitals
+/// (the evaluator's first validation set, 2026-08-13): s-p, Cartesian d,
+/// pure d/f, BiCl3 with an ECP (pure through f, and g at def2-QZVPP), and
+/// both spin channels of an unrestricted triplet.
+#[test]
+fn gaussian_fchk_orbitals_match_chemcraft_cubes() {
+    let Some(dir) = data("gaussian") else { return };
+    for (job, beta, cubes) in [
+        ("H2O-631G", false, &[("HOMO", 0), ("LUMO", 1)][..]),
+        ("H2O-631Gstar", false, &[("HOMO", 0), ("LUMO", 1)]),
+        ("H2O-ccpVDZ", false, &[("HOMO", 0), ("LUMO", 1)]),
+        ("H2O-ccpVTZ", false, &[("HOMO", 0), ("LUMO", 1)]),
+        ("H2O-T-ccpVTZ", false, &[("HOMO-alpha", 0), ("LUMO-alpha", 1)]),
+        ("H2O-T-ccpVTZ", true, &[("HOMO-beta", 0), ("LUMO-beta", 1)]),
+        ("BiCl3-def2TZVPP", false, &[("HOMO", 0), ("LUMO", 1)]),
+        ("BiCl3-def2QZVPP", false, &[("HOMO", 0), ("LUMO", 1)]),
+    ] {
+        let wfn = parse_fchk_wavefunction(&dir.join(format!("{job}.fchk"))).unwrap();
+        let orbitals = if beta { wfn.beta.as_ref().unwrap() } else { &wfn.alpha };
+        let frontier = [orbitals.homo_index() - 1, orbitals.lumo_index() - 1];
+        for &(cube, which) in cubes {
+            check_orbital(&format!("{job} {cube}"), &wfn, &dir.join(format!("{job}-{cube}.cube")), beta, frontier[which]);
+        }
+    }
+    // Two orbitals further from the frontier, numbered from 1 as in Gaussian.
+    let wfn = parse_fchk_wavefunction(&dir.join("BiCl3-def2TZVPP.fchk")).unwrap();
+    for mo in [45, 51] {
+        check_orbital(&format!("BiCl3-def2TZVPP MO{mo}"), &wfn, &dir.join(format!("BiCl3-def2TZVPP-MO{mo}.cube")), false, mo - 1);
+    }
+}
+
 #[test]
 fn pyscf_molden_orbitals_match_pyscf_cubes() {
-    let Some(dir) = data("molden-pyscf") else { return };
+    let Some(dir) = data("pyscf") else { return };
     for (file, beta, cubes) in [
         ("h2o_631g", false, ["h2o_631g_homo", "h2o_631g_lumo"]),
         ("h2o_631gstar_cart", false, ["h2o_631gstar_cart_homo", "h2o_631gstar_cart_lumo"]),

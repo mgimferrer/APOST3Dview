@@ -4,9 +4,9 @@
 //! can actually be looked at, plus a couple of cheap pixel-level sanity
 //! checks (AO should darken pixels, never brighten or move the silhouette).
 
-use apost3dview_core::parse_xyz;
+use apost3dview_core::Molecule;
 use apost3dview_render::{AoSettings, ExportSettings, GlyphAtlas, Material, OrbitCamera, SceneUniforms, ViewportResources};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     pollster::block_on(run());
@@ -16,8 +16,8 @@ async fn run() {
     let path = std::env::args()
         .nth(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("../../TESTS-VISUALIZER/BiCl3-def2QZVPP.xyz"));
-    let molecule = parse_xyz(&path).expect("failed to parse real xyz file");
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../validation/gaussian/BiCl3-def2QZVPP.fchk"));
+    let molecule = Molecule::from_fchk(&path).expect("failed to parse real fchk geometry");
     println!("Parsed {}: {} atoms, {} bonds", path.display(), molecule.atomic_numbers.len(), molecule.bonds.len());
 
     let instance = wgpu::Instance::default();

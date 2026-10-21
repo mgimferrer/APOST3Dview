@@ -19,8 +19,8 @@ and PySCF.
 | `BiCl3-ORCA-def2TZVPP.inp` | ECP on Bi (def2-ECP, added automatically), f on Bi | MO 36 (HOMO), 37 (LUMO) |
 | `H2O-ORCA-CAS44-def2SVP.inp` | CASSCF(4,4) natural orbitals, fractional occupations | MO 4, 5, and the total density |
 
-The geometries are those of the Gaussian test files (`H2O-ccpVTZ.fchk`,
-`BiCl3-def2TZVPP.fchk`), so the molecules match the cases already
+The geometries are those of the Gaussian test files (`../gaussian/H2O-ccpVTZ.fchk`,
+`../gaussian/BiCl3-def2TZVPP.fchk`), so the molecules match the cases already
 validated; O2 is at 1.207 Å.
 
 ## Running

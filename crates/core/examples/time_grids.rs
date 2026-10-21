@@ -2,7 +2,7 @@
 //! the record (backlog item 6, 2026-10-20; numbers in CLAUDE.md): opening
 //! a `.fchk`, densities and orbitals at the three accuracy presets,
 //! isosurface extraction, an envelope, natural orbitals. Needs
-//! `TESTS-VISUALIZER/Bi-dianion-OSD.fchk` and the APOST-3D fixtures; run
+//! `fixtures/bi-dianion-osd/Bi-dianion-OSD.fchk` and the APOST-3D fixtures; run
 //! in release:
 //!
 //!     cargo run --release -p apost3dview-core --example time_grids
@@ -21,7 +21,7 @@ fn time<T>(what: &str, f: impl FnOnce() -> T) -> T {
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     println!("threads: {}", rayon::current_num_threads());
-    for (name, spin) in [("TESTS-VISUALIZER/Bi-dianion-OSD.fchk", false), ("fixtures/apost3d/FeCN5NO3--UBLYP.fchk", true)] {
+    for (name, spin) in [("fixtures/bi-dianion-osd/Bi-dianion-OSD.fchk", false), ("fixtures/apost3d/FeCN5NO3--UBLYP.fchk", true)] {
         let path = root.join(name);
         println!("== {name}");
         let molecule = time("open: geometry", || Molecule::from_fchk(&path).unwrap());
