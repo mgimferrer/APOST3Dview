@@ -1,0 +1,44 @@
+# Effective fragment orbitals and OSLOs
+
+APOST-3D's oxidation state analyses work with orbitals of their own: the effective fragment orbitals (EFOs) of EOS and GEOS, and the oxidation states localized orbitals (OSLOs) of OSLO. APOST-3D writes them to an orbital file of their own next to the results (for example `<job>-OSLOs.fchk`), and APOST3Dview draws them like any other orbital, each named after its fragment.
+
+This page uses two examples: `C2H6-OSLO-2CH3` (ethane, two CH3 fragments, OSLO) and `CH3F-GEOS` (fluoromethane, F and CH3, GEOS).
+
+## The orbitals in the Surfaces window
+
+Open `C2H6-OSLO-2CH3.apost.json`, then the **Surfaces** window. The **Orbitals:** menu at the top switches from *SCF orbitals* to the orbitals of the analyses in the run: *EOS EFOs*, *GEOS EFOs*, *OSLOs*, and *OSLOs (before orthogonalization)* when APOST-3D wrote them (these are the orbitals the FOLI values were computed for).
+
+<img class="window" src="../images/oslo-surfaces.png" alt="The OSLOs of ethane in the Surfaces window">
+
+Only the orbitals the analysis describes are listed, each with its fragment (or the two fragments it is shared between, with their shares) and its numbers:
+
+- EFOs: the occupation, the electrons assigned to it, and its fit (how closely the orbital stored in the file reproduces the EFO). Negative EFOs of GEOS are in italics.
+- OSLOs: the FOLI value.
+
+The lists are per spin channel when there are two: α and β for EOS, paired and unpaired for GEOS. Tick orbitals (**Select all** and **Clear** help), choose the grid as for any orbital, and generate them. They are named like "OSLO 9 · 1 CH3 + 2 CH3" or "EFO 3 α · 2 CN" in the list of surfaces.
+
+An EFO with a fit below 60% is marked *approximate*: the orbital in the file then only roughly reproduces the EFO and can show lobes the exact one doesn't have. Hover over the mark for the reason. The exact shape is in the EFO's cube file, which APOST-3D writes on request (`CUBE` in its input), and which opens like any other cube.
+
+## Drawing an orbital from its table
+
+The **Tables** section of the **APOST-3D** window lists the tables of the analyses, one at a time from its menu: here, the OSLOs with their fragments and FOLI.
+
+<img class="window" src="../images/oslo-table.png" alt="The OSLO table of ethane, with a Draw button on each row">
+
+**Draw** on a row generates that orbital and shows it, in one click. **Copy** puts the table on the clipboard, for a spreadsheet. A table whose orbitals have no orbital file says so ("No orbital file for these orbitals."), as does one whose orbital file isn't next to the results.
+
+## Colored by fragment
+
+Orbitals are drawn in the usual positive and negative colors. With **Color by fragment** ticked (in the surface's settings, in the **Surfaces** window), an orbital is drawn in its fragment's color instead, the same color as in the **Fragments** list; an orbital shared by two fragments fades from one color to the other across the bond, and its negative lobe is a paler shade. This shows at a glance which fragment an orbital belongs to:
+
+![OSLO 9 of ethane, the C-C bond shared by the two CH3, colored by fragment](../images/tour-oslo.png)
+
+## Frontier EFOs and the reliability index
+
+EOS assigns the electrons to the EFOs of all fragments in order of decreasing occupation. The frontier EFOs are the last occupied (LO) EFO and the first unoccupied (FU) EFO. The closer their occupations, the less clear-cut the assignment: the reliability index R = 100 · min(1, max(0, λ<sub>LO</sub> − λ<sub>FU</sub> + 0.5)) is 100% when they differ by more than half an electron, and 50% when they are equal.
+
+**Key numbers** gives R (for each spin channel, and overall), and **Tables** has a table of the frontier EFOs of each fragment: the occupations of its last occupied and first unoccupied EFO.
+
+## Checks on the orbital files
+
+An orbital file is read the first time its orbitals are needed, and checked against the open `.fchk` (the same atoms at the same positions, the same number of basis functions) and against the results (the same APOST-3D run). A file from another calculation or another run is refused, with the reason in the **Surfaces** window: run APOST-3D again to write it anew.

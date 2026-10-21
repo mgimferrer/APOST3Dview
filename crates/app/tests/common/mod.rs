@@ -53,8 +53,14 @@ pub fn scratch_dir(name: &str) -> PathBuf {
 /// The app with `files` given on the command line and no splash screen,
 /// after a few frames. Renderable with `Harness::render`.
 pub fn app_with(files: Vec<PathBuf>) -> Harness<'static, App> {
+    app_with_scale(files, 1.0)
+}
+
+/// `app_with` at `pixels_per_point` (2 for the guide's sharper pictures).
+pub fn app_with_scale(files: Vec<PathBuf>, pixels_per_point: f32) -> Harness<'static, App> {
     let mut harness = Harness::builder()
         .with_size([1400.0, 900.0])
+        .with_pixels_per_point(pixels_per_point)
         .renderer(AppRenderer::new())
         .build_eframe(move |cc| App::with_options(cc, StartupOptions { files, splash: false }));
     harness.run_steps(4);

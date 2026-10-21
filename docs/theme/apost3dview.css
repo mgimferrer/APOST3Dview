@@ -1,0 +1,36 @@
+/* APOST3Dview guide: small additions to mdBook's themes. */
+
+/* Pictures of one window: shown at half their pixel size (they are taken
+   at twice the screen's resolution), never wider than the page. */
+img.window {
+    display: block;
+    width: 412px;
+    max-width: 100%;
+    margin: 1em auto;
+    border-radius: 6px;
+}
+
+/* Figures and whole-window pictures fill the text width. */
+.content main img:not(.window):not(.logo) {
+    display: block;
+    max-width: 100%;
+    margin: 1em auto;
+    border: 1px solid var(--quote-border);
+    border-radius: 4px;
+}
+
+img.logo {
+    display: block;
+    width: 160px;
+    margin: 0 auto 1em auto;
+}
+
+/* Keys: <kbd>Esc</kbd>. */
+kbd {
+    font-size: 0.85em;
+    padding: 0.1em 0.4em;
+    border: 1px solid var(--quote-border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: var(--quote-bg);
+}

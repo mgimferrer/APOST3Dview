@@ -1,0 +1,25 @@
+# The APOST3Dview user guide, built with mdBook (https://rust-lang.github.io/mdBook/):
+#   mdbook build docs      (writes docs/book/, which git ignores)
+#   mdbook serve docs      (live preview while editing)
+# The pictures in src/images/ are made by the app's tests:
+# scripts/guide-images.sh.
+
+[book]
+title = "APOST3Dview user guide"
+authors = ["Martí Gimferrer"]
+language = "en"
+description = "How to use APOST3Dview, the viewer for APOST-3D's chemical bonding analysis, orbitals and densities."
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+# "--" stays two hyphens (job names such as FeCN5NO3--UBLYP), and no
+# en or em dashes are made from them.
+smart-punctuation = false
+additional-css = ["theme/apost3dview.css"]
+git-repository-url = "https://github.com/mgimferrer/APOST3Dview"
+edit-url-template = "https://github.com/mgimferrer/APOST3Dview/edit/main/docs/{path}"
+site-url = "/APOST3Dview/"
+
+[output.html.print]
+enable = true

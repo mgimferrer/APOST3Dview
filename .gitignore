@@ -1,6 +1,7 @@
-# Build output: cargo, and the packages of scripts/package-*.sh
+# Build output: cargo, the packages of scripts/package-*.sh, the built guide
 /target
 /dist
+/docs/book/
 
 # Local test data, never committed: APOST-3D's reference results (copied by
 # scripts/sync-apost3d-fixtures.sh) and unpublished test systems

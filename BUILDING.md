@@ -49,6 +49,15 @@ cargo test --workspace
 - `examples/`: committed. Five complete APOST-3D runs for new users (see its README), also opened by the app's tests (`crates/app/tests/examples.rs`, `orbital_sets.rs`). Refreshed from `fixtures/` with `scripts/update-examples.sh` when APOST-3D's results change.
 - `fixtures/`: not committed. `fixtures/apost3d/` and `fixtures/apost3d-orbitals/` hold APOST-3D's reference results, copied by `scripts/sync-apost3d-fixtures.sh`. Unpublished test systems go in their own subfolder here (for example `fixtures/bi-dianion-osd/`); tests and reference scenes that need one skip themselves without it.
 
+## The user guide
+
+The guide's source is in `docs/` ([mdBook](https://rust-lang.github.io/mdBook/), `cargo install mdbook`): one Markdown page per chapter in `docs/src/`, listed in `docs/src/SUMMARY.md`. `mdbook serve docs` shows it in the browser while editing; `mdbook build docs` writes it to `docs/book/`. The Guide workflow builds it on every push and publishes it with GitHub Pages from `main`.
+
+- Write the labels of the app's buttons, windows and menus in **bold**, exactly as the app shows them, and nothing else in bold; menu entries that come from a results file in *italics*; keys as `<kbd>Esc</kbd>`. No en or em dashes.
+- `crates/app/tests/guide_text.rs` checks that every bold label exists in the app's code, and that every picture and link resolves (no GPU needed).
+- `crates/app/tests/guide.rs` follows each chapter's steps in the real app and checks what the guide says, so a renamed button or a changed default fails the tests.
+- The pictures in `docs/src/images/` are made by the same test: `scripts/guide-images.sh` takes them all again and builds the guide. Run it after changing a window or the look, check `git diff`, and commit the pictures. Pictures of a single window are included with `<img class="window" src="...">`, so they show at half their pixel size.
+
 ## Developer tools
 
 Small programs kept in the crates' `examples/` folders, run with `cargo run --release -p <crate> --example <name> -- <arguments>`. They aren't part of `cargo test`.
@@ -75,7 +84,7 @@ In `apost3dview-render`, checks of the rendering, most of them on a real GPU dev
 - `scripts/package-linux.sh`: a `.tar.gz` with the executable, its menu entry and `install.sh`.
 - Windows: the `.exe` in a `.zip`, built in the workflow itself.
 
-Starting the workflow by hand (Actions, Release, Run workflow) only builds; the packages are under the run's Artifacts. To publish a release:
+Every package also holds `examples/` and the guide (`guide/`, built by the workflow's guide job; to run the packaging scripts by hand, run `mdbook build docs` first). Starting the workflow by hand (Actions, Release, Run workflow) only builds; the packages are under the run's Artifacts. To publish a release:
 
 1. Set the version in the root `Cargo.toml` (`[workspace.package] version`) and `CITATION.cff`, commit.
 2. Tag and push: `git tag v0.9.0 && git push origin v0.9.0`. The workflow refuses a tag that doesn't match `Cargo.toml`.

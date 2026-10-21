@@ -324,6 +324,24 @@ impl App {
         self.toasts.iter().map(|t| t.text.clone()).collect()
     }
 
+    /// Takes down every message at once, as if their time were up — for
+    /// tests (the guide's pictures are taken without them).
+    pub fn clear_toasts(&mut self) {
+        self.toasts.clear();
+    }
+
+    /// Turns the view about the screen's axes (radians), as dragging would
+    /// — for tests and the guide's pictures.
+    pub fn turn_view(&mut self, yaw: f32, pitch: f32) {
+        self.camera.orbit(yaw, pitch);
+    }
+
+    /// Moves the camera closer (`factor` below 1) or farther, as zooming
+    /// would — for tests and the guide's pictures.
+    pub fn zoom_view(&mut self, factor: f32) {
+        self.camera.distance *= factor;
+    }
+
     /// Names of the open structures, in list order — for tests.
     pub fn structure_labels(&self) -> Vec<String> {
         self.structures.iter().map(|s| s.label.clone()).collect()
