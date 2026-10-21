@@ -52,7 +52,7 @@ fn method_text(enpart: &Enpart) -> String {
 }
 
 fn pair_name(atomic_numbers: &[u32], [a, b]: [usize; 2]) -> String {
-    format!("{}\u{2013}{}", atom_name(atomic_numbers, a - 1), atom_name(atomic_numbers, b - 1))
+    format!("{}-{}", atom_name(atomic_numbers, a - 1), atom_name(atomic_numbers, b - 1))
 }
 
 /// What deserves a warning in an ENPART run, each with its explanation.

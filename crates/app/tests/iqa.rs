@@ -112,11 +112,11 @@ fn energies_in_kcal_per_mol_or_au() {
     assert!(harness.state_mut().show_on_molecule("enpart.total.fragments"));
     harness.run_steps(3);
     // kcal/mol by default: the waters' interaction, -0.033217 au.
-    harness.get_by_label("1 H2O \u{2013} 2 H2O   -20.84");
+    harness.get_by_label("1 H2O - 2 H2O   -20.84");
     harness.get_all_by_label("au").next().unwrap().click_accesskit();
     harness.run_steps(3);
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-fragment interaction energy with 1 H2O (TFVC), au"));
-    harness.get_by_label("1 H2O \u{2013} 2 H2O   -0.033217");
+    harness.get_by_label("1 H2O - 2 H2O   -0.033217");
     // Fixed ranges are kept in au whatever the unit shown.
     harness.get_by_label("Fixed").click_accesskit();
     harness.run_steps(2);

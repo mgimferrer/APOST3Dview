@@ -637,10 +637,10 @@ impl App {
         ctx.request_repaint_after(Duration::from_millis(200));
     }
 
-    /// "APOST3Dview — name.a3dview" while a session is open.
+    /// "APOST3Dview - name.a3dview" while a session is open.
     fn update_title(&mut self, ctx: &egui::Context) {
         let title = match self.session_path.as_ref().and_then(|p| p.file_name()) {
-            Some(name) => format!("APOST3Dview \u{2014} {}", name.to_string_lossy()),
+            Some(name) => format!("APOST3Dview - {}", name.to_string_lossy()),
             None => "APOST3Dview".to_string(),
         };
         if title != self.shown_title {

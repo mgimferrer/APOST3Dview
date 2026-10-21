@@ -40,7 +40,7 @@ fn a_pair_quantity_is_seen_from_one_fragment() {
     harness.get_by_label("Diagonal: intra-fragment localization index. Off-diagonal: inter-fragment bond order.");
     harness.get_by_label_contains("(diagonal and one triangle)");
     // The strongest pair first.
-    harness.get_by_label_contains("1 Fe \u{2013} 7 NO   1.852845");
+    harness.get_by_label_contains("1 Fe - 7 NO   1.852845");
     // In the focus view, a fragment in the list is a place to look from.
     harness.get_by_label("7  NO   N12, O13").click_accesskit();
     harness.run_steps(3);
@@ -59,7 +59,7 @@ fn atom_values_and_the_selected_pair() {
     // Selecting the NO fragment selects two atoms: their pair values appear.
     harness.get_by_label("7  NO   N12, O13").click_accesskit();
     harness.run_steps(3);
-    harness.get_by_label_contains("Selected pair N12 \u{2013} O13");
+    harness.get_by_label_contains("Selected pair N12 - O13");
     harness.get_by_label("Bond orders (Lowdin)");
     screenshot(&mut harness, "results-atom-charges");
 }

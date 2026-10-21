@@ -65,8 +65,15 @@ fn bold_spans(text: &str) -> Vec<String> {
 
 /// Every string literal in the app's source, escapes resolved.
 fn app_strings() -> Vec<String> {
+    strings_in(&["crates/app/src"])
+}
+
+/// Every string literal in the source under these folders.
+fn strings_in(folders: &[&str]) -> Vec<String> {
     let mut paths = Vec::new();
-    files_with_extension(&repo().join("crates/app/src"), "rs", &mut paths);
+    for folder in folders {
+        files_with_extension(&repo().join(folder), "rs", &mut paths);
+    }
     let mut strings = Vec::new();
     for path in paths {
         let source = std::fs::read_to_string(path).unwrap();
@@ -194,6 +201,14 @@ fn no_en_or_em_dashes() {
             assert!(!line.contains(['\u{2013}', '\u{2014}']), "{}:{}: an en or em dash: {line}", path.display(), n + 1);
         }
     }
+}
+
+/// The program's own text has no en or em dashes either (Martí's style):
+/// every string literal of the app, core and render crates.
+#[test]
+fn no_en_or_em_dashes_in_the_program() {
+    let found: Vec<String> = strings_in(&["crates/app/src", "crates/core/src", "crates/render/src"]).into_iter().filter(|s| s.contains(['\u{2013}', '\u{2014}'])).collect();
+    assert!(found.is_empty(), "en or em dashes in the program's text (use a hyphen): {found:?}");
 }
 
 /// Targets of the page's links and pictures: `](target)` and `src="target"`.

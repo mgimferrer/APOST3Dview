@@ -261,7 +261,7 @@ impl App {
         if values.is_empty() {
             return;
         }
-        let pair = format!("{} \u{2013} {}", atom_name(&structure.molecule.atomic_numbers, a), atom_name(&structure.molecule.atomic_numbers, b));
+        let pair = format!("{} - {}", atom_name(&structure.molecule.atomic_numbers, a), atom_name(&structure.molecule.atomic_numbers, b));
         // The IQA terms of the pair apart, as a decomposition of its
         // interaction energy.
         let (mut iqa, other): (Vec<_>, Vec<_>) = values.into_iter().partition(|(entry, _)| enpart_term(&entry.id).is_some());
@@ -352,7 +352,7 @@ fn heat_map(
     if let Some((i, j)) = response.hover_pos().and_then(cell_at) {
         let value = matrix.get(i, j).map(|v| format!("{v:.4}")).unwrap_or_else(|| "n/a".into());
         let meaning = if i == j { meanings.0.clone() } else { meanings.1.clone() }.unwrap_or_default();
-        let pair = if i == j { names[i].clone() } else { format!("{} \u{2013} {}", names[i], names[j]) };
+        let pair = if i == j { names[i].clone() } else { format!("{} - {}", names[i], names[j]) };
         response.clone().on_hover_text(format!("{pair}: {value}\n{meaning}"));
     }
     if response.clicked() {
@@ -372,7 +372,7 @@ fn strongest_pairs(ui: &mut egui::Ui, matrix: &MatrixObject, names: &[String], d
     egui::ScrollArea::vertical().id_salt("results_pairs").max_height(160.0).show_rows(ui, row_height, pairs.len(), |ui, rows| {
         for k in rows {
             let (i, j, v) = pairs[k];
-            if ui.selectable_label(false, format!("{} \u{2013} {}   {v:.decimals$}", names[i], names[j])).clicked() {
+            if ui.selectable_label(false, format!("{} - {}   {v:.decimals$}", names[i], names[j])).clicked() {
                 clicked = Some(i);
             }
         }

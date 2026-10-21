@@ -78,9 +78,9 @@ fn shell_function_count(shell: &crate::wavefunction::Shell) -> Result<usize, Str
         // available to validate a guessed Gaussian field ordering
         // against, unlike every other case here. Fails loudly rather than
         // risk an unverifiable-right-now guess.
-        (4, false) => Err("Cartesian g shells aren't implemented (pure/spherical g is) — see gto.rs module docs".to_string()),
+        (4, false) => Err("Cartesian g shells aren't supported (pure/spherical g shells are)".to_string()),
         (4, true) => Ok(9),
-        (l, _) => Err(format!("angular momentum {l} (h and above) not implemented yet — see gto.rs module docs")),
+        (l, _) => Err(format!("angular momentum {l} (h and above) isn't supported")),
     }
 }
 
