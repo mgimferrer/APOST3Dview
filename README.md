@@ -89,7 +89,7 @@ For development, or if a download doesn't work on your system: see [BUILDING.md]
 
 ## Connection to APOST-3D
 
-APOST3Dview is a sister project to [APOST-3D](https://github.com/mgimferrer/APOST3D) (see its own README for the full scope of what it computes), but a fully independent codebase and language stack: Rust/wgpu, no Fortran, no shared code. It's built specifically to read the files APOST-3D works with, the `.fchk` it reads and the `.apost.json` results file it writes, rather than being a general-purpose molecular viewer that happens to also open them. The format of the results file is documented in the APOST-3D repository (`docs/source/developer/json-output.md`).
+APOST3Dview is a sister project to [APOST-3D](https://github.com/mgimferrer/APOST3D) (see its own README for the full scope of what it computes), but a fully independent codebase and language stack: Rust/wgpu, no Fortran, no shared code. It's built specifically around the files APOST-3D works with: it prepares the input (`.inp`) for a `.fchk`, and reads the `.fchk` APOST-3D reads and the `.apost.json` results file it writes, rather than being a general-purpose molecular viewer that happens to also open them. The format of the results file is documented in the APOST-3D repository (`docs/source/developer/json-output.md`).
 
 If you use APOST-3D itself, or the chemical bonding methods it implements, see APOST-3D's own README for the specific paper to cite for each method.
 
