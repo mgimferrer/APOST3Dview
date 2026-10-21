@@ -1,4 +1,5 @@
-# Downloadable builds, each with the examples/ folder. A pushed tag vX.Y.Z
+# Downloadable builds, each with the examples/ folder and the user guide
+# (guide/, the mdBook site of docs/, to read offline). A pushed tag vX.Y.Z
 # (equal to the version in Cargo.toml) builds all three and makes a draft
 # GitHub Release with them,
 # to be checked and published by hand. Run by hand ("Run workflow"), it
@@ -12,6 +13,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  MDBOOK_VERSION: 0.5.4
 
 jobs:
   version:
@@ -29,11 +31,28 @@ jobs:
             exit 1
           fi
 
+  # The user guide, built once for the three packages.
+  guide:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: mdBook ${{ env.MDBOOK_VERSION }}
+        run: curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v$MDBOOK_VERSION/mdbook-v$MDBOOK_VERSION-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
+      - run: mdbook build docs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: guide
+          path: docs/book
+
   windows:
-    needs: version
+    needs: [version, guide]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: guide
+          path: docs/book
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build and package
@@ -45,6 +64,7 @@ jobs:
           Copy-Item target/release/apost3dview.exe "$dir/APOST3Dview.exe"
           Copy-Item LICENSE "$dir/LICENSE.txt"
           Copy-Item -Recurse examples "$dir/examples"
+          Copy-Item -Recurse docs/book "$dir/guide"
           Compress-Archive -Path $dir -DestinationPath "dist/APOST3Dview-windows.zip"
       - uses: actions/upload-artifact@v7
         with:
@@ -52,10 +72,14 @@ jobs:
           path: dist/*.zip
 
   macos:
-    needs: version
+    needs: [version, guide]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: guide
+          path: docs/book
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
@@ -67,10 +91,14 @@ jobs:
           path: dist/*.dmg
 
   linux:
-    needs: version
+    needs: [version, guide]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: guide
+          path: docs/book
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
@@ -91,6 +119,8 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: dist
+          # The three packages (windows, macos, linux), not the guide.
+          pattern: '[wml]*'
           merge-multiple: true
       - run: cd dist && sha256sum * > SHA256SUMS.txt
       - name: Draft release

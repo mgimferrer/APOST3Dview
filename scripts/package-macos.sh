@@ -3,11 +3,13 @@
 # README can link to the latest release's file directly): one APOST3Dview.app
 # holding both an Apple Silicon (arm64) and an Intel (x86_64) build,
 # ad-hoc signed (free; Apple Silicon refuses to run unsigned code at all),
-# next to the examples/ folder.
+# next to the examples/ folder and the user guide (guide/; build it first
+# with mdbook build docs).
 # Used by .github/workflows/release.yml; runs the same on a Mac by hand.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+test -f docs/book/index.html || { echo "The user guide isn't built: run mdbook build docs first" >&2; exit 1; }
 version=$(cargo pkgid -p apost3dview | sed 's/.*@//')
 export MACOSX_DEPLOYMENT_TARGET=11.0
 
@@ -39,11 +41,12 @@ codesign --force --sign - --timestamp=none "$app"
 codesign --verify --strict "$app"
 
 # The disk image: the app plus a shortcut to drag it onto, and the
-# examples to try it with.
+# examples to try it with, and the guide.
 staging=dist/dmg
 mkdir -p "$staging"
 cp -R "$app" "$staging/"
 cp -R examples "$staging/"
+cp -R docs/book "$staging/guide"
 ln -s /Applications "$staging/Applications"
 hdiutil create -quiet -volname "APOST3Dview $version" -srcfolder "$staging" -ov -format UDZO \
     dist/APOST3Dview-macos.dmg

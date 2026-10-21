@@ -1,0 +1,45 @@
+# The user guide (docs/, mdBook): built on every push and pull request, so a
+# broken page shows up at once; on main also published with GitHub Pages at
+# https://mgimferrer.github.io/APOST3Dview/ (Settings > Pages > Source:
+# GitHub Actions, once). The pictures are committed (scripts/guide-images.sh
+# makes them), and the guide's text is checked against the app by the app
+# tests (crates/app/tests/guide.rs, guide_text.rs) in ci.yml.
+name: Guide
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  MDBOOK_VERSION: 0.5.4
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: mdBook ${{ env.MDBOOK_VERSION }}
+        run: curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v$MDBOOK_VERSION/mdbook-v$MDBOOK_VERSION-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
+      - run: mdbook build docs
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/book
+
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
