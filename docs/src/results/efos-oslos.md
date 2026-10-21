@@ -37,7 +37,13 @@ Orbitals are drawn in the usual positive and negative colors. With **Color by fr
 
 EOS assigns the electrons to the EFOs of all fragments in order of decreasing occupation. The frontier EFOs are the last occupied (LO) EFO and the first unoccupied (FU) EFO. The closer their occupations, the less clear-cut the assignment: the reliability index R = 100 · min(1, max(0, λ<sub>LO</sub> − λ<sub>FU</sub> + 0.5)) is 100% when they differ by more than half an electron, and 50% when they are equal.
 
-**Key numbers** gives R (for each spin channel, and overall), and **Tables** has a table of the frontier EFOs of each fragment: the occupations of its last occupied and first unoccupied EFO.
+In the **Surfaces** window, **Frontier** ticks the frontier EFOs of the set, in every channel: all of them when several are degenerate (two equivalent ligands, say). In the list they are marked **LO** and **FU**. Here, the frontier EFOs of CH3F's GEOS, colored by fragment: the last occupied one on F, the first unoccupied one on CH3.
+
+![The LO EFO (on F) and the FU EFO (on CH3) of fluoromethane's GEOS](../images/efo-frontier.png)
+
+**Key numbers** gives R (for each spin channel, and overall), and **Tables** has a table of the frontier EFOs of each fragment: the occupations of its last occupied and first unoccupied EFO. (R is computed from these per-fragment values: the FU EFO is the most occupied first unoccupied EFO of a fragment other than the LO EFO's, since moving an electron within a fragment doesn't change its oxidation state.)
+
+Results files written before APOST-3D's results format 0.15 don't say which EFOs are the frontier ones; for them, **Frontier** isn't offered.
 
 ## Checks on the orbital files
 

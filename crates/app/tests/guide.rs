@@ -383,6 +383,29 @@ fn efos_and_oslos() {
     }
     settle(&mut guide);
     snap_tool_window(&mut guide, "oslo-surfaces", "Surfaces");
+
+    // The frontier EFOs of CH3F's GEOS, colored by fragment.
+    let mut guide = open_example("CH3F-GEOS");
+    click(&mut guide, "Surfaces");
+    choose(&mut guide, "SCF orbitals", "GEOS EFOs");
+    click(&mut guide, "Frontier");
+    click(&mut guide, "Generate 2 orbital(s)");
+    let labels: Vec<String> = guide.state().surface_labels().into_iter().map(|(l, _)| l).collect();
+    assert_eq!(labels, vec!["EFO 9 paired \u{b7} 1 F", "EFO 10 paired \u{b7} 2 CH3"]);
+    // Both shown, each in its fragment's color.
+    for name in ["EFO 9 paired \u{b7} 1 F", "EFO 10 paired \u{b7} 2 CH3"] {
+        guide.query_all_by_label(name).last().unwrap().click_accesskit();
+        guide.run_steps(3);
+        click(&mut guide, "Color by fragment");
+    }
+    // (The surface list's Show all; the Molecule window has one too.)
+    guide.query_all_by_label("Show all").last().unwrap().click_accesskit();
+    guide.run_steps(4);
+    assert_eq!(guide.state().surface_labels().iter().filter(|(_, shown)| *shown).count(), 2);
+    assert!(guide.state().surface_colored_by_fragment(0) && guide.state().surface_colored_by_fragment(1));
+    frame(&mut guide, 0.5, 0.2, 0.6);
+    settle(&mut guide);
+    snap_figure(&mut guide, "efo-frontier", 1200, 750);
 }
 
 /// "Making an APOST-3D input": a .fchk with nothing next to it.
