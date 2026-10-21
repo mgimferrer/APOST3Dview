@@ -80,7 +80,7 @@ For development, or if a download doesn't work on your system: see [BUILDING.md]
 
 ## Known limitations
 
-- `.molden` files are read as PySCF and ORCA write them (ORCA's own conventions, primitive normalization in the coefficients and the sign of some f and g components, are recognized and corrected). Other programs' `.molden` output isn't tested yet.
+- `.molden` files are read as PySCF and ORCA write them (ORCA's own conventions, primitive normalization in the coefficients and the sign of some f and g components, are recognized and corrected; checked with ORCA 6.1.1). Other programs' `.molden` output isn't tested yet. With an ECP, densities are valence densities, as in the files themselves.
 - Basis functions above g (h, i, and so on) aren't supported. This fails with an explicit error rather than a silently wrong orbital.
 - Cartesian g shells aren't implemented (pure/spherical g is). In practice, every basis set that reaches g is spherical by convention, so this hasn't been a real limitation so far.
 - APOST-3D's results file currently carries populations, bond orders, local spin, the EOS, GEOS and OSLO analyses with their orbitals, and the energy decomposition (IQA). The EFFAO orbitals have no orbital file yet, so their table is listed but not drawn.

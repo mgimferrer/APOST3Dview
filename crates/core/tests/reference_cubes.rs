@@ -1,5 +1,8 @@
 //! Orbitals evaluated by APOST3Dview against the cube files the programs
-//! that computed them wrote themselves (2026-10-21): Q-Chem 6.3 `.fchk`
+//! that computed them wrote themselves (2026-10-21): PySCF `.molden` files
+//! (`TESTS-VISUALIZER/molden-pyscf/`, s-p, Cartesian d, pure through g, an
+//! unrestricted triplet; kept here so the ORCA corrections can't change
+//! them unnoticed), Q-Chem 6.3 `.fchk`
 //! files (pure d/f, Cartesian d, pure g, an unrestricted triplet) and
 //! ORCA 6.1.1 `.molden` files from `orca_2mkl` (s-p-d, f, g, an
 //! unrestricted triplet, BiCl3 with an ECP, CASSCF natural orbitals), plus
@@ -16,7 +19,7 @@ use glam::DVec3;
 
 fn data(folder: &str) -> Option<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../TESTS-VISUALIZER").join(folder);
-    dir.join("README.md").is_file().then_some(dir).or_else(|| {
+    dir.is_dir().then_some(dir).or_else(|| {
         eprintln!("TESTS-VISUALIZER/{folder} not found; test skipped");
         None
     })
@@ -108,4 +111,23 @@ fn orca_casscf_density_from_natural_occupations() {
     let error = compare(&wfn, &dir.join("H2O-ORCA-CAS44-def2SVP-density.cube"), rho);
     eprintln!("CASSCF density: RMS {error:.1e} of peak");
     assert!(error < 1e-5, "RMS {error:e} of peak");
+}
+
+#[test]
+fn pyscf_molden_orbitals_match_pyscf_cubes() {
+    let Some(dir) = data("molden-pyscf") else { return };
+    for (file, beta, cubes) in [
+        ("h2o_631g", false, ["h2o_631g_homo", "h2o_631g_lumo"]),
+        ("h2o_631gstar_cart", false, ["h2o_631gstar_cart_homo", "h2o_631gstar_cart_lumo"]),
+        ("h2o_ccpvqz_pure", false, ["h2o_ccpvqz_pure_homo", "h2o_ccpvqz_pure_lumo"]),
+        ("o2_triplet_ccpvtz", false, ["o2_triplet_ccpvtz_alpha_homo", "o2_triplet_ccpvtz_alpha_lumo"]),
+        ("o2_triplet_ccpvtz", true, ["o2_triplet_ccpvtz_beta_homo", "o2_triplet_ccpvtz_beta_lumo"]),
+    ] {
+        let wfn = parse_molden_wavefunction(&dir.join(format!("{file}.molden"))).unwrap();
+        let orbitals = if beta { wfn.beta.as_ref().unwrap() } else { &wfn.alpha };
+        let (homo, lumo) = (orbitals.homo_index() - 1, orbitals.lumo_index() - 1);
+        for (cube, index) in cubes.into_iter().zip([homo, lumo]) {
+            check_orbital(cube, &wfn, &dir.join(format!("{cube}.cube")), beta, index);
+        }
+    }
 }

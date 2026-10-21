@@ -126,11 +126,17 @@ impl Wavefunction {
 
     /// The same for the spin density (alpha minus beta): the beta channel
     /// subtracted, or for a restricted open shell its singly occupied
-    /// orbitals. `None` for a closed shell (no spin density).
+    /// orbitals. `None` for a closed shell (no spin density), and for
+    /// natural orbitals (any fractional occupation, e.g. a CASSCF `.molden`):
+    /// their occupations are spin-summed, so an occupation of 1 there (a
+    /// singlet biradical) says nothing about spin.
     pub fn spin_density_weights(&self) -> Option<Vec<(&MolecularOrbitals, Vec<f64>)>> {
         match &self.beta {
             Some(beta) => Some(vec![(&self.alpha, self.alpha.occupations.clone()), (beta, beta.occupations.iter().map(|o| -o).collect())]),
             None => {
+                if self.alpha.occupations.iter().any(|&o| (o - o.round()).abs() > 1e-6) {
+                    return None;
+                }
                 let single: Vec<f64> = self.alpha.occupations.iter().map(|&o| if (o - 1.0).abs() < 1e-6 { 1.0 } else { 0.0 }).collect();
                 single.iter().any(|&w| w > 0.0).then(|| vec![(&self.alpha, single)])
             }
@@ -315,4 +321,24 @@ pub fn parse_fchk_wavefunction(path: &Path) -> io::Result<Wavefunction> {
         },
         beta,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn restricted(occupations: Vec<f64>) -> Wavefunction {
+        let n = occupations.len();
+        let mos = MolecularOrbitals { num_basis_functions: n, orbital_energies: vec![0.0; n], coefficients: vec![0.0; n * n], num_occupied: 0, occupations };
+        Wavefunction { basis: BasisSet { shells: Vec::new() }, alpha: mos, beta: None }
+    }
+
+    /// A restricted open shell (2/1/0) has a spin density; natural orbitals
+    /// (fractional occupations) don't, even with one at exactly 1.
+    #[test]
+    fn spin_density_only_for_integer_occupations() {
+        assert!(restricted(vec![2.0, 2.0, 1.0, 1.0, 0.0]).spin_density_weights().is_some());
+        assert!(restricted(vec![2.0, 2.0, 0.0]).spin_density_weights().is_none());
+        assert!(restricted(vec![2.0, 1.98, 1.0, 1.0, 0.02]).spin_density_weights().is_none());
+    }
 }
