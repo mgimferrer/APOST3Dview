@@ -198,9 +198,12 @@ impl App {
             .clone()
             .expect("eframe must be running with the wgpu backend");
 
+        let info = render_state.adapter.get_info();
+        log::info!("graphics: {} ({:?}, {:?}), format {:?}", info.name, info.backend, info.device_type, render_state.target_format);
         let glyph_atlas = Arc::new(GlyphAtlas::new(&render_state.device, &render_state.queue));
         let resources = ViewportResources::new(&render_state.device, render_state.target_format, &glyph_atlas);
         render_state.renderer.write().callback_resources.insert(resources);
+        log::info!("render pipelines ready");
 
         let logo_texture = load_texture(&cc.egui_ctx, "apost3d_logo", include_bytes!("../assets/logo.png"));
         // Every launch starts with the default window layout (the column,
@@ -674,6 +677,8 @@ impl eframe::App for App {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        static FIRST_FRAME: std::sync::Once = std::sync::Once::new();
+        FIRST_FRAME.call_once(|| log::info!("first frame"));
         if self.splash {
             let dismissed = ui.input(|i| i.pointer.any_click());
             if self.start_time.elapsed() < SPLASH_DURATION && !dismissed {

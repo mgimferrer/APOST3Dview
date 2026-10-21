@@ -59,6 +59,10 @@ The downloads aren't signed with a paid certificate (APOST3Dview is free, and so
 2. Run `./install.sh` in the unpacked folder to add APOST3Dview to your applications menu (for your user only, no root needed), or start `./apost3dview` directly.
 3. A Vulkan driver for your GPU is needed (Mesa's `mesa-vulkan-drivers`, or your GPU vendor's driver). Most desktops have one already.
 
+### If it doesn't start
+
+APOST3Dview writes what happens at every start to a log file: `%APPDATA%\APOST3Dview\data\apost3dview.log` on Windows, `~/Library/Application Support/APOST3Dview/apost3dview.log` on macOS, `~/.local/share/apost3dview/apost3dview.log` on Linux. Please attach it when you [report the problem](https://github.com/mgimferrer/APOST3Dview/issues).
+
 ### Building from source
 
 For development, or if a download doesn't work on your system: see [BUILDING.md](BUILDING.md).

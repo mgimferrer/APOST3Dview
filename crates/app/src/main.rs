@@ -2,7 +2,12 @@
 // builds keep it for messages).
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod diagnostics;
+
 fn main() -> eframe::Result<()> {
+    diagnostics::start();
+    diagnostics::log_adapters();
+
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png"))
         .expect("bundled icon.png should be a valid image");
 
@@ -16,9 +21,14 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
-    eframe::run_native(
+    let result = eframe::run_native(
         apost3dview::APP_ID,
         native_options,
         Box::new(|cc| Ok(Box::new(apost3dview::App::with_options(cc, startup)))),
-    )
+    );
+    if let Err(err) = &result {
+        log::error!("could not start: {err}");
+        diagnostics::show_error(&format!("APOST3Dview could not start:\n\n{err}"));
+    }
+    result
 }
