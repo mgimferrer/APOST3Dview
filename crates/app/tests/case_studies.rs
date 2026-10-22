@@ -439,6 +439,10 @@ fn save_figure(harness: &mut egui_kittest::Harness<'static, apost3dview::App>, o
 /// would blur), ambient occlusion on, white background.
 const FIGURE_LOOK: &str = "[appearance]\ndepth_of_field = false\nambient_occlusion = true\n";
 
+/// Panel captions for the paper (Martí, 2026-10-22: the 8 pt default reads
+/// too small under full-page panels), in `[figure.settings]`.
+const CAPTION_SIZE: &str = "font_size_pt = 11.0\n";
+
 #[test]
 fn ferrocene_oslos() {
     let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
@@ -454,7 +458,7 @@ fn ferrocene_oslos() {
     }
     // Smaller atoms than the default, so the C 1s combinations show.
     patch.push_str("[appearance.material]\natom_scale = 0.15\nbond_radius = 0.10\n");
-    patch.push_str("[figure.settings]\ncaption_style = \"value-and-fragment\"\nfixed_layout = true\nrows = 4\ncolumns = 3\n");
+    patch.push_str(&format!("[figure.settings]\ncaption_style = \"value-and-fragment\"\nfixed_layout = true\nrows = 4\ncolumns = 3\n{CAPTION_SIZE}"));
     // "Cp" for the cyclopentadienyl rings, as in the paper.
     let foli = ["1.000", "1.000", "1.001", "1.010", "1.010", "1.018", "1.155", "1.367", "1.368", "1.380", "1.382", "1.548"];
     for (i, value) in foli.iter().enumerate() {
@@ -531,7 +535,7 @@ fn beryllium_and_magnesium_aligned() {
         patch.push_str(&format!("[[structures]]\nhidden_atoms = {}\n", toml_array(&atoms.hydrogens())));
         patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\nvisible = true\n[[structures.surfaces]]\nisovalue = 0.05\nvisible = true\n");
     }
-    patch.push_str("[figure.settings]\nfixed_layout = true\nrows = 2\ncolumns = 2\npanel_shape = \"view\"\n");
+    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 2\ncolumns = 2\npanel_shape = \"view\"\n{CAPTION_SIZE}"));
     for caption in ["Be: HONO 1.640", "Be: LUNO 0.362", "Mg: HONO 1.208", "Mg: LUNO 0.794"] {
         patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
     }
