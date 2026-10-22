@@ -90,7 +90,7 @@ fn atomic_energies_and_the_selected_pair() {
 #[test]
 fn stopped_and_unreferenced_runs() {
     let Some(dir) = fixtures_dir() else { return };
-    let mut harness = app_with(vec![dir.join("H2O-TPSS.apost.json")]);
+    let mut harness = app_with(vec![dir.join("H2O-WB97X.apost.json")]);
     harness.get_by_label_contains("Energy decomposition (IQA)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("The run stopped during the energy decomposition: no terms were written.");

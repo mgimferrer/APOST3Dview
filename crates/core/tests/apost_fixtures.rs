@@ -68,9 +68,12 @@ fn particular_cases() {
     assert!(dimer.run.as_ref().unwrap().date.as_deref().is_some_and(|d| d.len() >= 19 && &d[10..11] == "T"));
     assert!(dimer.program.as_ref().unwrap().version_date.is_some());
 
-    let stopped = load(&dir, "H2O-TPSS");
+    // A run stopped during ENPART (H2O-TPSS until APOST3D b9e8eee, which
+    // supports meta-GGA functionals: that run now ends normally).
+    let stopped = load(&dir, "H2O-WB97X");
     assert!(stopped.stopped());
-    assert_eq!(stopped.run.as_ref().unwrap().stop_message.as_deref(), Some("META-GGA FUNCTIONALS NOT YET SUPPORTED"));
+    assert_eq!(stopped.run.as_ref().unwrap().stop_message.as_deref(), Some("RANGE-SEPARATED HYBRID NOT SUPPORTED. REVISE inp"));
+    assert!(!load(&dir, "H2O-TPSS").stopped());
 
     // Q-Chem .fchk: no energy on either side.
     assert_eq!(load(&dir, "FeO4-2").wavefunction.unwrap().energy_au, None);

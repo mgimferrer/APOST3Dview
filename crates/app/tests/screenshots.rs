@@ -46,7 +46,7 @@ fn apost3d_results() {
     let mut harness = app_with(vec![dir.join("FeO4-2.apost.json")]);
     harness.run_steps(4);
     assert!(has_content(&screenshot(&mut harness, "apost3d-fragments")));
-    let mut harness = app_with(vec![dir.join("H2O-TPSS.apost.json")]);
+    let mut harness = app_with(vec![dir.join("H2O-WB97X.apost.json")]);
     assert!(has_content(&screenshot(&mut harness, "apost3d-stopped")));
 }
 

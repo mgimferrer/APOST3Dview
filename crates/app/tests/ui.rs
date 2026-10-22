@@ -70,10 +70,10 @@ fn a_fchk_picks_up_its_results_and_shows_the_run() {
 #[test]
 fn a_stopped_run_shows_its_stop_message() {
     let Some(dir) = fixtures_dir() else { return };
-    let harness = app_with(vec![dir.join("H2O-TPSS.apost.json")]);
-    assert_eq!(harness.state().structure_labels(), vec!["H2O-TPSS.fchk"]);
+    let harness = app_with(vec![dir.join("H2O-WB97X.apost.json")]);
+    assert_eq!(harness.state().structure_labels(), vec!["H2O-WB97X.fchk"]);
     harness.get_by_label("APOST-3D stopped before the end of this run");
-    harness.get_by_label("META-GGA FUNCTIONALS NOT YET SUPPORTED");
+    harness.get_by_label("RANGE-SEPARATED HYBRID NOT SUPPORTED. REVISE inp");
 }
 
 #[test]

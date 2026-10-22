@@ -9,9 +9,11 @@
 #                        tests), with its .fchk and, for a correlated
 #                        wavefunction, its RDM files (.dm1, .dm2)
 #   fixtures/apost3d-orbitals/: the cases with EOS/GEOS/OSLO orbital files,
-#     from VIEWER-HANDOFF/orbital-fixtures/ (next to the APOST3D checkout),
-#     each complete like a run's folder: results, report, orbital .fchk, and
-#     the main .fchk from tests/inputs/
+#     from tests/reference-orbitals/ (since APOST3D b9e8eee; from
+#     VIEWER-HANDOFF/orbital-fixtures/ next to an older checkout), each
+#     complete like a run's folder: the orbital .fchk files, the results and
+#     report of the same run from tests/reference/, and the main .fchk from
+#     tests/inputs/
 # Rerun it whenever APOST-3D's results change (with each new brief). The
 # APOST3D checkout is only read, never written. fixtures/ is not tracked
 # by git.
@@ -21,9 +23,8 @@
 # Default: the APOST3D checkout next to this repository
 # (../APOST3D-MAJORCHANGE/APOST3D). With --pinned, the commit named in
 # scripts/apost3d-commit is fetched from GitHub instead (tests/ only, about
-# 20 MB, into fixtures/apost3d-source/): what CI does, and no APOST-3D
-# checkout needed. The orbital-file cases come from the handoff folder,
-# which isn't in that repository, so they are then left as they are.
+# 25 MB, into fixtures/apost3d-source/): what CI does, and no APOST-3D
+# checkout needed.
 set -eu
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
@@ -34,7 +35,7 @@ if [ "${1:-}" = "--pinned" ]; then
     git init -q "$src"
     git -C "$src" config core.autocrlf false
     git -C "$src" remote add origin https://github.com/mgimferrer/APOST3D.git
-    git -C "$src" sparse-checkout set tests/reference tests/inputs
+    git -C "$src" sparse-checkout set tests/reference tests/reference-orbitals tests/inputs
     git -C "$src" fetch -q --depth 1 --filter=blob:none origin "$pinned"
     git -C "$src" checkout -q FETCH_HEAD
 else
@@ -81,9 +82,28 @@ case "$pinned" in
     *) echo "Note: CI tests against APOST-3D $pinned (scripts/apost3d-commit), not $commit." ;;
 esac
 
-handoff="$src/../VIEWER-HANDOFF/orbital-fixtures"
+# The orbital-file cases: each orbital .fchk with the results of its run
+# (same name before the suffix, same run id: APOST-3D regenerates them
+# together) and the main .fchk.
 orbitals="$repo/fixtures/apost3d-orbitals"
-if [ -d "$handoff" ]; then
+handoff="$src/../VIEWER-HANDOFF/orbital-fixtures"
+if [ -d "$src/tests/reference-orbitals" ]; then
+    rm -rf "$orbitals"
+    mkdir -p "$orbitals"
+    for file in "$src"/tests/reference-orbitals/*.fchk; do
+        job=$(basename "$file" | sed -E 's/-(EOS-EFOs|GEOS-EFOs|OSLOs-preortho|OSLOs)\.fchk$//')
+        cp "$file" "$orbitals/"
+        for f in "$src/tests/reference/$job.apost.json" "$src/tests/reference/$job.apost" "$src/tests/inputs/$job.fchk"; do
+            if [ -f "$f" ]; then
+                cp "$f" "$orbitals/"
+            else
+                echo "warning: no $f for orbital file $(basename "$file")" >&2
+            fi
+        done
+    done
+    cases=$(ls "$orbitals"/*.apost.json | wc -l | tr -d ' ')
+    echo "Copied $cases orbital-file cases from $src/tests/reference-orbitals into $orbitals."
+elif [ -d "$handoff" ]; then
     rm -rf "$orbitals"
     mkdir -p "$orbitals"
     cp "$handoff"/* "$orbitals/"
@@ -99,5 +119,5 @@ if [ -d "$handoff" ]; then
     done
     echo "Copied $cases orbital-file cases from $handoff into $orbitals."
 else
-    echo "No $handoff: fixtures/apost3d-orbitals left as it was." >&2
+    echo "No tests/reference-orbitals or $handoff: fixtures/apost3d-orbitals left as it was." >&2
 fi
