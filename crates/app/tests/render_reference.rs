@@ -74,17 +74,17 @@ fn orbital(orbital: usize, opacity: f32, refinement: usize, set: Option<&str>, b
     let set = set.map(|s| format!("orbital_set = \"{s}\"\n")).unwrap_or_default();
     format!(
         "[[structures.surfaces]]\nlabel = \"orbital\"\nvisible = true\nisovalue = 0.075\nrefinement = {refinement}\nboth_signs = true\n\
-         positive_color = [60, 90, 230, 255]\nnegative_color = [220, 70, 60, 255]\nopacity = {opacity}\nby_fragment = {by_fragment}\n\
+         positive_color = [20, 95, 170, 255]\nnegative_color = [175, 25, 60, 255]\nopacity = {opacity}\nby_fragment = {by_fragment}\n\
          kind = \"orbital\"\nspin = \"alpha\"\norbital = {orbital}\ngrid_spacing_bohr = 0.28\nbox_padding_bohr = 4.0\n{set}"
     )
 }
 
 /// The total or spin density (opaque; see `translucent`).
 fn density(spin: bool) -> String {
-    let (isovalue, both, positive) = if spin { (0.01, true, "[60, 90, 230, 255]") } else { (0.1, false, "[120, 160, 210, 255]") };
+    let (isovalue, both, positive) = if spin { (0.01, true, "[20, 95, 170, 255]") } else { (0.1, false, "[120, 160, 210, 255]") };
     format!(
         "[[structures.surfaces]]\nlabel = \"density\"\nvisible = true\nisovalue = {isovalue}\nrefinement = 1\nboth_signs = {both}\n\
-         positive_color = {positive}\nnegative_color = [220, 70, 60, 255]\nopacity = 1.0\nby_fragment = false\n\
+         positive_color = {positive}\nnegative_color = [175, 25, 60, 255]\nopacity = 1.0\nby_fragment = false\n\
          kind = \"density\"\nspin_density = {spin}\ngrid_spacing_bohr = 0.28\nbox_padding_bohr = 4.0\n"
     )
 }
@@ -95,8 +95,8 @@ fn translucent(surface: String, opacity: f32, colors: Option<(&str, &str)>) -> S
     let surface = surface.replace("opacity = 1.0", &format!("opacity = {opacity}")).replace("opacity = 1\n", &format!("opacity = {opacity}\n"));
     match colors {
         Some((positive, negative)) => surface
-            .replace("positive_color = [60, 90, 230, 255]", &format!("positive_color = {positive}"))
-            .replace("negative_color = [220, 70, 60, 255]", &format!("negative_color = {negative}")),
+            .replace("positive_color = [20, 95, 170, 255]", &format!("positive_color = {positive}"))
+            .replace("negative_color = [175, 25, 60, 255]", &format!("negative_color = {negative}")),
         None => surface,
     }
 }

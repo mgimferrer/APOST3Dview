@@ -54,14 +54,22 @@ pub(crate) struct SurfaceSettings {
     pub(crate) by_fragment: bool,
 }
 
+/// Deep azure and crimson, chosen from comparison renders (2026-10-22):
+/// still blue and red, but deeper and slightly shifted in hue so a lobe on
+/// an N (CPK #3050F8) or O (#FF0D0D) atom doesn't merge with it (CIEDE2000
+/// 12.8 from N and 21.8 from O, was 3.4 and 7.8). Brighter hue shifts turn
+/// cyan and pink after tone mapping.
+const POSITIVE_COLOR: Color32 = Color32::from_rgb(20, 95, 170);
+const NEGATIVE_COLOR: Color32 = Color32::from_rgb(175, 25, 60);
+
 impl Default for SurfaceSettings {
     fn default() -> Self {
         Self {
             isovalue: DEFAULT_ISOSURFACE_ISOVALUE,
             refinement: 1,
             both_signs: true,
-            positive_color: Color32::from_rgb(60, 90, 230),
-            negative_color: Color32::from_rgb(220, 70, 60),
+            positive_color: POSITIVE_COLOR,
+            negative_color: NEGATIVE_COLOR,
             opacity: DEFAULT_ISOSURFACE_OPACITY,
             by_fragment: false,
         }
