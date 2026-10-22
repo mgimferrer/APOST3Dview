@@ -9,7 +9,7 @@ use egui_kittest::kittest::{By, Queryable};
 
 use common::{app_with, example, toasts};
 
-const JOBS: [&str; 5] = ["FeCN5NO3--UBLYP", "H2O-Dimer-B3LYP", "C2H6-OSLO-2CH3", "CH3F-GEOS", "H2O-CAS44"];
+const JOBS: [&str; 8] = ["FeCN5NO3--UBLYP", "H2O-Dimer-B3LYP", "C2H6-OSLO-2CH3", "CH3F-GEOS", "H2O-CAS44", "FeCp2-EOS-OSLO", "FeCp2-IQA", "FeCO6-EOS"];
 
 fn open(job: &str) -> egui_kittest::Harness<'static, apost3dview::App> {
     let mut harness = app_with(vec![example(job).join(format!("{job}.apost.json"))]);
@@ -132,4 +132,51 @@ fn correlated_density_and_natural_orbitals() {
     harness.run_steps(4);
     let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
     assert_eq!(labels, vec!["Total density (CASSCF)", "NO 5 (CASSCF)", "NO 6 (CASSCF)"]);
+}
+
+/// The paper's case studies that ship as examples: ferrocene (EOS, OSLO,
+/// IQA) and [Fe(CO)6]2+ (EOS), from the published figures they redraw.
+#[test]
+fn ferrocene_efos_and_oslos() {
+    let mut harness = open("FeCp2-EOS-OSLO");
+    menu_offers(&mut harness, "Nothing", &["EOS oxidation states (TFVC)", "OSLO oxidation states"]);
+    harness.get_by_label("Surfaces").click_accesskit();
+    harness.run_steps(2);
+    choose(&mut harness, "SCF orbitals", "EOS EFOs");
+    // The occupied Fe d EFO of 0.890 (JCP 2024, Fig 4).
+    harness.state_mut().select_set_orbitals(&[41], &[]);
+    harness.run_steps(2);
+    harness.get_by_label("Generate 1 orbital(s)").click_accesskit();
+    harness.run_steps(4);
+    assert_eq!(harness.state().surface_labels(), vec![("EFO 42 \u{3b1} \u{b7} 1 Fe".to_string(), true)]);
+    harness.get_by_label("Frontier");
+    // (A menu picked through accessibility stays open.)
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    choose(&mut harness, "EOS EFOs", "OSLOs");
+    harness.get_by_label_contains("OSLOs (48)");
+}
+
+#[test]
+fn ferrocene_energy_decomposition() {
+    let mut harness = open("FeCp2-IQA");
+    choose(&mut harness, "Nothing", "Inter-fragment interaction energy (TFVC)");
+    assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-fragment interaction energy with 1 Fe (TFVC), kcal/mol"));
+    // Fe-Cp, -0.6079 au, with one decimal in kcal/mol (strongest pairs).
+    harness.get_by_label("1 Fe - 2 C5H5   -381.5");
+}
+
+#[test]
+fn carbonyl_efos() {
+    let mut harness = open("FeCO6-EOS");
+    menu_offers(&mut harness, "Nothing", &["EOS oxidation states (TFVC)"]);
+    harness.get_by_label("Surfaces").click_accesskit();
+    harness.run_steps(2);
+    choose(&mut harness, "SCF orbitals", "EOS EFOs");
+    // The sigma EFO of the CO of fragment 2, 0.799 (TCA 2026, Fig 1).
+    harness.state_mut().select_set_orbitals(&[46], &[]);
+    harness.run_steps(2);
+    harness.get_by_label("Generate 1 orbital(s)").click_accesskit();
+    harness.run_steps(4);
+    assert_eq!(harness.state().surface_labels(), vec![("EFO 47 \u{3b1} \u{b7} 2 CO".to_string(), true)]);
 }

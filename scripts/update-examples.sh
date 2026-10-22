@@ -14,6 +14,9 @@
 # orbital files from tests/reference-orbitals/), with the input from
 # fixtures/apost3d/.
 #
+# The three case-study examples (FeCp2-EOS-OSLO, FeCp2-IQA, FeCO6-EOS) come
+# from fixtures/case-studies/ instead, see the end of this script.
+#
 # Usage: scripts/update-examples.sh
 set -eu
 
@@ -52,3 +55,31 @@ for job in FeCN5NO3--UBLYP H2O-Dimer-B3LYP C2H6-OSLO-2CH3 CH3F-GEOS H2O-CAS44; d
     echo "examples/$job: $(ls "$dest" | wc -l | tr -d ' ') files"
 done
 echo "From APOST-3D $(cat "$reference/APOST3D-COMMIT" 2>/dev/null || echo '(commit unknown)')."
+
+# The paper's case studies that are examples too (Martí's calculations, run
+# with APOST-3D on his cluster, in fixtures/case-studies/<system>/, local
+# only): refreshed from there when it is here. After a results-format
+# change, they are run again on the cluster first.
+cases="$repo/fixtures/case-studies"
+if [ ! -d "$cases" ]; then
+    echo "No fixtures/case-studies: FeCp2-EOS-OSLO, FeCp2-IQA and FeCO6-EOS left as they are."
+    exit 0
+fi
+for entry in FeCp2/FeCp2-EOS-OSLO FeCp2/FeCp2-IQA FeCO6/FeCO6-EOS; do
+    job=$(basename "$entry")
+    src="$cases/$(dirname "$entry")"
+    dest="$repo/examples/$job"
+    for file in "$src/$job.apost.json" "$src/$job.apost" "$src/$job.fchk" "$src/$job.inp"; do
+        if [ ! -f "$file" ]; then
+            echo "Missing $file: examples/$job left unchanged." >&2
+            continue 2
+        fi
+    done
+    rm -rf "$dest"
+    mkdir -p "$dest"
+    cp "$src/$job.apost.json" "$src/$job.apost" "$src/$job.fchk" "$src/$job.inp" "$dest/"
+    for file in "$src/$job"-*.fchk; do
+        [ ! -f "$file" ] || cp "$file" "$dest/"
+    done
+    echo "examples/$job: $(ls "$dest" | wc -l | tr -d ' ') files"
+done
