@@ -16,7 +16,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::{By, Queryable};
 
 use apost3dview::App;
-use common::{app_with_scale, example, repo_dir, scratch_dir};
+use common::{app_with_scale, example, orientation, repo_dir, scratch_dir};
 
 /// The pictures are taken at twice the screen's resolution, so they stay
 /// sharp on high-density screens.
@@ -43,6 +43,26 @@ fn open_example(job: &str) -> Guide {
 /// Turns and zooms the view, for a better picture.
 fn frame(harness: &mut Guide, yaw: f32, pitch: f32, zoom: f32) {
     harness.state_mut().turn_view(yaw, pitch);
+    harness.state_mut().zoom_view(zoom);
+    harness.run_steps(2);
+}
+
+/// [Fe(CN)5NO]3- (the FeCN5NO3--UBLYP example) as octahedral complexes are
+/// usually drawn: the NO up from Fe, a CN to the right, seen from a little
+/// above and turned so the CN in front doesn't hide the Fe. From the atoms,
+/// whatever the file's orientation; then zoomed by `zoom`.
+fn frame_iron_nitrosyl(harness: &mut Guide, zoom: f32) {
+    let text = std::fs::read_to_string(example("FeCN5NO3--UBLYP").join("FeCN5NO3--UBLYP.apost.json")).unwrap();
+    let results = apost3dview_core::parse_apost_results(&text).unwrap();
+    let molecule = results.molecule.as_ref().unwrap();
+    let at = |i: usize| glam::Vec3::from_array(molecule.coordinates_bohr[i].map(|c| c as f32));
+    let of = |symbol: &str| (0..molecule.symbols.len()).filter(|&i| molecule.symbols[i] == symbol).collect::<Vec<_>>();
+    let (fe, o) = (at(of("Fe")[0]), at(of("O")[0]));
+    // The nitrosyl N: the N nearest the O.
+    let nitrosyl = of("N").into_iter().map(at).min_by(|a, b| a.distance(o).total_cmp(&b.distance(o))).unwrap();
+    let up = nitrosyl - fe;
+    let right = of("C").into_iter().map(|c| at(c) - fe).min_by(|a, b| a.normalize().dot(up.normalize()).abs().total_cmp(&b.normalize().dot(up.normalize()).abs())).unwrap();
+    harness.state_mut().set_view_orientation(orientation(up, right, 0.17, 0.55));
     harness.state_mut().zoom_view(zoom);
     harness.run_steps(2);
 }
@@ -160,6 +180,7 @@ fn first_start() {
 
     let mut guide = open_example("FeCN5NO3--UBLYP");
     assert_eq!(guide.state().toast_texts(), vec!["APOST-3D results loaded from FeCN5NO3--UBLYP.apost.json".to_string()]);
+    frame_iron_nitrosyl(&mut guide, 1.0);
     settle(&mut guide);
     for label in ["Open", "Save", "Molecule", "Surfaces", "Measure", "APOST-3D", "Appearance", "Export", "About", "Spin (Space)"] {
         sees(&guide, label);
@@ -172,7 +193,7 @@ fn first_start() {
 #[test]
 fn tour() {
     let mut guide = open_example("FeCN5NO3--UBLYP");
-    frame(&mut guide, 0.0, 0.45, 0.85);
+    frame_iron_nitrosyl(&mut guide, 0.85);
     choose(&mut guide, "Nothing", "Inter-fragment bond order (Lowdin)");
     assert_eq!(guide.state().legend_title().as_deref(), Some("Inter-fragment bond order with 1 Fe (Lowdin)"));
     settle(&mut guide);
@@ -286,7 +307,7 @@ fn orbitals_and_densities() {
 #[test]
 fn fragments_and_bond_orders() {
     let mut guide = open_example("FeCN5NO3--UBLYP");
-    frame(&mut guide, 0.0, 0.45, 0.85);
+    frame_iron_nitrosyl(&mut guide, 0.85);
     choose(&mut guide, "Nothing", "Fragments");
     settle(&mut guide);
     snap_figure(&mut guide, "results-fragments", 1200, 750);
@@ -415,7 +436,7 @@ fn making_an_input() {
     let fchk = dir.join("FeCN5NO3.fchk");
     std::fs::copy(example("FeCN5NO3--UBLYP").join("FeCN5NO3--UBLYP.fchk"), &fchk).unwrap();
     let mut guide = open(vec![fchk]);
-    frame(&mut guide, 0.0, 0.45, 1.0);
+    frame_iron_nitrosyl(&mut guide, 1.0);
     click(&mut guide, "APOST-3D input...");
     for label in ["Results", "New input", "Atoms in molecules", "Analyses", "Effective oxidation states", "Separate molecules", "Input file", "Copy input"] {
         sees(&guide, label);

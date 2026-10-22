@@ -62,3 +62,7 @@ Related molecules from separate calculations (two metals with the same ligands, 
 3. Click **Align onto** followed by the first structure's name in the **Molecule** window.
 
 The structure is now seen exactly as the other one (**Keep the view when switching structures** is turned on): the matched atoms lie on the same spots, lit the same way, and stay so as you turn either one. The window says how well the atoms matched (the RMSD, in Å). Nothing in the files changes: orbitals, densities and APOST-3D values stay where they were computed; only the view is turned. **Undo alignment** goes back to the structure's own coordinates. Sessions keep the alignment.
+
+<img src="images/case-be-mg-aligned.png" alt="Be and Mg complexes aligned on their C-M-C cores, the frontier natural orbitals of each">
+
+Be(cAAC)₂ and Mg(cAAC)₂, two separate CASSCF calculations, with Mg aligned onto Be on the metal, the two carbene carbons and their nitrogens (RMSD 0.339 Å): both are seen in the same orientation and at the same scale, so their frontier natural orbitals (HONO, LUNO) compare directly. Made as a panel figure, see [Figures and videos](figures.md).

@@ -14,9 +14,16 @@ repo=$(cd "$(dirname "$0")/.." && pwd)
 images="$repo/docs/src/images"
 
 # Start from an empty folder (the logo stays), so a picture the guide no
-# longer takes doesn't linger.
-find "$images" -name '*.png' ! -name 'logo.png' -delete
+# longer takes doesn't linger. Pictures named case-*.png are made from the
+# paper's case studies (fixtures/case-studies/, local only): made again
+# when that folder is here, kept as committed otherwise.
+find "$images" -name '*.png' ! -name 'logo.png' ! -name 'case-*.png' -delete
 APOST3DVIEW_GUIDE_IMAGES="$images" cargo test --manifest-path "$repo/Cargo.toml" -p apost3dview --test guide -- --test-threads=2
+if [ -d "$repo/fixtures/case-studies" ]; then
+    APOST3DVIEW_GUIDE_IMAGES="$images" cargo test --release --manifest-path "$repo/Cargo.toml" -p apost3dview --test case_studies guide_aligned_comparison
+else
+    echo "fixtures/case-studies/ not here: the case-*.png pictures are kept as they are."
+fi
 echo "Pictures written to docs/src/images/."
 
 cargo test --manifest-path "$repo/Cargo.toml" -p apost3dview --test guide_text

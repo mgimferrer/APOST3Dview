@@ -345,6 +345,14 @@ impl App {
         self.camera.orbit(yaw, pitch);
     }
 
+    /// Turns the view to `orientation` (a quaternion, x y z w: screen
+    /// right, up and toward the viewer are its X, Y and Z), keeping what
+    /// it looks at and from how far — for the guide's pictures, which set
+    /// an orientation computed from the atoms.
+    pub fn set_view_orientation(&mut self, orientation: [f32; 4]) {
+        self.camera.orientation = glam::Quat::from_array(orientation).normalize();
+    }
+
     /// Moves the camera closer (`factor` below 1) or farther, as zooming
     /// would — for tests and the guide's pictures.
     pub fn zoom_view(&mut self, factor: f32) {
