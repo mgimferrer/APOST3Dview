@@ -4,6 +4,7 @@
 
 
 
+mod alignment;
 mod app;
 mod export;
 mod files;

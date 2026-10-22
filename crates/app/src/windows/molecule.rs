@@ -37,6 +37,39 @@ impl App {
         self.show_molecule = open;
     }
 
+    /// Aligning the active structure onto another on selected atoms, or
+    /// undoing it.
+    fn show_alignment(&mut self, ui: &mut egui::Ui) {
+        let Some(active) = self.active_structure else { return };
+        if let Some(placement) = &self.structures[active].placement {
+            let text = format!("Aligned onto {} on {} atoms (RMSD {:.3} \u{c5})", placement.onto, placement.atoms, placement.rmsd);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(text).small());
+                if ui.small_button("Undo alignment").on_hover_text("Back to this structure's own coordinates").clicked() {
+                    self.undo_alignment();
+                }
+            });
+            return;
+        }
+        let candidates = self.alignment_candidates();
+        if candidates.is_empty() {
+            ui.label(
+                RichText::new("To show related molecules the same way: select three or more atoms in one, the matching atoms (same order) in another, then align.")
+                    .small()
+                    .weak(),
+            );
+            return;
+        }
+        let n = self.structures[active].selected_atoms.len();
+        for reference in candidates {
+            let label = self.structures[reference].label.clone();
+            let hover = format!("Turns and moves the view of this structure so that its {n} selected atoms lie on the {n} selected in {label}, in the order they were clicked. The files are not changed.");
+            if ui.button(format!("Align onto {label}")).on_hover_text(hover).clicked() {
+                self.align_active_onto(reference);
+            }
+        }
+    }
+
     fn show_structure_list(&mut self, ui: &mut egui::Ui) {
         if self.structures.is_empty() {
             ui.label(RichText::new("Nothing open yet. Use Open in the toolbar, or drag files onto the window.").weak());
@@ -74,6 +107,7 @@ impl App {
         if self.structures.len() > 1 {
             ui.checkbox(&mut self.keep_view, "Keep the view when switching structures")
                 .on_hover_text("The next structure is seen with the same orientation and zoom, centered on it. Otherwise each structure keeps its own view.");
+            self.show_alignment(ui);
         }
         if let Some(index) = switch_to {
             self.set_active(index);

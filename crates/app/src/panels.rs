@@ -259,23 +259,44 @@ impl App {
     /// structure (and for one with the same geometry); with "Keep the
     /// view", the live orientation and zoom centered on it; otherwise the
     /// view it was left with, or a view framing it.
+    /// Structures aligned on selected atoms (`alignment.rs`) are carried
+    /// through their placements instead of centered, so their matched atoms
+    /// stay on the same spot.
     pub(crate) fn view_for(&self, index: usize) -> OrbitCamera {
         let Some(structure) = self.structures.get(index) else { return self.camera };
+        let own = crate::alignment::motion(structure.placement.as_ref());
         let active = self.active_structure.and_then(|a| self.structures.get(a).map(|s| (a, s)));
         if let Some((a, current)) = active {
-            if a == index || crate::util::molecules_share_geometry(&current.molecule, &structure.molecule) {
+            if a == index {
                 return self.camera;
             }
-            if self.keep_view {
+            let same_geometry = crate::util::molecules_share_geometry(&current.molecule, &structure.molecule);
+            if same_geometry || self.keep_view {
+                if current.placement.is_some() || structure.placement.is_some() {
+                    let from = crate::alignment::motion(current.placement.as_ref());
+                    // Its own view, exactly, when that is still what is
+                    // seen: going back and forth doesn't drift by rounding.
+                    if let Some(saved) = structure.view
+                        && crate::alignment::same_view(&crate::alignment::carry_camera(&saved, own, from), &self.camera)
+                    {
+                        return saved;
+                    }
+                    return crate::alignment::carry_camera(&self.camera, from, own);
+                }
+                if same_geometry {
+                    return self.camera;
+                }
                 let mut camera = self.camera;
                 camera.target = structure.molecule.bounding_sphere().0;
                 return camera;
             }
         }
-        if let Some(view) = structure.view {
+        if let Some(mut view) = structure.view {
+            view.world_up = crate::alignment::up_in(own);
             return view;
         }
         let mut camera = self.camera;
+        camera.world_up = crate::alignment::up_in(own);
         let (center, radius) = structure.molecule.bounding_sphere();
         // Room for fragment envelopes and the values beside them.
         let has_fragments = structure.apost.as_ref().and_then(|a| a.results.as_ref().ok()).is_some_and(|r| !r.fragments().is_empty());

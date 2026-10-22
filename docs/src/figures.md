@@ -38,7 +38,7 @@ When a value of the APOST-3D results is shown on the molecule, its legend is dra
 
 ### Panels of several structures
 
-**Add a panel** also offers the other open structures, with their surfaces or as they are shown, to put related molecules side by side. Each structure is seen with its own view, the one it had when you last left it: make it the active one in the **Molecule** window to turn or zoom it. To see them all the same way, tick **Keep the view when switching structures** in the **Molecule** window: every structure then has the orientation and zoom of the active one, each centered on itself, so molecules of the same family compare at the same scale. The same orientation shows the molecules alike only when their coordinates are oriented alike in their files.
+**Add a panel** also offers the other open structures, with their surfaces or as they are shown, to put related molecules side by side. Each structure is seen with its own view, the one it had when you last left it: make it the active one in the **Molecule** window to turn or zoom it. To see them all the same way, tick **Keep the view when switching structures** in the **Molecule** window: every structure then has the orientation and zoom of the active one, each centered on itself, so molecules of the same family compare at the same scale. Molecules whose files are turned differently can first be aligned on matching atoms (see [Aligning related molecules](molecule.md#aligning-related-molecules)): then they appear in exactly the same orientation, the matched atoms on the same spot of every panel.
 
 ## Turning videos (GIF)
 

@@ -134,6 +134,9 @@ pub(crate) struct LoadedStructure {
     /// The view this structure was left with, given back when it becomes
     /// the active one again (`App::view_for`); `None` before.
     pub(crate) view: Option<apost3dview_render::OrbitCamera>,
+    /// Aligned onto another structure on selected atoms: where its
+    /// coordinates sit in the shared frame (`alignment.rs`).
+    pub(crate) placement: Option<crate::alignment::Placement>,
 }
 
 impl LoadedStructure {
@@ -165,6 +168,7 @@ impl LoadedStructure {
             active_orbital_set: 0,
             input_draft: None,
             view: None,
+            placement: None,
         }
     }
 

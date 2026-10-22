@@ -52,3 +52,13 @@ Each measurement is drawn as a dashed line with its value beside the bond, or in
 ## Several structures
 
 Open as many files as you like: the **Molecule** window lists them, and clicking a name shows that structure. Each structure keeps its own view: going back to one gives back the view it was left with, and a structure shown for the first time is framed. The view is kept as it is between two structures with the same geometry (two files of the same molecule). With **Keep the view when switching structures** ticked, the next structure is seen with the same orientation and zoom, centered on it: handy for comparing related molecules, or for [panels of several structures](figures.md#panels-of-several-structures). Hidden atoms, the selection and measurements belong to each structure; the look of the scene ([Appearance](appearance.md)) is shared by all.
+
+### Aligning related molecules
+
+Related molecules from separate calculations (two metals with the same ligands, two oxidation states) often come out of their programs turned differently, so the same view shows them differently. To show them the same way, align one onto the other on matching atoms:
+
+1. In the first structure, select three or more atoms (click them one after the other; for a complex, the metal and a few ligand atoms).
+2. Switch to the other structure and select the matching atoms, in the same order.
+3. Click **Align onto** followed by the first structure's name in the **Molecule** window.
+
+The structure is now seen exactly as the other one (**Keep the view when switching structures** is turned on): the matched atoms lie on the same spots, lit the same way, and stay so as you turn either one. The window says how well the atoms matched (the RMSD, in Å). Nothing in the files changes: orbitals, densities and APOST-3D values stay where they were computed; only the view is turned. **Undo alignment** goes back to the structure's own coordinates. Sessions keep the alignment.

@@ -177,6 +177,21 @@ struct StructureState {
     /// The view this structure was left with, when it isn't the active one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     view: Option<CameraState>,
+    /// Aligned onto another structure on selected atoms.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    alignment: Option<AlignmentState>,
+}
+
+/// Where an aligned structure's coordinates sit in the shared frame
+/// (`shared = rotation * own + translation`), and what it was aligned onto.
+#[derive(Serialize, Deserialize)]
+struct AlignmentState {
+    /// Quaternion, x y z w.
+    rotation: [f32; 4],
+    translation: [f32; 3],
+    onto: String,
+    atoms: usize,
+    rmsd: f64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -352,6 +367,13 @@ impl App {
                         .collect(),
                     surfaces,
                     view: structure.view.as_ref().map(CameraState::of),
+                    alignment: structure.placement.as_ref().map(|p| AlignmentState {
+                        rotation: p.rotation.to_array(),
+                        translation: p.translation.to_array(),
+                        onto: p.onto.clone(),
+                        atoms: p.atoms,
+                        rmsd: p.rmsd,
+                    }),
                 })
             })
             .collect();
@@ -523,9 +545,21 @@ impl App {
         self.camera = saved.apply(&self.camera);
         self.keep_view = view.keep_view;
         for (position, state) in session.structures.iter().enumerate() {
-            if let (Some(&index), Some(camera)) = (opened.get(&position), &state.view) {
+            let Some(&index) = opened.get(&position) else { continue };
+            if let Some(camera) = &state.view {
                 self.structures[index].view = Some(camera.apply(&self.camera));
             }
+            self.structures[index].placement = state.alignment.as_ref().map(|a| crate::alignment::Placement {
+                // Kept exactly as saved, like the camera's orientation.
+                rotation: Some(Quat::from_array(a.rotation)).filter(|q| q.is_normalized()).unwrap_or_else(|| Quat::from_array(a.rotation).normalize()),
+                translation: Vec3::from_array(a.translation),
+                onto: a.onto.clone(),
+                atoms: a.atoms,
+                rmsd: a.rmsd,
+            });
+        }
+        if let Some(active) = self.active_structure {
+            self.camera.world_up = crate::alignment::up_in(crate::alignment::motion(self.structures[active].placement.as_ref()));
         }
         let figure = &mut self.render_export.figure;
         figure.preview = Default::default();
