@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use egui_kittest::kittest::{By, Queryable};
 
-use common::{app_with, repo_dir, toasts};
+use common::{app_with, orientation, repo_dir, toasts};
 
 fn case_studies() -> Option<PathBuf> {
     let dir = repo_dir().join("fixtures/case-studies");
@@ -94,7 +94,7 @@ fn every_case_study_opens_with_its_orbitals() {
 // `<dir>/<name>.png` and `<dir>/<name>.a3dview` are written.
 
 use apost3dview_core::apost::ApostResults;
-use glam::{Mat3, Quat, Vec3};
+use glam::Vec3;
 
 fn figures_dir() -> Option<PathBuf> {
     let dir = PathBuf::from(std::env::var_os("APOST3DVIEW_CASE_STUDY_FIGURES")?);
@@ -136,17 +136,6 @@ impl Atoms {
     fn hydrogens(&self) -> Vec<usize> {
         self.of_element("H").into_iter().map(|a| a + 1).collect()
     }
-}
-
-/// The camera orientation (x y z w) that shows `up` as screen up and
-/// `right` (made perpendicular to it) as screen right, then looks from
-/// `elevation` radians above that and turned `turn` radians about up.
-fn orientation(up: Vec3, right: Vec3, elevation: f32, turn: f32) -> [f32; 4] {
-    let up = up.normalize();
-    let right = (right - up * right.dot(up)).normalize();
-    let toward_viewer = right.cross(up);
-    let q = Quat::from_mat3(&Mat3::from_cols(right, up, toward_viewer));
-    (q * Quat::from_rotation_y(turn) * Quat::from_rotation_x(-elevation)).normalize().to_array()
 }
 
 fn toml_array(values: &[usize]) -> String {
@@ -301,14 +290,25 @@ fn pnictoranide_arms(atoms: &Atoms, ligand: &[usize]) -> ([usize; 2], [usize; 2]
     ([n[0], n[1]], [nearest_o(n[0]), nearest_o(n[1])])
 }
 
-/// The matched atoms for aligning 4d' onto 4c: Fe, Pn and the four donors
-/// (for the EFO figure, once the 0.16 runs are in).
-#[allow(dead_code)]
+/// The matched atoms for aligning 4d' onto 4c: Fe, Pn and the four donors.
 fn pnictoranide_core(atoms: &Atoms) -> Vec<usize> {
     let fe = atoms.of_element("Fe")[0];
     let pn = (0..atoms.symbols.len()).find(|&i| atoms.symbols[i] == "Sb" || atoms.symbols[i] == "Bi").unwrap();
     let (n, o) = pnictoranide_arms(atoms, &atoms.fragments[5]);
     vec![fe, pn, n[0], n[1], o[0], o[1]]
+}
+
+/// `pnictoranide_core` of `atoms` with its two arms in the order that
+/// matches `reference`'s best (the files list the arms in either order).
+fn pnictoranide_core_matching(reference: &Atoms, atoms: &Atoms) -> Vec<usize> {
+    let target: Vec<Vec3> = pnictoranide_core(reference).iter().map(|&a| reference.positions[a]).collect();
+    let core = pnictoranide_core(atoms);
+    let swapped = vec![core[0], core[1], core[3], core[2], core[5], core[4]];
+    let rmsd = |c: &[usize]| {
+        let moving: Vec<Vec3> = c.iter().map(|&a| atoms.positions[a]).collect();
+        apost3dview_core::superpose(&target, &moving).map(|s| s.rmsd).unwrap_or(f64::MAX)
+    };
+    if rmsd(&swapped) < rmsd(&core) { swapped } else { core }
 }
 
 /// [Fe(CO)6]2+ (TCA 2026 Fig 1): the CO of fragment 2 pointing up from Fe,
@@ -498,6 +498,25 @@ fn frontier_natural_orbitals(harness: &mut egui_kittest::Harness<'static, apost3
 #[test]
 fn beryllium_and_magnesium_aligned() {
     let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    be_mg_natural_orbitals(&dir, &out);
+}
+
+/// The user guide's picture of aligned structures (molecule.md, "Aligning
+/// related molecules"): the Be/Mg natural-orbital figure at the guide's
+/// width. Made by `scripts/guide-images.sh` when the case studies are
+/// here; kept (committed) otherwise.
+#[test]
+fn guide_aligned_comparison() {
+    let (Some(dir), Some(images)) = (case_studies(), std::env::var_os("APOST3DVIEW_GUIDE_IMAGES").map(PathBuf::from)) else { return };
+    let scratch = common::scratch_dir("case-guide");
+    be_mg_natural_orbitals(&dir, &scratch);
+    let figure = image::open(scratch.join("be-mg-natural-orbitals.png")).unwrap();
+    let width = 1400;
+    let height = figure.height() * width / figure.width();
+    figure.resize_exact(width, height, image::imageops::FilterType::Lanczos3).save(images.join("case-be-mg-aligned.png")).unwrap();
+}
+
+fn be_mg_natural_orbitals(dir: &std::path::Path, out: &std::path::Path) {
     let be = dir.join("Be-cAAC-Dip/Be-cAAC-Dip-EOS.apost.json");
     let mg = dir.join("Mg-cAAC-Dip/Mg-cAAC-Dip-EOS.apost.json");
     let (be_atoms, mg_atoms) = (Atoms::of(&read_results(&be)), Atoms::of(&read_results(&mg)));
@@ -540,9 +559,9 @@ fn beryllium_and_magnesium_aligned() {
         patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
     }
     let session = out.join("be-mg-natural-orbitals.a3dview");
-    let mut harness = build(vec![be, mg], setup, &session, &patch, carbene_pi_view(&be_atoms, 0.0), 0.62);
+    let mut harness = build(vec![be, mg], setup, &session, &patch, carbene_pi_view(&be_atoms, 0.0), 0.5);
     eprintln!("panels {:?}", harness.state().panel_captions());
-    save_figure(&mut harness, &out, "be-mg-natural-orbitals");
+    save_figure(&mut harness, out, "be-mg-natural-orbitals");
 }
 
 /// An APOST-3D results view showing `id` from `focus` (0-based).
@@ -571,4 +590,178 @@ fn ferrocene_iqa() {
         save_png(&mut harness, &out.join(format!("{name}.png")), 1200, 1000);
         harness.state().save_session_to(&session).unwrap();
     }
+}
+
+/// Generates analysis orbitals of `set` one at a time, in this order, so
+/// that the surface list (and so the panels) follows it; `(row, beta)`
+/// 0-based in the channel's list.
+fn generate_in_order(harness: &mut egui_kittest::Harness<'static, apost3dview::App>, set: &str, orbitals: &[(usize, bool)]) {
+    open_window(harness, "Surfaces");
+    choose_orbitals(harness, set);
+    for &(row, beta) in orbitals {
+        if beta {
+            harness.state_mut().select_set_orbitals(&[], &[row]);
+        } else {
+            harness.state_mut().select_set_orbitals(&[row], &[]);
+        }
+        harness.run_steps(2);
+        click(harness, "Generate 1 orbital(s)");
+        harness.run_steps(3);
+    }
+}
+
+/// Two related molecules in one panel figure: `generate` run in each, the
+/// second aligned onto the first on the matched atoms `cores`, the panels
+/// of both, the first one's camera (`view`) for all.
+#[allow(clippy::too_many_arguments)]
+fn aligned_figure(
+    out: &std::path::Path,
+    name: &str,
+    files: [PathBuf; 2],
+    cores: [Vec<usize>; 2],
+    generate: fn(&mut egui_kittest::Harness<'static, apost3dview::App>, usize),
+    patch: &str,
+    view: [f32; 4],
+    zoom: f32,
+) -> egui_kittest::Harness<'static, apost3dview::App> {
+    let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| {
+        let labels = harness.state().structure_labels();
+        for (i, label) in labels.iter().enumerate() {
+            show_structure(harness, label);
+            generate(harness, i);
+            show_structure(harness, label);
+            harness.state_mut().select_atoms(&cores[i]);
+        }
+        let ctx = harness.ctx.clone();
+        harness.state().set_window_collapsed(&ctx, "Molecule", false);
+        harness.run_steps(3);
+        click(harness, &format!("Align onto {}", labels[0]));
+        let toast = harness.state().toast_texts().into_iter().find(|t| t.contains("aligned onto")).expect("aligned");
+        eprintln!("{name}: {toast}");
+        for label in &labels {
+            show_structure(harness, label);
+            harness.state_mut().select_atoms(&[]);
+        }
+        // The first structure's surfaces first, then the second's; the
+        // camera is left on the first.
+        show_structure(harness, &labels[0]);
+        open_window(harness, "Export");
+        click(harness, "Panels");
+        show_structure(harness, &labels[1]);
+        open_window(harness, "Export");
+        click(harness, "All surfaces");
+        show_structure(harness, &labels[0]);
+    };
+    let [a, b] = files;
+    let mut harness = build(vec![a, b], setup, &out.join(format!("{name}.a3dview")), patch, view, zoom);
+    eprintln!("{name}: {:?}", harness.state().panel_captions());
+    save_figure(&mut harness, out, name);
+    harness
+}
+
+#[test]
+fn ferrocene_efos() {
+    let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    let results = dir.join("FeCp2/FeCp2-EOS-OSLO.apost.json");
+    let atoms = Atoms::of(&read_results(&results));
+    // JCP 2024 Fig 4c: the occupied Fe d EFOs, the upper Cp's pi EFOs, and
+    // the two Fe d EFOs with 0.310 (the first unoccupied), at 0.1.
+    let rows = [43, 44, 42, 40, 45, 47, 49, 50];
+    let captions = ["0.817 (Fe)", "0.817 (Fe)", "0.890 (Fe)", "0.899 (Cp)", "0.795 (Cp)", "0.795 (Cp)", "0.310 (Fe)", "0.310 (Fe)"];
+    let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| {
+        generate_in_order(harness, "EOS EFOs", &rows.map(|r| (r - 1, false)));
+        open_window(harness, "Export");
+        click(harness, "Panels");
+    };
+    let mut patch = format!("{FIGURE_LOOK}{}", structure_patch(&atoms, false));
+    for _ in rows {
+        patch.push_str("[[structures.surfaces]]\nisovalue = 0.1\n");
+    }
+    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 3\ncolumns = 3\n{CAPTION_SIZE}"));
+    for caption in captions {
+        patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
+    }
+    let mut harness = build(vec![results], setup, &out.join("ferrocene-efos.a3dview"), &patch, ferrocene_view(&atoms), 0.62);
+    let session = std::fs::read_to_string(out.join("ferrocene-efos.a3dview")).unwrap();
+    assert_eq!(session.matches("fragment_weighted = true").count(), rows.len(), "EFOs drawn times their fragment's weight");
+    save_figure(&mut harness, &out, "ferrocene-efos");
+}
+
+#[test]
+fn beryllium_and_magnesium_frontier_efos() {
+    let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    let be = dir.join("Be-cAAC-Dip/Be-cAAC-Dip-EOS.apost.json");
+    let mg = dir.join("Mg-cAAC-Dip/Mg-cAAC-Dip-EOS.apost.json");
+    let (be_atoms, mg_atoms) = (Atoms::of(&read_results(&be)), Atoms::of(&read_results(&mg)));
+    // Chem. Sci. 2022 Fig 3: the two LO EFOs on the cAACs and the FU EFO on
+    // the metal, from the results file's frontier lists.
+    fn generate(harness: &mut egui_kittest::Harness<'static, apost3dview::App>, structure: usize) {
+        let rows: [usize; 3] = if structure == 0 { [160, 161, 162] } else { [164, 165, 166] };
+        generate_in_order(harness, "EOS EFOs", &rows.map(|r| (r - 1, false)));
+    }
+    let captions = ["Be: LO 0.435 (cAAC)", "Be: LO 0.435 (cAAC)", "Be: FU 0.175 (Be)", "Mg: LO 0.469 (cAAC)", "Mg: LO 0.467 (cAAC)", "Mg: FU 0.177 (Mg)"];
+    let mut patch = format!("{FIGURE_LOOK}[appearance.material]\natom_scale = 0.17\nbond_radius = 0.12\n");
+    for atoms in [&be_atoms, &mg_atoms] {
+        patch.push_str(&format!("[[structures]]\nhidden_atoms = {}\n", toml_array(&atoms.hydrogens())));
+        for _ in 0..3 {
+            patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\nvisible = true\n");
+        }
+    }
+    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 2\ncolumns = 3\npanel_shape = \"view\"\n{CAPTION_SIZE}"));
+    for caption in captions {
+        patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
+    }
+    aligned_figure(&out, "be-mg-frontier-efos", [be, mg], [carbene_core(&be_atoms), carbene_core(&mg_atoms)], generate, &patch, carbene_pi_view(&be_atoms, 0.0), 0.5);
+}
+
+#[test]
+fn pnictoranide_frontier_efos() {
+    let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    let sb = dir.join("Pn-4c/4c-Sb-EOS.apost.json");
+    let bi = dir.join("Pn-4d/4d-Bi-EOS.apost.json");
+    let (sb_atoms, bi_atoms) = (Atoms::of(&read_results(&sb)), Atoms::of(&read_results(&bi)));
+    // Chem. Sci. 2025 Fig 9: the frontier EFOs of the Fe-Pn bond (4d′: the
+    // alpha ones; beta 0.468 / 0.404).
+    fn generate(harness: &mut egui_kittest::Harness<'static, apost3dview::App>, _: usize) {
+        generate_in_order(harness, "EOS EFOs", &[(194, false), (195, false)]);
+    }
+    let captions = ["4c: LO 0.636 (Sb)", "4c: FU 0.447 (Fe)", "4d\u{2032}: LO 0.474 (Fe)", "4d\u{2032}: FU 0.408 (Bi)"];
+    let mut patch = format!("{FIGURE_LOOK}[appearance.material]\natom_scale = 0.17\nbond_radius = 0.12\n");
+    for atoms in [&sb_atoms, &bi_atoms] {
+        patch.push_str(&format!("[[structures]]\nhidden_atoms = {}\n", toml_array(&atoms.hydrogens())));
+        for _ in 0..2 {
+            patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\nvisible = true\n");
+        }
+    }
+    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 2\ncolumns = 2\npanel_shape = \"view\"\n{CAPTION_SIZE}"));
+    for caption in captions {
+        patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
+    }
+    aligned_figure(&out, "pnictoranide-frontier-efos", [sb, bi], [pnictoranide_core(&sb_atoms), pnictoranide_core_matching(&sb_atoms, &bi_atoms)], generate, &patch, pnictoranide_view(&sb_atoms), 0.62);
+}
+
+#[test]
+fn carbonyl_efos() {
+    let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    let results = dir.join("FeCO6/FeCO6-EOS.apost.json");
+    let atoms = Atoms::of(&read_results(&results));
+    // TCA 2026 Fig 1, left: the pi*, sigma and pi EFOs of the CO pointing
+    // up (fragment 2), at 0.05.
+    let rows = [65, 66, 47, 32, 33];
+    let captions = ["\u{3c0}* 0.065", "\u{3c0}* 0.065", "\u{3c3} 0.799", "\u{3c0} 0.994", "\u{3c0} 0.994"];
+    let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| {
+        generate_in_order(harness, "EOS EFOs", &rows.map(|r| (r - 1, false)));
+        open_window(harness, "Export");
+        click(harness, "Panels");
+    };
+    let mut patch = format!("{FIGURE_LOOK}[[structures]]\n");
+    for _ in rows {
+        patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\n");
+    }
+    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 1\ncolumns = 5\n{CAPTION_SIZE}"));
+    for caption in captions {
+        patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
+    }
+    let mut harness = build(vec![results], setup, &out.join("carbonyl-efos.a3dview"), &patch, carbonyl_view(&atoms), 1.0);
+    save_figure(&mut harness, &out, "carbonyl-efos");
 }

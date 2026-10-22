@@ -67,6 +67,20 @@ pub fn app_with_scale(files: Vec<PathBuf>, pixels_per_point: f32) -> Harness<'st
     harness
 }
 
+/// The camera orientation (x y z w) that shows `up` as screen up and
+/// `right` (made perpendicular to it) as screen right, then looks from
+/// `elevation` radians above that and turned `turn` radians about up:
+/// a view set from the molecule's own axes, so it doesn't depend on how a
+/// program wrote the coordinates.
+pub fn orientation(up: glam::Vec3, right: glam::Vec3, elevation: f32, turn: f32) -> [f32; 4] {
+    use glam::{Mat3, Quat};
+    let up = up.normalize();
+    let right = (right - up * right.dot(up)).normalize();
+    let toward_viewer = right.cross(up);
+    let q = Quat::from_mat3(&Mat3::from_cols(right, up, toward_viewer));
+    (q * Quat::from_rotation_y(turn) * Quat::from_rotation_x(-elevation)).normalize().to_array()
+}
+
 pub fn toasts(harness: &Harness<'_, App>) -> Vec<String> {
     harness.state().toast_texts()
 }
