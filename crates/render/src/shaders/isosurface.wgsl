@@ -86,7 +86,7 @@ fn shade_isosurface(world_position: vec3<f32>, normal: vec3<f32>, color: vec3<f3
     let direct = ggx_direct(normal, v, l, albedo, iso_material.material);
     let n_dot_v = max(dot(normal, v), 1e-4);
     let rim = fresnel_rim(n_dot_v, iso_material.fresnel.x) * iso_material.fresnel.y;
-    let ambient = hemisphere_ambient(normal) * albedo * (iso_material.material.x + rim);
+    let ambient = hemisphere_ambient(normal, scene.world_up.xyz) * albedo * (iso_material.material.x + rim);
     return direct + ambient;
 }
 

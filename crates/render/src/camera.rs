@@ -25,6 +25,12 @@ pub struct OrbitCamera {
     pub fov_y_radians: f32,
     pub near: f32,
     pub far: f32,
+    /// Where "up" is for the soft fill light (the sky/ground ambient),
+    /// unit length: world +Y, unless the structure seen is aligned onto
+    /// another, whose coordinates are then turned (`world_up` is the
+    /// shared +Y in this structure's own coordinates, so both are lit
+    /// alike). Not changed by orbiting, panning or zooming.
+    pub world_up: Vec3,
 }
 
 impl Default for OrbitCamera {
@@ -36,6 +42,7 @@ impl Default for OrbitCamera {
             fov_y_radians: 45.0_f32.to_radians(),
             near: 0.05,
             far: 500.0,
+            world_up: Vec3::Y,
         }
     }
 }

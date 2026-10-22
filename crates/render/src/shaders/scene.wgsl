@@ -12,6 +12,8 @@ struct SceneUniforms {
     material: vec4<f32>,
     // atom_scale, bond_radius, exposure, srgb_target
     style: vec4<f32>,
+    // "up" for the sky/ground ambient (world +Y unless aligned)
+    world_up: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -36,6 +38,6 @@ fn shade(world_position: vec3<f32>, normal: vec3<f32>, color: vec3<f32>) -> vec3
     let l = normalize(scene.light_dir.xyz);
     let albedo = srgb_to_linear(color);
     let direct = ggx_direct(normal, v, l, albedo, scene.material);
-    let ambient = hemisphere_ambient(normal) * albedo * scene.material.x;
+    let ambient = hemisphere_ambient(normal, scene.world_up.xyz) * albedo * scene.material.x;
     return direct + ambient;
 }

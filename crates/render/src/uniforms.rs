@@ -22,6 +22,8 @@ pub struct SceneUniforms {
     /// `set_srgb_target` — 0.0 by default, correct for every headless
     /// example, which all render to a plain `Bgra8Unorm` target)
     pub style: [f32; 4],
+    /// The camera's `world_up`: "up" for the sky/ground ambient.
+    pub world_up: [f32; 4],
 }
 
 impl SceneUniforms {
@@ -38,6 +40,7 @@ impl SceneUniforms {
             light_dir: [light_dir.x, light_dir.y, light_dir.z, 0.0],
             material: [material.ambient, material.roughness, material.reflectance, material.light_intensity],
             style: [material.atom_scale, material.bond_radius, material.exposure, 0.0],
+            world_up: [camera.world_up.x, camera.world_up.y, camera.world_up.z, 0.0],
         }
     }
 

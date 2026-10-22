@@ -36,10 +36,10 @@ fn aces_tonemap(c: vec3<f32>) -> vec3<f32> {
 // crushing to a flat near-black — a fixed, not user-tunable, "fill light"
 // in effect (see the module doc on why: one exposure slider is worth
 // exposing, three more light-rig sliders aren't).
-fn hemisphere_ambient(normal: vec3<f32>) -> vec3<f32> {
+fn hemisphere_ambient(normal: vec3<f32>, up: vec3<f32>) -> vec3<f32> {
     let sky = vec3<f32>(1.05, 1.05, 1.1);
     let ground = vec3<f32>(0.65, 0.62, 0.6);
-    return mix(ground, sky, normal.y * 0.5 + 0.5);
+    return mix(ground, sky, dot(normal, up) * 0.5 + 0.5);
 }
 
 // ---- Cook-Torrance/GGX BRDF ------------------------------------------
