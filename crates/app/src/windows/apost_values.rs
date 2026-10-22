@@ -203,7 +203,7 @@ impl App {
         } else {
             (0..molecule.atomic_numbers.len()).map(|a| atom_name(&molecule.atomic_numbers, a)).collect()
         };
-        let decimals = if unit == Some("kcal/mol") { 2 } else { entry.decimals.unwrap_or(6).min(6) };
+        let decimals = if unit.is_some() { view.energy_unit.decimals() } else { entry.decimals.unwrap_or(6).min(6) };
         let scene = build_scene(results, &molecule, view, &self.color_ranges);
         let scale = scene.legend.as_ref().map(|l| l.scale);
 
@@ -270,7 +270,7 @@ impl App {
         iqa.sort_by_key(|(entry, _)| order(&entry.id));
         let enpart = structure.apost.as_ref().and_then(|x| x.results.as_ref().ok()).and_then(|r| r.enpart());
         let energy_unit = structure.apost.as_ref().and_then(|x| x.view.as_ref()).map(|v| v.energy_unit).unwrap_or_default();
-        let (factor, d) = (energy_unit.factor(), if energy_unit == EnergyUnit::KcalPerMol { 2 } else { 6 });
+        let (factor, d) = (energy_unit.factor(), energy_unit.decimals());
         egui::CollapsingHeader::new(RichText::new(format!("Selected pair {pair}")).strong()).id_salt("results_pair").default_open(true).show(ui, |ui| {
             egui::Grid::new("results_pair_grid").num_columns(2).spacing([12.0, 3.0]).show(ui, |ui| {
                 for (entry, value) in &other {

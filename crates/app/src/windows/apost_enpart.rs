@@ -13,7 +13,6 @@ use egui::{Color32, RichText};
 
 use crate::app::App;
 use crate::names::{atom_name, fragment_name};
-use crate::results_view::EnergyUnit;
 use crate::windows::apost_values::energy_unit_selector;
 
 /// Warnings (APOST-3D's suggestions, brief 09): a final error above
@@ -32,7 +31,7 @@ fn kcal(value: f64) -> String {
 }
 
 fn energy(value: f64) -> String {
-    format!("{value:.6} au")
+    format!("{value:.4} au")
 }
 
 /// "KS-DFT, restricted · B3LYP (20% exact exchange)".
@@ -194,7 +193,7 @@ impl App {
             // unit (the total energies above stay in au, as in the .fchk).
             ui.add_space(6.0);
             energy_unit_selector(ui, &mut view.energy_unit);
-            let (factor, unit, d) = (view.energy_unit.factor(), view.energy_unit.name(), if view.energy_unit == EnergyUnit::KcalPerMol { 2 } else { 6 });
+            let (factor, unit, d) = (view.energy_unit.factor(), view.energy_unit.name(), view.energy_unit.decimals());
             let molecule = &molecule;
             let atom_names: Vec<String> = (0..molecule.atomic_numbers.len()).map(|a| atom_name(&molecule.atomic_numbers, a)).collect();
             let fragment_names: Vec<String> = results.fragments().iter().map(|f| fragment_name(f, &molecule.atomic_numbers)).collect();

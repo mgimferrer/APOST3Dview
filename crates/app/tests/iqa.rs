@@ -22,7 +22,7 @@ fn iqa_between_atoms_with_its_terms() {
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-atomic interaction energy with O1 (TFVC), kcal/mol"));
     // O1's pair with H5 comes from the multipolar expansion.
     harness.get_by_label_contains("pair from the multipolar expansion (approximate exchange-correlation)");
-    harness.get_by_label("Intra-atomic (self) energy of O1: \u{2212}46986.21 kcal/mol");
+    harness.get_by_label("Intra-atomic (self) energy of O1: \u{2212}46986.2 kcal/mol");
     // The run-quality section, with the final error in its heading.
     harness.get_by_label_contains("Energy decomposition (IQA) \u{b7} error");
     screenshot(&mut harness, "iqa-atoms-total");
@@ -111,12 +111,13 @@ fn energies_in_kcal_per_mol_or_au() {
     let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.apost.json")]);
     assert!(harness.state_mut().show_on_molecule("enpart.total.fragments"));
     harness.run_steps(3);
-    // kcal/mol by default: the waters' interaction, -0.033217 au.
-    harness.get_by_label("1 H2O - 2 H2O   -20.84");
+    // kcal/mol by default (one decimal): the waters' interaction, -0.033217 au.
+    harness.get_by_label("1 H2O - 2 H2O   -20.8");
     harness.get_all_by_label("au").next().unwrap().click_accesskit();
     harness.run_steps(3);
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-fragment interaction energy with 1 H2O (TFVC), au"));
-    harness.get_by_label("1 H2O - 2 H2O   -0.033217");
+    // Four decimals in au.
+    harness.get_by_label("1 H2O - 2 H2O   -0.0332");
     // Fixed ranges are kept in au whatever the unit shown.
     harness.get_by_label("Fixed").click_accesskit();
     harness.run_steps(2);

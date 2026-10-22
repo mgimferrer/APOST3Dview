@@ -94,6 +94,15 @@ impl EnergyUnit {
             EnergyUnit::KcalPerMol => KCAL_PER_HARTREE,
         }
     }
+
+    /// Decimals every energy is shown with, whatever its size (Martí,
+    /// 2026-10-22): four in au, one in kcal/mol.
+    pub(crate) fn decimals(self) -> usize {
+        match self {
+            EnergyUnit::Hartree => 4,
+            EnergyUnit::KcalPerMol => 1,
+        }
+    }
 }
 
 /// Whether an index entry is an energy (APOST-3D writes them in "au").
@@ -184,12 +193,14 @@ fn automatic_scale(entry: &IndexEntry, values: &[f64]) -> ColorScale {
     }
 }
 
-/// Decimals enough to show two significant digits of the largest value
-/// (energies in kcal/mol: one decimal from 10 kcal/mol up).
-fn automatic_decimals(values: &[f64], kcal: bool) -> usize {
+/// Decimals enough to show two significant digits of the largest value;
+/// energies always with their unit's (`EnergyUnit::decimals`).
+fn automatic_decimals(values: &[f64], energy: Option<EnergyUnit>) -> usize {
+    if let Some(unit) = energy {
+        return unit.decimals();
+    }
     let max_abs = values.iter().fold(0.0f64, |m, v| m.max(v.abs()));
     match max_abs {
-        m if kcal && m >= 10.0 => 1,
         m if m >= 0.1 || m == 0.0 => 2,
         m if m >= 0.01 => 3,
         _ => 4,
@@ -382,7 +393,8 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             if let ColorScale::Diverging { log, .. } = &mut scale {
                 *log = view.log_scale;
             }
-            let decimals = view.decimals.unwrap_or_else(|| automatic_decimals(&others, unit == Some("kcal/mol")));
+            let energy = unit.map(|_| view.energy_unit);
+            let decimals = view.decimals.unwrap_or_else(|| automatic_decimals(&others, energy));
             let signed = matches!(scale, ColorScale::Diverging { .. });
             let format = |v: f64| if signed { format_signed(v, decimals) } else { format!("{v:.decimals$}") };
 
@@ -404,8 +416,8 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             if let (Quantity::Matrix(m), Some(f), Some(_)) = (&quantity, focus, &enpart)
                 && let (Some(noun), Some(e)) = (matrix_meanings(entry, m).0, m.get(f, f))
             {
-                let (d, u) = if unit == Some("kcal/mol") { (2, "kcal/mol") } else { (6, "au") };
-                scene.notes.push(format!("{} of {}: {} {u}", capitalize(&noun), name(f), format_signed(e, d)));
+                let u = view.energy_unit;
+                scene.notes.push(format!("{} of {}: {} {}", capitalize(&noun), name(f), format_signed(e, u.decimals()), u.name()));
             }
             let fragments = results.fragments();
             let approximate = |i: usize| match (&enpart, focus) {
@@ -448,7 +460,9 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             };
             let title = if matches!(scale, ColorScale::Diverging { log: true, .. }) { format!("{title}, log scale") } else { title };
             scene.caption = Some(title.clone());
-            scene.legend = Some(Legend { title, scale, decimals: decimals.min(3) });
+            // Energies keep their decimals (four in au) at the bar's ends too.
+            let legend_decimals = if energy.is_some() { decimals } else { decimals.min(3) };
+            scene.legend = Some(Legend { title, scale, decimals: legend_decimals });
         }
     }
     scene
@@ -759,10 +773,13 @@ mod tests {
 
     #[test]
     fn decimals_follow_the_size_of_the_values() {
-        assert_eq!(automatic_decimals(&[0.52, -0.1], false), 2);
-        assert_eq!(automatic_decimals(&[0.018, -0.018], false), 3);
-        assert_eq!(automatic_decimals(&[0.004], false), 4);
-        assert_eq!(automatic_decimals(&[-338.8, 20.8], true), 1);
-        assert_eq!(automatic_decimals(&[26.1], false), 2);
+        assert_eq!(automatic_decimals(&[0.52, -0.1], None), 2);
+        assert_eq!(automatic_decimals(&[0.018, -0.018], None), 3);
+        assert_eq!(automatic_decimals(&[0.004], None), 4);
+        assert_eq!(automatic_decimals(&[26.1], None), 2);
+        // Energies: their unit's decimals, whatever the size.
+        assert_eq!(automatic_decimals(&[-338.8, 20.8], Some(EnergyUnit::KcalPerMol)), 1);
+        assert_eq!(automatic_decimals(&[0.004], Some(EnergyUnit::KcalPerMol)), 1);
+        assert_eq!(automatic_decimals(&[-0.6079, 0.0125], Some(EnergyUnit::Hartree)), 4);
     }
 }
