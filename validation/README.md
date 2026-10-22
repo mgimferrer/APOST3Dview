@@ -14,8 +14,10 @@ was found.
 | [`pyscf/`](pyscf/) | PySCF 2.14 | `.molden` | s-p, Cartesian d, pure through g, an unrestricted triplet |
 | [`qchem/`](qchem/) | Q-Chem 6.3 | `.fchk` | pure d/f/g, Cartesian d, an unrestricted triplet |
 | [`orca/`](orca/) | ORCA 6.1.1 | `.molden` | s-p-d, f, g, an unrestricted triplet, an ECP, CASSCF natural orbitals and density |
+| [`apost3d/`](apost3d/) | APOST-3D 5 | `.apost.json` | the atomic weights (TFVC, Becke-rho) rebuilt from the results file, at reference points |
 
-All comparisons run as `cargo test -p apost3dview-core --test reference_cubes`.
+The orbital comparisons run as `cargo test -p apost3dview-core --test reference_cubes`, the
+atomic weights as `cargo test -p apost3dview-core --test atomic_weights`.
 The Gaussian files also serve as ordinary inputs for the app's tests and
 reference scenes. The densities from the Gaussian files are checked against
 Gaussian's own density matrices in `crates/core/tests/densities.rs`.

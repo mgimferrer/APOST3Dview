@@ -15,6 +15,7 @@ use faer::linalg::matmul::matmul;
 use faer::{Accum, Mat, MatRef, Par};
 use glam::DVec3;
 
+use crate::atomic_weights::{AtomCells, CellScratch};
 use crate::wavefunction::{BasisSet, MolecularOrbitals};
 
 /// Standard Gaussian primitive normalization constant, for a Cartesian
@@ -383,19 +384,75 @@ pub fn generate_density_grid(basis: &BasisSet, terms: &[(&MolecularOrbitals, Vec
     let prepared = PreparedBasis::new(basis)?;
     let coefficients = coefficient_matrix(&prepared, orbitals.iter().map(|(c, _)| *c))?;
     let weights: Vec<f64> = orbitals.iter().map(|(_, w)| *w).collect();
-    let lines = values_on_lines(&prepared, min, dims, spacing_bohr, coefficients.as_ref(), |values| {
+    let lines = values_on_lines(&prepared, min, dims, spacing_bohr, coefficients.as_ref(), |_, values| {
         (0..values.nrows()).map(|p| weights.iter().enumerate().map(|(k, w)| w * values[(p, k)] * values[(p, k)]).sum::<f64>() as f32).collect::<Vec<f32>>()
     });
     Ok(grid_in_angstrom(min, dims, spacing_bohr, lines.concat()))
 }
 
 pub fn generate_mo_grids(basis: &BasisSet, requests: &[(&MolecularOrbitals, usize)], spacing_bohr: f64, padding_bohr: f64) -> Result<Vec<crate::cube::ScalarGrid>, String> {
+    mo_grids(basis, requests, None, spacing_bohr, padding_bohr)
+}
+
+/// Below this magnitude an orbital value is left as it is rather than
+/// weighted (an error under 1e-8, far below any isovalue drawn): the
+/// atomic weights are only computed where some orbital is larger.
+const UNWEIGHTED_BELOW: f64 = 1e-8;
+
+/// `generate_mo_grids`, with each orbital multiplied by the weight of a
+/// group of atoms, w_F(r) = sum of w_A(r) over `atoms[r]` (0-based; `None`
+/// leaves that orbital as it is): APOST-3D's EOS/GEOS orbitals times their
+/// fragment's weight, which removes the tails the basis-set fit leaves on
+/// other fragments (see `atomic_weights`). The atom weights are computed
+/// once per point for all the orbitals.
+pub fn generate_weighted_mo_grids(
+    basis: &BasisSet,
+    requests: &[(&MolecularOrbitals, usize)],
+    cells: &AtomCells,
+    atoms: &[Option<Vec<usize>>],
+    spacing_bohr: f64,
+    padding_bohr: f64,
+) -> Result<Vec<crate::cube::ScalarGrid>, String> {
+    if atoms.len() != requests.len() {
+        return Err("one atom group per orbital is needed".to_string());
+    }
+    if let Some(bad) = atoms.iter().flatten().flatten().find(|&&a| a >= cells.n_atoms()) {
+        return Err(format!("atom {} is not in the molecule", bad + 1));
+    }
+    mo_grids(basis, requests, Some((cells, atoms)), spacing_bohr, padding_bohr)
+}
+
+fn mo_grids(
+    basis: &BasisSet,
+    requests: &[(&MolecularOrbitals, usize)],
+    weighting: Option<(&AtomCells, &[Option<Vec<usize>>])>,
+    spacing_bohr: f64,
+    padding_bohr: f64,
+) -> Result<Vec<crate::cube::ScalarGrid>, String> {
     let (min, dims) = grid_box(basis, spacing_bohr, padding_bohr)?;
     let total_points = dims[0] * dims[1] * dims[2];
     let prepared = PreparedBasis::new(basis)?;
     let coefficients = coefficient_matrix(&prepared, requests.iter().map(|(orbitals, mo_index)| orbitals.coefficients_for(*mo_index)))?;
     // Each line's values, point by point, one column per requested orbital.
-    let lines = values_on_lines(&prepared, min, dims, spacing_bohr, coefficients.as_ref(), |values| values.to_owned());
+    let lines = values_on_lines(&prepared, min, dims, spacing_bohr, coefficients.as_ref(), |line, values| {
+        let mut values = values.to_owned();
+        if let Some((cells, atoms)) = weighting {
+            let mut scratch = CellScratch::default();
+            let mut weights = vec![0.0; cells.n_atoms()];
+            for p in 0..values.nrows() {
+                if !atoms.iter().enumerate().any(|(r, group)| group.is_some() && values[(p, r)].abs() >= UNWEIGHTED_BELOW) {
+                    continue;
+                }
+                cells.atom_weights(line_point(min, dims, spacing_bohr, line, p), &mut scratch, &mut weights);
+                for (r, group) in atoms.iter().enumerate() {
+                    if let Some(group) = group {
+                        values[(p, r)] *= group.iter().map(|&a| weights[a]).sum::<f64>();
+                    }
+                }
+            }
+        }
+        values
+    });
 
     let mut grids: Vec<crate::cube::ScalarGrid> = requests.iter().map(|_| grid_in_angstrom(min, dims, spacing_bohr, vec![0.0; total_points])).collect();
     let line_length = dims[2];
@@ -407,6 +464,12 @@ pub fn generate_mo_grids(basis: &BasisSet, requests: &[(&MolecularOrbitals, usiz
         }
     }
     Ok(grids)
+}
+
+/// Point `k` of grid line `line` (the lines run along z, x slowest), bohr.
+fn line_point(min: DVec3, dims: [usize; 3], spacing_bohr: f64, line: usize, k: usize) -> DVec3 {
+    let (i, j) = (line / dims[1], line % dims[1]);
+    min + DVec3::new(i as f64, j as f64, k as f64) * spacing_bohr
 }
 
 /// The orbitals' coefficients as the columns of a matrix (basis functions
@@ -427,14 +490,15 @@ fn coefficient_matrix<'c>(prepared: &PreparedBasis, columns: impl Iterator<Item 
 /// 152 occupied orbitals) went from 32 s to ~1 s at the default spacing
 /// (backlog item 6, 2026-10-20). Lines run in parallel (rayon), each
 /// product sequentially. `per_line` turns a line's values (points by
-/// orbitals) into its result; results come in grid order.
+/// orbitals) into its result, given the line's number (`line_point`);
+/// results come in grid order.
 fn values_on_lines<T: Send>(
     prepared: &PreparedBasis,
     min: DVec3,
     dims: [usize; 3],
     spacing_bohr: f64,
     coefficients: MatRef<'_, f64>,
-    per_line: impl Fn(MatRef<'_, f64>) -> T + Sync,
+    per_line: impl Fn(usize, MatRef<'_, f64>) -> T + Sync,
 ) -> Vec<T> {
     use rayon::prelude::*;
 
@@ -444,15 +508,14 @@ fn values_on_lines<T: Send>(
         .map_init(
             || (Vec::new(), Mat::<f64>::zeros(prepared.count, line_length), Mat::<f64>::zeros(line_length, coefficients.ncols())),
             |(scratch, basis_values, values), line| {
-                let (i, j) = (line / dims[1], line % dims[1]);
                 for k in 0..line_length {
-                    prepared.evaluate(min + DVec3::new(i as f64, j as f64, k as f64) * spacing_bohr, scratch);
+                    prepared.evaluate(line_point(min, dims, spacing_bohr, line, k), scratch);
                     for (b, &value) in scratch.iter().enumerate() {
                         basis_values[(b, k)] = value;
                     }
                 }
                 matmul(values.as_mut(), Accum::Replace, basis_values.transpose(), coefficients, 1.0, Par::Seq);
-                per_line(values.as_ref())
+                per_line(line, values.as_ref())
             },
         )
         .collect()

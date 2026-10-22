@@ -4,6 +4,7 @@
 
 pub mod apost;
 pub mod apost_input;
+pub mod atomic_weights;
 pub mod coordinates;
 pub mod cube;
 pub mod density_matrix;
@@ -28,6 +29,7 @@ pub use apost::{
     Quantity, QuantityKind, TableCell, TableColumn, TableObject,
 };
 pub use apost_input::{read_apost_input, read_fchk_facts, AimScheme, ApostInput, DmFiles, EnpartMethod, EnpartOptions, FchkFacts, FchkProgram, OxidationStates, ReadInput, ENPART_FUNCTIONALS};
+pub use atomic_weights::{AtomCells, AtomicWeights, CellScratch};
 pub use fragmentation::{fragments_around, separate_molecules};
 pub use coordinates::{format_coordinates, CoordinateFormat};
 pub use cube::{parse_cube, CubeFile, ScalarGrid};
@@ -40,7 +42,7 @@ pub(crate) fn invalid_data(message: impl Into<String>) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, message.into())
 }
 pub use element::{atomic_number_from_symbol, element_data, hill_formula, ElementData};
-pub use gto::{evaluate_basis_functions, evaluate_mo, generate_density_grid, generate_mo_grids};
+pub use gto::{evaluate_basis_functions, evaluate_mo, generate_density_grid, generate_mo_grids, generate_weighted_mo_grids};
 pub use interpolation::refine_grid;
 pub use isosurface::{extract_isosurface, IsosurfaceMesh};
 pub use measurement::{measure, MeasurementKind};

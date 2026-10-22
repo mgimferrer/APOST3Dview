@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::atomic_weights::{AtomCells, AtomicWeights};
 use crate::fchk::FchkSummary;
 use crate::molecule::Molecule;
 
@@ -340,6 +341,26 @@ impl ApostResults {
 
     pub fn fragments(&self) -> &[Fragment] {
         self.fragments.as_deref().unwrap_or(&[])
+    }
+
+    /// The 0-based atoms of the fragments `ids` (fragment numbers as in
+    /// the file), in fragment order.
+    pub fn fragment_atoms(&self, ids: &[u32]) -> Vec<usize> {
+        self.fragments().iter().filter(|f| ids.contains(&f.id)).flat_map(|f| f.atoms.iter().filter_map(|a| a.checked_sub(1))).collect()
+    }
+
+    /// The atoms' weight functions (`atomic_weights`, since 0.16) on the
+    /// molecule's coordinates: `None` when the file has none (Hilbert-space
+    /// atoms, Hirshfeld, a run stopped before its atoms, earlier files),
+    /// `Err` when the block can't be used.
+    pub fn atom_cells(&self) -> Option<Result<AtomCells, String>> {
+        let value = self.raw.pointer("/atomic_weights").filter(|v| !v.is_null())?;
+        let weights: AtomicWeights = match serde_json::from_value(value.clone()) {
+            Ok(weights) => weights,
+            Err(err) => return Some(Err(format!("atomic_weights could not be read: {err}"))),
+        };
+        let Some(molecule) = &self.molecule else { return Some(Err("atomic_weights without a molecule block".to_string())) };
+        Some(AtomCells::new(&weights, &molecule.coordinates_bohr))
     }
 
     /// Names of the analyses that were performed, in file order.

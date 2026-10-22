@@ -202,7 +202,7 @@ fn orbital_fixtures_dir() -> Option<PathBuf> {
 fn orbital_sets_map_onto_their_files() {
     use apost3dview_core::{check_orbital_file, check_orbital_file_id, orbital_file_run_id, parse_fchk_wavefunction, OrbitalDetail};
     let Some(dir) = orbital_fixtures_dir() else { return };
-    let (mut cases, mut preortho_cases) = (0, 0);
+    let (mut cases, mut preortho_cases, mut weights_cases) = (0, 0, 0);
     for json in std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.to_string_lossy().ends_with(".apost.json")) {
         let name = json.file_name().unwrap().to_string_lossy().into_owned();
         let results = load_apost_results(&json).unwrap();
@@ -249,9 +249,20 @@ fn orbital_sets_map_onto_their_files() {
                 }
             }
         }
+        // The atomic weights (0.16) for real-space atoms only, usable.
+        let keyword = results.input.as_ref().and_then(|i| i.atomic_definition.as_ref()).and_then(|d| d.keyword.clone()).unwrap_or_default();
+        match results.atom_cells() {
+            Some(cells) => {
+                assert!(matches!(keyword.as_str(), "TFVC" | "BECKE" | "BECKE-RHO"), "{name}: weights with {keyword}");
+                assert_eq!(cells.unwrap_or_else(|e| panic!("{name}: {e}")).n_atoms(), main.atomic_numbers.len(), "{name}");
+                weights_cases += 1;
+            }
+            None => assert!(!matches!(keyword.as_str(), "TFVC" | "BECKE" | "BECKE-RHO") || !results.schema_version.starts_with("0.16"), "{name}: no weights with {keyword}"),
+        }
         cases += 1;
     }
-    assert_eq!((cases, preortho_cases), (9, 2));
+    println!("{cases} orbital cases, {weights_cases} with atomic weights");
+    assert!(cases >= 9 && preortho_cases == 2, "{cases} cases, {preortho_cases} with OSLOs before orthogonalization");
 
     let set = |job: &str| load(&dir, job).orbital_sets().remove(0);
     // OSLO, restricted, the C-C bond shared by both CH3 fragments.

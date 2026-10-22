@@ -1,7 +1,8 @@
 //! Timings of the expensive steps on a large and a mid-size molecule, for
 //! the record (backlog item 6, 2026-10-20; numbers in CLAUDE.md): opening
 //! a `.fchk`, densities and orbitals at the three accuracy presets,
-//! isosurface extraction, an envelope, natural orbitals. Needs
+//! isosurface extraction, an envelope, natural orbitals, orbitals times
+//! a fragment's atomic weight. Needs
 //! `fixtures/bi-dianion-osd/Bi-dianion-OSD.fchk` and the APOST-3D fixtures; run
 //! in release:
 //!
@@ -49,6 +50,19 @@ fn main() {
         let ten: Vec<_> = (homo - 9..=homo).map(|i| (&wfn.alpha, i)).collect();
         time("10 orbitals, Medium", || generate_mo_grids(&wfn.basis, &ten, 0.28, 4.0).unwrap());
         time("1 orbital (HOMO), High", || generate_mo_grids(&wfn.basis, &[(&wfn.alpha, homo)], 0.15, 4.0).unwrap());
+        // Times a fragment's atomic weight (TFVC, equal radii: the cost
+        // doesn't depend on the ratios), the fragment being the first atom.
+        let coordinates: Vec<[f64; 3]> = wfn.basis.shells.iter().fold(Vec::new(), |mut centers, shell| {
+            if centers.last() != Some(&shell.center.to_array()) {
+                centers.push(shell.center.to_array());
+            }
+            centers
+        });
+        let n = coordinates.len();
+        let cells = AtomCells::new(&AtomicWeights { profile: "tfvc".to_string(), stiffness: 4, radius_ratios: vec![vec![1.0; n]; n] }, &coordinates).unwrap();
+        time("1 orbital (HOMO) times a fragment weight, Medium", || generate_weighted_mo_grids(&wfn.basis, &[(&wfn.alpha, homo)], &cells, &[Some(vec![0])], 0.28, 4.0).unwrap());
+        let groups: Vec<_> = ten.iter().map(|_| Some(vec![0])).collect();
+        time("10 orbitals times a fragment weight, Medium", || generate_weighted_mo_grids(&wfn.basis, &ten, &cells, &groups, 0.28, 4.0).unwrap());
         let radii: Vec<f32> = molecule.atomic_numbers.iter().map(|&z| element_data(z).vdw_radius * 0.24 + 0.5).collect();
         time("envelope, all atoms as one fragment", || envelope_mesh(&molecule.positions, &radii));
         let matrix = time("read density matrix (SCF)", || read_fchk_density(&path, "SCF").unwrap());
