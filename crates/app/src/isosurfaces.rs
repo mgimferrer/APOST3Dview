@@ -98,6 +98,9 @@ pub(crate) enum SurfaceSource {
         /// The analysis set ("eos", "geos", "oslo") for an EFO or OSLO;
         /// `None` for the SCF orbitals.
         set: Option<String>,
+        /// An EFO drawn times its fragment's atomic weight (`apost3dview_core
+        /// ::atomic_weights`), not as stored in the orbital file.
+        weighted: bool,
     },
     /// The electron density (or, `spin`, the spin density) of the
     /// structure's wavefunction: from its occupied orbitals (`natural`

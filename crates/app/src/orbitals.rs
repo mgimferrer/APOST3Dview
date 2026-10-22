@@ -1,8 +1,8 @@
 //! Orbital generation from a wavefunction (.fchk/.molden).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
-use apost3dview_core::{generate_density_grid, generate_mo_grids, ApostResults, MolecularOrbitals, Molecule, Wavefunction};
+use apost3dview_core::{generate_density_grid, generate_mo_grids, generate_weighted_mo_grids, ApostResults, AtomCells, MolecularOrbitals, Molecule, OrbitalSet, Wavefunction};
 
 use crate::app::App;
 use crate::isosurfaces::{density_settings, Surface, SurfaceSettings, SurfaceSource};
@@ -78,6 +78,9 @@ pub(crate) struct OrbitalGenerationState {
     pub(crate) preset: OrbitalAccuracyPreset,
     pub(crate) custom_spacing_bohr: f64,
     pub(crate) padding_bohr: f64,
+    /// EFOs of EOS/GEOS sets times their fragment's atomic weight
+    /// (`fragment_weighting`), where the results file has the weights.
+    pub(crate) fragment_weighted: bool,
     /// 1-based, inclusive — state for the "Select range" convenience
     /// button in the MO picker.
     pub(crate) range_start: usize,
@@ -90,6 +93,7 @@ impl Default for OrbitalGenerationState {
             preset: OrbitalAccuracyPreset::Medium,
             custom_spacing_bohr: ORBITAL_SPACING_MEDIUM_BOHR,
             padding_bohr: ORBITAL_GRID_PADDING_BOHR,
+            fragment_weighted: true,
             range_start: 1,
             range_end: 1,
         }
@@ -168,6 +172,24 @@ pub(crate) struct SetContext<'a> {
     pub(crate) set: &'a LoadedOrbitalSet,
     pub(crate) results: &'a ApostResults,
     pub(crate) molecule: &'a Molecule,
+    /// EFOs times their fragment's atomic weight, where the results file
+    /// has the weights (`fragment_weighting`).
+    pub(crate) weighted: bool,
+}
+
+/// What an EFO set's orbitals are multiplied by: their fragment's atomic
+/// weight w_F, from the results file's `atomic_weights` (schema 0.16:
+/// BECKE, BECKE-RHO and TFVC atoms). The orbitals APOST-3D writes are
+/// basis-set fits of w_F times the EFO, with small tails on the other
+/// fragments; times w_F once more, the tails go. `None` for OSLOs (exact
+/// localized orbitals, not fragment-weighted), for Hilbert-space and
+/// Hirshfeld atoms and for files before 0.16 (no weights: drawn as stored);
+/// `Err` when the file's weights can't be used.
+pub(crate) fn fragment_weighting(set: &OrbitalSet, results: &ApostResults) -> Option<Result<AtomCells, String>> {
+    if !matches!(set.analysis.as_str(), "eos" | "geos") {
+        return None;
+    }
+    results.atom_cells()
 }
 
 /// How generated orbitals are named: the SCF ones "HOMO"/"MO 12", an
@@ -199,7 +221,20 @@ pub(crate) fn orbital_surfaces(
         }
         requests.push((orbitals, choice.mo_index));
     }
-    let grids = generate_mo_grids(&wfn.basis, &requests, spacing_bohr, padding_bohr)?;
+    let weighting = match &names {
+        OrbitalNames::Set(c) if c.weighted => fragment_weighting(&c.set.set, c.results).transpose().map_err(|reason| format!("the atomic weights of the results file can't be used: {reason}"))?,
+        _ => None,
+    };
+    let grids = match &weighting {
+        Some(cells) => {
+            let OrbitalNames::Set(c) = &names else { unreachable!() };
+            let atoms: Vec<Option<Vec<usize>>> =
+                choices.iter().map(|choice| c.set.labels(choice.beta).get(choice.mo_index).and_then(Option::as_ref).map(|label| c.results.fragment_atoms(&label.fragments))).collect();
+            generate_weighted_mo_grids(&wfn.basis, &requests, cells, &atoms, spacing_bohr, padding_bohr)?
+        }
+        None => generate_mo_grids(&wfn.basis, &requests, spacing_bohr, padding_bohr)?,
+    };
+    let weighted = weighting.is_some();
     Ok(grids
         .into_iter()
         .zip(choices)
@@ -209,7 +244,7 @@ pub(crate) fn orbital_surfaces(
                 OrbitalNames::Set(c) => (App::set_orbital_label(c.set, choice.beta, choice.mo_index, c.results, c.molecule), Some(c.set.set.key())),
                 OrbitalNames::Natural(n) => (format!("NO {} ({})", choice.mo_index + 1, n.name), Some(n.key())),
             };
-            let source = SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set };
+            let source = SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set, weighted };
             let mut surface = Surface::new(label, grid, settings, source);
             match &names {
                 OrbitalNames::Set(c) => {
@@ -358,7 +393,7 @@ impl App {
             return;
         }
         let (Some(Ok(wfn)), Some(Ok(results))) = (&set.wavefunction, structure.apost.as_ref().map(|a| &a.results)) else { return };
-        let context = SetContext { set, results, molecule: &structure.molecule };
+        let context = SetContext { set, results, molecule: &structure.molecule, weighted: self.orbital_generation.fragment_weighted };
         let surfaces = match orbital_surfaces(wfn, &choices, spacing, padding, self.surface_defaults, OrbitalNames::Set(&context)) {
             Ok(surfaces) => surfaces,
             Err(err) => {
@@ -372,6 +407,53 @@ impl App {
         let noun = if count == 1 { title.replacen("Os", "O", 1) } else { title.to_string() };
         self.add_surfaces(active, surfaces, true);
         self.show_status(format!("{count} {noun} generated"));
+    }
+
+    /// Generates the drawn orbitals of set `key` of a structure again, with
+    /// the current choice of fragment weighting, each keeping its settings
+    /// and visibility.
+    pub(crate) fn reweigh_set_surfaces(&mut self, structure_index: usize, key: &str) {
+        let Some(position) = self.structures[structure_index].orbital_sets.iter().position(|s| s.set.key() == key) else { return };
+        let mut groups: BTreeMap<(u64, u64), Vec<OrbitalChoice>> = BTreeMap::new();
+        for surface in &self.structures[structure_index].surfaces {
+            if let SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set: Some(set), .. } = &surface.source
+                && set == key
+            {
+                groups.entry((spacing_bohr.to_bits(), padding_bohr.to_bits())).or_default().push(*choice);
+            }
+        }
+        if groups.is_empty() || !self.load_orbital_set(structure_index, position) {
+            return;
+        }
+        let weighted = self.orbital_generation.fragment_weighted;
+        let structure = &self.structures[structure_index];
+        let set = &structure.orbital_sets[position];
+        let (Some(Ok(wfn)), Some(Ok(results))) = (&set.wavefunction, structure.apost.as_ref().map(|a| &a.results)) else { return };
+        let context = SetContext { set, results, molecule: &structure.molecule, weighted };
+        let mut redrawn = Vec::new();
+        for ((spacing, padding), choices) in groups {
+            match orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), OrbitalNames::Set(&context)) {
+                Ok(surfaces) => redrawn.extend(surfaces),
+                Err(err) => {
+                    self.show_warning(format!("Orbitals could not be generated: {err}"));
+                    return;
+                }
+            }
+        }
+        let count = redrawn.len();
+        let structure = &mut self.structures[structure_index];
+        for mut surface in redrawn {
+            if let Some(old) = structure.surfaces.iter_mut().find(|s| s.label == surface.label) {
+                surface.settings = old.settings;
+                surface.visible = old.visible;
+                *old = surface;
+            }
+        }
+        if self.active_structure == Some(structure_index) {
+            self.rebuild_isosurface();
+        }
+        let how = if weighted { "times their fragment's weight" } else { "as stored in the orbital file" };
+        self.show_status(format!("{count} EFO{} redrawn {how}", if count == 1 { "" } else { "s" }));
     }
 
     /// Draws one orbital of an analysis set (from a table row): the set

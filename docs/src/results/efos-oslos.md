@@ -19,6 +19,12 @@ The lists are per spin channel when there are two: α and β for EOS, paired and
 
 An EFO with a fit below 60% is marked *approximate*: the orbital in the file then only roughly reproduces the EFO and can show lobes the exact one doesn't have. Hover over the mark for the reason. The exact shape is in the EFO's cube file, which APOST-3D writes on request (`CUBE` in its input), and which opens like any other cube.
 
+### Tails on other fragments
+
+The EFOs in the orbital file are fits, in the basis set of the calculation, of each EFO times its fragment's atomic weight. A fit leaves small tails on the other fragments, which show up at low isovalues (0.02, say) as small extra lobes on atoms the EFO doesn't belong to. With TFVC, Becke or Becke-rho atoms, APOST-3D also writes the atomic weights to the results file (since its results format 0.16), and APOST3Dview then draws each EFO times its fragment's weight once more: the tails go, and the shape is close to the EFO's cube file. Where the fragment's weight is close to 1 nothing changes; near the boundary of the fragment the EFO comes out somewhat weaker than in its cube, which is noticeable only for weakly occupied EFOs that reach across the boundary.
+
+This is always done when the results have the weights. To see the orbitals exactly as stored in the file, tails included, open **Advanced** under the list of EFOs and tick **Draw as stored in the .fchk**; the EFOs already drawn are redrawn either way, and sessions keep the choice. The weighting doesn't apply to OSLOs (exact localized orbitals, not fragment-weighted), to Mulliken, Löwdin and other Hilbert-space atoms, to Hirshfeld atoms, or to results files written before format 0.16. It doesn't fix a poor fit on the EFO's own fragment: the *approximate* mark still applies.
+
 ## Drawing an orbital from its table
 
 The **Tables** section of the **APOST-3D** window lists the tables of the analyses, one at a time from its menu: here, the OSLOs with their fragments and FOLI.

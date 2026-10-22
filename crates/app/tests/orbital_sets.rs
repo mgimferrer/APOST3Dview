@@ -260,3 +260,64 @@ fn sessions_keep_analysis_orbitals() {
     let harness = app_with(vec![session]);
     assert_eq!(harness.state().surface_labels(), vec![("OSLO 9 \u{b7} 1 CH3 + 2 CH3".to_string(), true)]);
 }
+
+/// Schema 0.16: EOS/GEOS EFOs are drawn times their fragment's atomic
+/// weight (the fit's tails on other fragments go); "Draw as stored in the
+/// .fchk", under Advanced, redraws the ones already drawn as stored in the
+/// file, unticking it gives back the same picture, and a session keeps the
+/// choice. OSLOs have no such box.
+#[test]
+fn efos_lose_their_tails_on_other_fragments() {
+    let dir = example("CH3F-GEOS");
+    let mut harness = app_with(vec![dir.join("CH3F-GEOS.apost.json")]);
+    harness.get_by_label("Surfaces").click_accesskit();
+    harness.run_steps(2);
+    choose_orbitals(&mut harness, "GEOS EFOs");
+    let trim = "Draw as stored in the .fchk";
+    if harness.query_by_label("Advanced").is_none() {
+        eprintln!("examples/CH3F-GEOS predates APOST-3D 0.16: no atomic weights");
+        return;
+    }
+    harness.get_by_label("Frontier").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("Generate 2 orbital(s)").click_accesskit();
+    harness.run_steps(4);
+    let weighted = harness.state_mut().render_image(320, 240).unwrap();
+    let scratch = scratch_dir("fragment-weights");
+    let session = scratch.join("weighted.a3dview");
+    harness.state().save_session_to(&session).unwrap();
+    assert_eq!(std::fs::read_to_string(&session).unwrap().matches("fragment_weighted = true").count(), 2);
+
+    harness.state_mut().clear_toasts();
+    assert!(harness.query_by_label(trim).is_none(), "kept out of the way, under Advanced");
+    harness.get_by_label("Advanced").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label(trim).click_accesskit();
+    harness.run_steps(4);
+    assert!(toasts(&harness).iter().any(|m| m == "2 EFOs redrawn as stored in the orbital file"), "{:?}", toasts(&harness));
+    let plain = harness.state_mut().render_image(320, 240).unwrap();
+    let differing = weighted.chunks(4).zip(plain.chunks(4)).filter(|(a, b)| a != b).count();
+    assert!(differing > 100, "only {differing} pixels changed");
+    let unweighted_session = scratch.join("plain.a3dview");
+    harness.state().save_session_to(&unweighted_session).unwrap();
+    assert!(!std::fs::read_to_string(&unweighted_session).unwrap().contains("fragment_weighted"));
+
+    harness.get_by_label(trim).click_accesskit();
+    harness.run_steps(4);
+    assert!(toasts(&harness).iter().any(|m| m == "2 EFOs redrawn times their fragment's weight"), "{:?}", toasts(&harness));
+    assert!(harness.state_mut().render_image(320, 240).unwrap() == weighted, "ticking again gives back the weighted picture");
+
+    // Both sessions reopen to their own picture.
+    for (file, expected) in [(&session, &weighted), (&unweighted_session, &plain)] {
+        let mut reopened = app_with(vec![file.clone()]);
+        reopened.run_steps(4);
+        assert!(reopened.state_mut().render_image(320, 240).unwrap() == *expected, "{}", file.display());
+    }
+
+    // OSLOs are exact localized orbitals: nothing to trim.
+    let mut oslo = app_with(vec![example("C2H6-OSLO-2CH3").join("C2H6-OSLO-2CH3.apost.json")]);
+    oslo.get_by_label("Surfaces").click_accesskit();
+    oslo.run_steps(2);
+    choose_orbitals(&mut oslo, "OSLOs");
+    assert!(oslo.query_by_label("Advanced").is_none() && oslo.query_by_label(trim).is_none());
+}

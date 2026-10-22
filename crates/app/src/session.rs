@@ -213,6 +213,10 @@ enum SurfaceOrigin {
         /// of a density matrix ("natural-MP2"); absent for SCF orbitals.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         orbital_set: Option<String>,
+        /// An EFO times its fragment's atomic weight (APOST-3D 0.16 on);
+        /// absent = as stored in the orbital file.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        fragment_weighted: bool,
     },
     /// The total or spin density, recomputed from the wavefunction.
     Density {
@@ -320,12 +324,13 @@ impl App {
                                 box_padding_bohr: *padding_bohr,
                                 density_matrix: natural.clone(),
                             },
-                            SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set } => SurfaceOrigin::Orbital {
+                            SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set, weighted } => SurfaceOrigin::Orbital {
                                 spin: if choice.beta { Spin::Beta } else { Spin::Alpha },
                                 orbital: choice.mo_index + 1,
                                 grid_spacing_bohr: *spacing_bohr,
                                 box_padding_bohr: *padding_bohr,
                                 orbital_set: set.clone(),
+                                fragment_weighted: *weighted,
                             },
                         };
                         let s = &surface.settings;
@@ -676,7 +681,7 @@ impl App {
         // Orbitals, grouped by set and grid so each group is one batched
         // evaluation.
         // (set, spacing bits, padding bits) -> (slot, orbital).
-        type Group = (Option<String>, u64, u64);
+        type Group = (Option<String>, u64, u64, bool);
         let mut groups: BTreeMap<Group, Vec<(usize, OrbitalChoice)>> = BTreeMap::new();
         for (slot, state) in states.iter().enumerate() {
             match &state.origin {
@@ -701,13 +706,13 @@ impl App {
                         Err(err) => problems.push(format!("the density of {name} could not be generated ({err})")),
                     }
                 }
-                SurfaceOrigin::Orbital { spin, orbital, grid_spacing_bohr, box_padding_bohr, orbital_set } => {
+                SurfaceOrigin::Orbital { spin, orbital, grid_spacing_bohr, box_padding_bohr, orbital_set, fragment_weighted } => {
                     let choice = OrbitalChoice { beta: *spin == Spin::Beta, mo_index: orbital.saturating_sub(1) };
-                    groups.entry((orbital_set.clone(), grid_spacing_bohr.to_bits(), box_padding_bohr.to_bits())).or_default().push((slot, choice));
+                    groups.entry((orbital_set.clone(), grid_spacing_bohr.to_bits(), box_padding_bohr.to_bits(), *fragment_weighted)).or_default().push((slot, choice));
                 }
             }
         }
-        for ((set_name, spacing, padding), members) in groups {
+        for ((set_name, spacing, padding, weighted), members) in groups {
             let choices: Vec<OrbitalChoice> = members.iter().map(|(_, c)| *c).collect();
             let generated = match &set_name {
                 None => match &self.structures[index].wavefunction {
@@ -726,7 +731,7 @@ impl App {
                         let set = &structure.orbital_sets[position];
                         match (&set.wavefunction, structure.apost.as_ref().map(|a| &a.results)) {
                             (Some(Ok(wfn)), Some(Ok(results))) => {
-                                let context = SetContext { set, results, molecule: &structure.molecule };
+                                let context = SetContext { set, results, molecule: &structure.molecule, weighted };
                                 orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), OrbitalNames::Set(&context))
                             }
                             _ => Err("no results".to_string()),

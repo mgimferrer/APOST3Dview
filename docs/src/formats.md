@@ -28,6 +28,6 @@ The orbitals APOST3Dview computes were compared, at every point of the grid, wit
 
 Densities were checked against the density matrices Gaussian writes itself, evaluated independently at every grid point (water at several basis sets, BiCl3 with an ECP and g functions, a triplet's total and spin densities): they agree to about 2 × 10⁻⁷ of the value. Correlated densities, through their natural orbitals, agree with their density matrices to 2 to 7 × 10⁻⁷ (CASSCF, CISD and FCI from PySCF, and Gaussian's MP2 density).
 
-On the APOST-3D side, APOST3Dview is tested on every change against APOST-3D's own reference results: every file loads, every value it lists can be read, and the input APOST3Dview writes is read back as APOST-3D reads it.
+On the APOST-3D side, APOST3Dview is tested on every change against APOST-3D's own reference results: every file loads, every value it lists can be read, and the input APOST3Dview writes is read back as APOST-3D reads it. The atomic weights APOST3Dview rebuilds from a results file (to draw EFOs without the tails of their fit) agree with APOST-3D's own at 105 points per system to 10⁻¹⁵ (TFVC and Becke-rho atoms).
 
 These files open like any other, and are a quick way to try orbitals and densities.
