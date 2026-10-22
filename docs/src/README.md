@@ -9,6 +9,8 @@ It is made for two kinds of users:
 - APOST-3D users: APOST-3D writes a results file (`<job>.apost.json`) next to every run. APOST3Dview opens it and shows what APOST-3D computed on the molecule: fragments, charges, bond orders, local spin, effective oxidation states, effective fragment orbitals (EFOs), OSLOs and the energy decomposition (IQA). It can also prepare APOST-3D's input for a calculation.
 - Anyone with a `.fchk`, `.molden` or `.cube` file: APOST3Dview draws molecular orbitals, total and spin densities, and correlated densities with their natural orbitals straight from the wavefunction file, without an external cube step, and shows `.cube` files of any program.
 
+Figures are made in the program too, ready for a paper: a whole grid of orbitals in one image, all seen the same way, each with its caption (the FOLI of an OSLO, the occupation of an EFO), and related molecules side by side in exactly the same orientation, even when they come from separate calculations turned differently: [align them on a few matching atoms](molecule.md#aligning-related-molecules) and every panel shows them alike. See [Figures and videos](figures.md).
+
 ## How this guide is organized
 
 - [Getting started](install.md): installing, the first start, and [a five-minute tour](tour.md) with the examples that come with the program.

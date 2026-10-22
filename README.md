@@ -2,7 +2,7 @@
 
 <h3 align="center">A molecular, orbital and density viewer for APOST-3D</h3>
 
-<p align="center">APOST3Dview shows the chemical bonding analyses of <a href="https://github.com/mgimferrer/APOST3D">APOST-3D</a> on the molecule (fragments, charges, bond orders, local spin, effective oxidation states, effective fragment orbitals and OSLOs, the IQA energy decomposition), draws orbitals and densities straight from <code>.fchk</code> and <code>.molden</code> files, and makes publication figures of them (single pictures, or captioned panels of several orbitals in one image) and videos. Free, for Windows, macOS and Linux.</p>
+<p align="center">APOST3Dview shows the chemical bonding analyses of <a href="https://github.com/mgimferrer/APOST3D">APOST-3D</a> on the molecule (fragments, charges, bond orders, local spin, effective oxidation states, effective fragment orbitals and OSLOs, the IQA energy decomposition), draws orbitals and densities straight from <code>.fchk</code> and <code>.molden</code> files, and makes publication figures of them (single pictures, or captioned panels of several orbitals or of related molecules aligned on matching atoms, in one image) and videos. Free, for Windows, macOS and Linux.</p>
 
 <p align="center"><b><a href="https://mgimferrer.github.io/APOST3Dview/">User guide</a></b> · <a href="https://mgimferrer.github.io/APOST3Dview/tour.html">Five-minute tour</a> · <a href="https://github.com/mgimferrer/APOST3Dview/issues">Report a problem</a></p>
 
