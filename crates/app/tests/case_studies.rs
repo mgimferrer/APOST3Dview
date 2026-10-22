@@ -220,7 +220,7 @@ fn ferrocene_view(atoms: &Atoms) -> [f32; 4] {
     let up = atoms.centroid(top) - atoms.centroid(bottom);
     let front = bottom.iter().copied().find(|&a| atoms.symbols[a] == "C").unwrap();
     let toward = atoms.positions[front] - atoms.centroid(bottom);
-    orientation(up, toward.cross(up), 0.5, std::f32::consts::PI / 5.0)
+    orientation(up, toward.cross(up), 0.33, std::f32::consts::PI / 5.0)
 }
 
 /// Be/Mg cAAC (Chem. Sci. 2022 Fig 2): C-M-C horizontal, looking along
