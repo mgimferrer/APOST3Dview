@@ -38,6 +38,12 @@ impl App {
                 }
                 ui.checkbox(&mut self.dof_enabled, "Depth of field")
                     .on_hover_text("Blurs what is far from the center of rotation, like a camera lens.");
+                ui.horizontal(|ui| {
+                    ui.label("Projection:");
+                    ui.selectable_value(&mut self.camera.orthographic, true, "Orthographic")
+                        .on_hover_text("No perspective, as in most figures of papers: equal bonds look equal anywhere in the picture.");
+                    ui.selectable_value(&mut self.camera.orthographic, false, "Perspective").on_hover_text("Nearer parts look larger, as through a camera.");
+                });
 
                 ui.add_space(6.0);
                 egui::CollapsingHeader::new("Advanced").id_salt("appearance_advanced").show(ui, |ui| self.show_advanced_appearance(ui));

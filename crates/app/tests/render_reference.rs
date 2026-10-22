@@ -201,6 +201,31 @@ fn scenes() -> Vec<Scene> {
         let zoom_out = if files == H2O { 2.4 } else { 1.0 };
         list.push(Scene { window: true, zoom_out, ..scene(name, files, &patch) });
     }
+    // Orthographic (parallel rays, the default since 2026-10-22): one of
+    // each pipeline, export and live view.
+    let orthographic = [
+        "bi-ao-dof",
+        "bicl3-labels",
+        "h2o-homo-lumo-translucent",
+        "fe-fragments-ao",
+        "fe-atom-charges",
+        "c2h6-oslo-shared",
+        "window-bi-ao-dof",
+        "window-h2o-homo-translucent",
+    ];
+    let copies: Vec<Scene> = list
+        .iter()
+        .filter(|s| orthographic.contains(&s.name))
+        .map(|s| Scene {
+            name: Box::leak(format!("ortho-{}", s.name).into_boxed_str()),
+            files: s.files,
+            patch: format!("[view]\nprojection = \"orthographic\"\n{}", s.patch),
+            select: s.select,
+            window: s.window,
+            zoom_out: s.zoom_out,
+        })
+        .collect();
+    list.extend(copies);
     list
 }
 
@@ -242,6 +267,9 @@ fn render(scene: &Scene, scratch: &Path) -> Option<(u32, u32, Vec<u8>)> {
     drop(first);
 
     let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(&session).unwrap()).unwrap();
+    // The scenes were made in perspective (the default until 2026-10-22);
+    // the orthographic ones say so in their patch.
+    value["view"]["projection"] = toml::Value::String("perspective".into());
     let patch: toml::Value = toml::from_str(&scene.patch).unwrap_or_else(|e| panic!("{}: bad patch: {e}\n{}", scene.name, scene.patch));
     merge(&mut value, &patch);
     let distance = &mut value["view"]["camera_distance"];

@@ -31,6 +31,14 @@ pub struct OrbitCamera {
     /// shared +Y in this structure's own coordinates, so both are lit
     /// alike). Not changed by orbiting, panning or zooming.
     pub world_up: Vec3,
+    /// Parallel projection (no perspective), as VMD's and CYLview's
+    /// figures: equal bonds look equal anywhere in the picture. The view
+    /// then shows, at the target, the same height a perspective view at
+    /// `distance` shows there (`2 · distance · tan(fov/2)`), so zooming,
+    /// framing and saved views mean the same in both; the eye (for depth
+    /// order, ambient occlusion, depth of field and picking) sits
+    /// `ORTHOGRAPHIC_EYE_DISTANCE` behind the target.
+    pub orthographic: bool,
 }
 
 impl Default for OrbitCamera {
@@ -43,6 +51,7 @@ impl Default for OrbitCamera {
             near: 0.05,
             far: 500.0,
             world_up: Vec3::Y,
+            orthographic: false,
         }
     }
 }
@@ -50,6 +59,13 @@ impl Default for OrbitCamera {
 impl OrbitCamera {
     const MIN_DISTANCE: f32 = 0.5;
     const MAX_DISTANCE: f32 = 500.0;
+    /// How far behind the target an orthographic camera's eye is: far
+    /// enough that rays from it to anything in view are parallel to within
+    /// 1/100 of a degree per angstrom off the axis, near enough for f32
+    /// depths to stay precise to 1e-4 angstrom.
+    pub const ORTHOGRAPHIC_EYE_DISTANCE: f32 = 1000.0;
+    /// Depth range of an orthographic view either side of the target.
+    const ORTHOGRAPHIC_DEPTH: f32 = 500.0;
 
     /// Orientation equivalent to a classic yaw/pitch orbit position
     /// (yaw around world +Y, then pitch up toward +Y), for setting a
@@ -59,7 +75,18 @@ impl OrbitCamera {
     }
 
     pub fn eye(&self) -> Vec3 {
-        self.target + self.orientation * Vec3::new(0.0, 0.0, self.distance)
+        let distance = if self.orthographic { Self::ORTHOGRAPHIC_EYE_DISTANCE } else { self.distance };
+        self.target + self.orientation * Vec3::new(0.0, 0.0, distance)
+    }
+
+    /// Distance from the eye to the target: where depth of field focuses.
+    pub fn eye_distance(&self) -> f32 {
+        if self.orthographic { Self::ORTHOGRAPHIC_EYE_DISTANCE } else { self.distance }
+    }
+
+    /// Half the height of the view at the target (in world units).
+    pub fn half_height_at_target(&self) -> f32 {
+        self.distance * (self.fov_y_radians * 0.5).tan()
     }
 
     pub fn view_matrix(&self) -> Mat4 {
@@ -68,6 +95,12 @@ impl OrbitCamera {
 
     pub fn projection_matrix(&self, aspect_ratio: f32) -> Mat4 {
         // wgpu's NDC depth range is [0, 1], matching the directx convention.
+        if self.orthographic {
+            let half_height = self.half_height_at_target();
+            let half_width = half_height * aspect_ratio.max(0.0001);
+            let (near, far) = (Self::ORTHOGRAPHIC_EYE_DISTANCE - Self::ORTHOGRAPHIC_DEPTH, Self::ORTHOGRAPHIC_EYE_DISTANCE + Self::ORTHOGRAPHIC_DEPTH);
+            return glam::camera::rh::proj::directx::orthographic(-half_width, half_width, -half_height, half_height, near, far);
+        }
         glam::camera::rh::proj::directx::perspective(
             self.fov_y_radians,
             aspect_ratio.max(0.0001),
@@ -137,10 +170,12 @@ impl OrbitCamera {
     /// size regardless of how far their anchor is from the camera, the
     /// same way a 2D overlay would behave, despite now being real
     /// world-space geometry.
+    /// Orthographic: the same at every depth, so `distance` is ignored.
     pub fn world_units_per_pixel(&self, distance: f32, viewport_height_px: f32) -> f32 {
         if viewport_height_px <= 0.0 {
             return 0.0;
         }
+        let distance = if self.orthographic { self.distance } else { distance };
         2.0 * distance * (self.fov_y_radians * 0.5).tan() / viewport_height_px
     }
 }
@@ -225,5 +260,32 @@ mod tests {
         assert!((right.length() - 1.0).abs() < 1e-4 && (up.length() - 1.0).abs() < 1e-4);
         assert!(right.dot(up).abs() < 1e-4 && right.dot(forward).abs() < 1e-4 && up.dot(forward).abs() < 1e-4);
         assert_vec_close(forward, (camera.target - camera.eye()).normalize(), 1e-4);
+    }
+
+    fn ndc(camera: &OrbitCamera, p: Vec3) -> Vec3 {
+        let clip = camera.view_projection_matrix(1.5) * p.extend(1.0);
+        clip.truncate() / clip.w
+    }
+
+    #[test]
+    fn orthographic_shows_the_target_plane_as_perspective_does() {
+        let mut camera = OrbitCamera { target: Vec3::new(1.0, -2.0, 0.5), distance: 9.0, ..OrbitCamera::default() };
+        camera.orbit(0.7, -0.4);
+        let (right, up) = camera.screen_basis();
+        let on_plane = camera.target + right * 2.0 - up * 1.3;
+        let perspective = ndc(&camera, on_plane);
+        camera.orthographic = true;
+        let orthographic = ndc(&camera, on_plane);
+        assert!((perspective.truncate() - orthographic.truncate()).length() < 1e-5, "{perspective:?} vs {orthographic:?}");
+        // Parallel: moving along the view direction doesn't move a point
+        // on screen, only in depth (front nearer than back).
+        let front = ndc(&camera, on_plane - camera.forward() * 3.0);
+        let back = ndc(&camera, on_plane + camera.forward() * 3.0);
+        assert!((front.truncate() - orthographic.truncate()).length() < 1e-5);
+        assert!((back.truncate() - orthographic.truncate()).length() < 1e-5);
+        assert!(front.z < orthographic.z && orthographic.z < back.z && (0.0..1.0).contains(&front.z) && back.z < 1.0);
+        // Labels: the same size at any depth, the size they have at the target.
+        let at_target = camera.world_units_per_pixel(camera.distance, 800.0);
+        assert_eq!(camera.world_units_per_pixel(camera.eye_distance() + 4.0, 800.0), at_target);
     }
 }

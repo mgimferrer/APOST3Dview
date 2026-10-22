@@ -65,7 +65,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 // winding-based logic.
 fn facing_normal(raw_normal: vec3<f32>, world_position: vec3<f32>) -> vec3<f32> {
     var normal = normalize(raw_normal);
-    let view_dir = normalize(scene.camera_eye.xyz - world_position);
+    let view_dir = to_viewer(world_position);
     if (dot(normal, view_dir) < 0.0) {
         normal = -normal;
     }
@@ -80,7 +80,7 @@ fn facing_normal(raw_normal: vec3<f32>, world_position: vec3<f32>) -> vec3<f32> 
 // BRDF's Fresnel). Returns linear-light color; callers must pass it
 // through `finalize_color`.
 fn shade_isosurface(world_position: vec3<f32>, normal: vec3<f32>, color: vec3<f32>) -> vec3<f32> {
-    let v = normalize(scene.camera_eye.xyz - world_position);
+    let v = to_viewer(world_position);
     let l = normalize(scene.light_dir.xyz);
     let albedo = srgb_to_linear(color);
     let direct = ggx_direct(normal, v, l, albedo, iso_material.material);

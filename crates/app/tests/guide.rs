@@ -438,7 +438,7 @@ fn making_an_input() {
 fn appearance_and_export() {
     let mut guide = open(vec![validation("gaussian/BiCl3-def2TZVPP.fchk")]);
     click(&mut guide, "Appearance");
-    for label in ["Default", "Publication", "Save this look", "Open presets folder", "Ambient occlusion", "Depth of field", "Advanced"] {
+    for label in ["Default", "Publication", "Save this look", "Open presets folder", "Ambient occlusion", "Depth of field", "Orthographic", "Perspective", "Advanced"] {
         sees(&guide, label);
     }
     settle(&mut guide);

@@ -244,7 +244,7 @@ impl App {
             viewport_offset_px: [rect.min.x * pixels_per_point, rect.min.y * pixels_per_point],
             ao_recompute_samples,
             depth_of_field: self.dof_enabled.then_some(self.dof_settings),
-            dof_focus_distance: self.camera.distance,
+            dof_focus_distance: self.camera.eye_distance(),
             background: self.material.background,
         };
         ui.painter()

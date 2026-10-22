@@ -17,6 +17,12 @@ pub fn ray_from_ndc(camera: &OrbitCamera, aspect_ratio: f32, ndc_x: f32, ndc_y: 
     let inverse_view_proj = camera.view_projection_matrix(aspect_ratio).inverse();
     let far = inverse_view_proj * Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
     let far_world = Vec3::new(far.x, far.y, far.z) / far.w;
+    if camera.orthographic {
+        // Parallel rays: from the near plane, along the view direction.
+        let near = inverse_view_proj * Vec4::new(ndc_x, ndc_y, 0.0, 1.0);
+        let origin = Vec3::new(near.x, near.y, near.z) / near.w;
+        return (origin, (far_world - origin).normalize());
+    }
 
     let origin = camera.eye();
     let direction = (far_world - origin).normalize();

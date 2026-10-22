@@ -117,6 +117,19 @@ struct ViewState {
     /// "Keep the view when switching structures".
     #[serde(default)]
     keep_view: bool,
+    /// Sessions saved before the choice existed were seen in perspective,
+    /// and reopen that way.
+    #[serde(default)]
+    projection: Projection,
+}
+
+/// Appearance > Projection.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+enum Projection {
+    Orthographic,
+    #[default]
+    Perspective,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -419,6 +432,7 @@ impl App {
                 spin_direction: self.spin_direction.to_array(),
                 spin_speed: self.auto_spin_speed,
                 keep_view: self.keep_view,
+                projection: if self.camera.orthographic { Projection::Orthographic } else { Projection::Perspective },
             },
             appearance: AppearanceState {
                 ambient_occlusion: self.ao_enabled,
@@ -548,6 +562,7 @@ impl App {
         let view = &session.view;
         let saved = CameraState { target: view.camera_target, distance: view.camera_distance, orientation: view.camera_orientation };
         self.camera = saved.apply(&self.camera);
+        self.camera.orthographic = view.projection == Projection::Orthographic;
         self.keep_view = view.keep_view;
         for (position, state) in session.structures.iter().enumerate() {
             let Some(&index) = opened.get(&position) else { continue };

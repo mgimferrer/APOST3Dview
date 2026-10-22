@@ -51,7 +51,7 @@ const EDGE_POWER: f32 = 2.2;
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let n = normalize(in.normal);
-    let v = normalize(scene.camera_eye.xyz - in.world_position);
+    let v = to_viewer(in.world_position);
     let n_dot_v = dot(n, v);
     if (n_dot_v <= 0.0) {
         discard;

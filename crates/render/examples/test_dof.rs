@@ -47,7 +47,7 @@ async fn run() {
         background: Some([1.0, 1.0, 1.0, 1.0]),
         ambient_occlusion: None,
         depth_of_field: None,
-        dof_focus_distance: camera.distance,
+        dof_focus_distance: camera.eye_distance(),
     };
 
     let off_pixels = resources

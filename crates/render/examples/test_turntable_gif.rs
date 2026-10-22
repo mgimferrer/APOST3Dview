@@ -94,7 +94,7 @@ async fn run() {
         background: Some([1.0, 1.0, 1.0, 1.0]),
         ambient_occlusion: Some(AoSettings::default()),
         depth_of_field: None,
-        dof_focus_distance: camera.distance,
+        dof_focus_distance: camera.eye_distance(),
     };
     let frames = 48;
     // A diagonal direction exercises the exact-axis rotation the seamless

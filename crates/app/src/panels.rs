@@ -264,6 +264,12 @@ impl App {
     /// stay on the same spot.
     pub(crate) fn view_for(&self, index: usize) -> OrbitCamera {
         let Some(structure) = self.structures.get(index) else { return self.camera };
+        // Views saved per structure take the projection chosen now (one
+        // setting for the whole app).
+        let projected = |mut camera: OrbitCamera| {
+            camera.orthographic = self.camera.orthographic;
+            camera
+        };
         let own = crate::alignment::motion(structure.placement.as_ref());
         let active = self.active_structure.and_then(|a| self.structures.get(a).map(|s| (a, s)));
         if let Some((a, current)) = active {
@@ -276,7 +282,7 @@ impl App {
                     let from = crate::alignment::motion(current.placement.as_ref());
                     // Its own view, exactly, when that is still what is
                     // seen: going back and forth doesn't drift by rounding.
-                    if let Some(saved) = structure.view
+                    if let Some(saved) = structure.view.map(projected)
                         && crate::alignment::same_view(&crate::alignment::carry_camera(&saved, own, from), &self.camera)
                     {
                         return saved;
@@ -291,7 +297,7 @@ impl App {
                 return camera;
             }
         }
-        if let Some(mut view) = structure.view {
+        if let Some(mut view) = structure.view.map(projected) {
             view.world_up = crate::alignment::up_in(own);
             return view;
         }

@@ -219,7 +219,8 @@ impl App {
         cc.egui_ctx.memory_mut(|memory| memory.data.clear());
 
         Self {
-            camera: OrbitCamera::default(),
+            // No perspective by default, as in most figures of papers.
+            camera: OrbitCamera { orthographic: true, ..OrbitCamera::default() },
             auto_spin: false,
             auto_spin_speed: DEFAULT_AUTO_SPIN_SPEED,
             spin_direction: Vec2::X,

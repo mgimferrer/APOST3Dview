@@ -119,7 +119,7 @@ impl App {
             background,
             ambient_occlusion: self.ao_enabled.then_some(self.ao_settings),
             depth_of_field: self.dof_enabled.then_some(self.dof_settings),
-            dof_focus_distance: self.camera.distance,
+            dof_focus_distance: self.camera.eye_distance(),
         }
     }
 

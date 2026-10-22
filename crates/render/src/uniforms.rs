@@ -9,6 +9,7 @@ use crate::material::Material;
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct SceneUniforms {
     pub view_proj: [[f32; 4]; 4],
+    /// The eye; `w` is 1.0 for an orthographic camera (parallel rays).
     pub camera_eye: [f32; 4],
     pub camera_right: [f32; 4],
     pub camera_up: [f32; 4],
@@ -34,7 +35,7 @@ impl SceneUniforms {
         let light_dir = material.light_dir(right, up, camera.forward());
         Self {
             view_proj: view_proj.to_cols_array_2d(),
-            camera_eye: [eye.x, eye.y, eye.z, 0.0],
+            camera_eye: [eye.x, eye.y, eye.z, if camera.orthographic { 1.0 } else { 0.0 }],
             camera_right: [right.x, right.y, right.z, 0.0],
             camera_up: [up.x, up.y, up.z, 0.0],
             light_dir: [light_dir.x, light_dir.y, light_dir.z, 0.0],

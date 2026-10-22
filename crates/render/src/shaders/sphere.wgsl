@@ -44,7 +44,11 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32, instance: InstanceInput) ->
     // per instance instead of reusing scene.camera_right/camera_up.
     let to_eye = scene.camera_eye.xyz - instance.center;
     let distance_to_eye = max(length(to_eye), 0.0001);
-    let forward_to_eye = to_eye / distance_to_eye;
+    var forward_to_eye = to_eye / distance_to_eye;
+    if (is_orthographic()) {
+        // Parallel rays: every billboard faces the view direction.
+        forward_to_eye = -view_forward();
+    }
     var right = cross(forward_to_eye, scene.camera_up.xyz);
     let right_len = length(right);
     if (right_len < 0.0001) {
@@ -64,7 +68,8 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32, instance: InstanceInput) ->
     // radius / sqrt(1 - (radius/distance)^2) to fully contain it. Without
     // this, atoms near the camera (e.g. terminal atoms pointing at the
     // viewer) get their silhouette clipped by the quad's own edge.
-    let ratio = clamp(radius / distance_to_eye, 0.0, 0.999);
+    // Orthographic: the silhouette is exactly `radius` wide.
+    let ratio = select(clamp(radius / distance_to_eye, 0.0, 0.999), 0.0, is_orthographic());
     let quad_radius = radius / sqrt(1.0 - ratio * ratio);
 
     let corner = CORNERS[vertex_index];
@@ -112,8 +117,9 @@ fn intersect_sphere(ray_origin: vec3<f32>, ray_dir: vec3<f32>, center: vec3<f32>
 
 @fragment
 fn fs_main(in: VertexOutput) -> FragmentOutput {
-    let ray_origin = scene.camera_eye.xyz;
-    let ray_dir = normalize(in.world_position - ray_origin);
+    let ray = view_ray(in.world_position, 2.0 * in.radius + 1.0);
+    let ray_origin = ray.origin;
+    let ray_dir = ray.dir;
 
     let hit = intersect_sphere(ray_origin, ray_dir, in.center, in.radius);
     if (hit.w < 0.5) {
@@ -136,8 +142,9 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 // precomputed textures at group 1 — see `apply_ao` (`ao_sample.wgsl`).
 @fragment
 fn fs_main_ao(in: VertexOutput) -> FragmentOutput {
-    let ray_origin = scene.camera_eye.xyz;
-    let ray_dir = normalize(in.world_position - ray_origin);
+    let ray = view_ray(in.world_position, 2.0 * in.radius + 1.0);
+    let ray_origin = ray.origin;
+    let ray_dir = ray.dir;
 
     let hit = intersect_sphere(ray_origin, ray_dir, in.center, in.radius);
     if (hit.w < 0.5) {
@@ -162,8 +169,9 @@ fn fs_main_ao(in: VertexOutput) -> FragmentOutput {
 // translucent tint layered on top of the normal opaque render.
 @fragment
 fn fs_highlight(in: VertexOutput) -> FragmentOutput {
-    let ray_origin = scene.camera_eye.xyz;
-    let ray_dir = normalize(in.world_position - ray_origin);
+    let ray = view_ray(in.world_position, 2.0 * in.radius + 1.0);
+    let ray_origin = ray.origin;
+    let ray_dir = ray.dir;
 
     let hit = intersect_sphere(ray_origin, ray_dir, in.center, in.radius);
     if (hit.w < 0.5) {
@@ -191,8 +199,9 @@ struct GBufferOutput {
 
 @fragment
 fn fs_gbuffer(in: VertexOutput) -> GBufferOutput {
-    let ray_origin = scene.camera_eye.xyz;
-    let ray_dir = normalize(in.world_position - ray_origin);
+    let ray = view_ray(in.world_position, 2.0 * in.radius + 1.0);
+    let ray_origin = ray.origin;
+    let ray_dir = ray.dir;
 
     let hit = intersect_sphere(ray_origin, ray_dir, in.center, in.radius);
     if (hit.w < 0.5) {
@@ -220,8 +229,9 @@ const HALO_EDGE_POWER: f32 = 2.2;
 
 @fragment
 fn fs_halo(in: VertexOutput) -> FragmentOutput {
-    let ray_origin = scene.camera_eye.xyz;
-    let ray_dir = normalize(in.world_position - ray_origin);
+    let ray = view_ray(in.world_position, 2.0 * in.radius + 1.0);
+    let ray_origin = ray.origin;
+    let ray_dir = ray.dir;
     let hit = intersect_sphere(ray_origin, ray_dir, in.center, in.radius);
     if (hit.w < 0.5) {
         discard;
