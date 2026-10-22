@@ -77,12 +77,19 @@ impl Densities {
     }
 }
 
-/// The two natural orbitals either side of the occupied ones (occupation
-/// above or below 1), ticked when a set is first listed.
+/// The two natural orbitals either side of occupation 1 (the last above
+/// and the first below), ticked when a set is first listed. Not the set's
+/// `num_occupied`, which counts occupations above 0.5: for a frontier pair
+/// such as 1.21/0.79 (Mg(cAAC)2) it would give the 0.79 orbital and the
+/// one after it.
 pub(crate) fn frontier(set: &NaturalOrbitals) -> std::collections::HashSet<usize> {
-    let occupied = set.orbitals.alpha.num_occupied;
-    let count = set.orbitals.alpha.num_orbitals();
-    [occupied.checked_sub(1), (occupied < count).then_some(occupied)].into_iter().flatten().collect()
+    frontier_of(&set.orbitals.alpha.occupations)
+}
+
+/// `frontier` on occupations sorted largest first.
+fn frontier_of(occupations: &[f64]) -> std::collections::HashSet<usize> {
+    let above = occupations.iter().filter(|&&n| n > 1.0).count();
+    [above.checked_sub(1), (above < occupations.len()).then_some(above)].into_iter().flatten().collect()
 }
 
 /// "MP2", "CI", or the method ("CASSCF") for a correlated density stored
@@ -129,4 +136,19 @@ pub(crate) fn load_densities(path: &Path, wfn: &Wavefunction) -> (Option<Densiti
     let chosen = natural.len().checked_sub(1);
     let selected = natural.last().map(frontier).unwrap_or_default();
     (Some(Densities { info, natural, chosen, listed: None, selected }), problems)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::frontier_of;
+
+    #[test]
+    fn the_frontier_is_either_side_of_occupation_one() {
+        // Mg(cAAC)2, CASSCF(10,8): the LUNO's 0.79 is above 0.5 but not 1.
+        assert_eq!(frontier_of(&[2.0, 1.998, 1.977, 1.208, 0.794, 0.026, 0.0]), [3, 4].into());
+        assert_eq!(frontier_of(&[2.0, 1.640, 0.362, 0.022]), [1, 2].into());
+        // Nothing above or nothing below: one orbital.
+        assert_eq!(frontier_of(&[0.9, 0.1]), [0].into());
+        assert_eq!(frontier_of(&[2.0, 1.5]), [1].into());
+    }
 }
