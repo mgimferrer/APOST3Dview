@@ -740,28 +740,71 @@ fn pnictoranide_frontier_efos() {
     aligned_figure(&out, "pnictoranide-frontier-efos", [sb, bi], [pnictoranide_core(&sb_atoms), pnictoranide_core_matching(&sb_atoms, &bi_atoms)], generate, &patch, pnictoranide_view(&sb_atoms), 0.62);
 }
 
+/// Generates SCF orbitals of the active structure one at a time, in this
+/// order (1-based MO numbers, alpha), so the panels follow it.
+fn generate_scf_in_order(harness: &mut egui_kittest::Harness<'static, apost3dview::App>, mos: &[usize]) {
+    open_window(harness, "Surfaces");
+    for &mo in mos {
+        click(harness, "Clear");
+        harness.query_all_by_label_contains(&format!("MO {mo}  ")).next().unwrap_or_else(|| panic!("no MO {mo} row")).click_accesskit();
+        harness.run_steps(2);
+        click(harness, "Generate 1 orbital(s)");
+        harness.run_steps(3);
+    }
+}
+
 #[test]
 fn carbonyl_efos() {
     let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
     let results = dir.join("FeCO6/FeCO6-EOS.apost.json");
+    let co = dir.join("FeCO6/CO.fchk");
     let atoms = Atoms::of(&read_results(&results));
-    // TCA 2026 Fig 1, left: the pi*, sigma and pi EFOs of the CO pointing
-    // up (fragment 2), at 0.05.
+    // TCA 2026 Fig 1: the pi*, sigma and pi EFOs of the CO pointing up in
+    // [Fe(CO)6]2+ (fragment 2), above the same orbitals of free CO, its
+    // canonical MOs (neutral CO: 1pi = MOs 5, 6; 5sigma, the HOMO, = 7;
+    // 2pi* = 8, 9), at 0.05.
     let rows = [65, 66, 47, 32, 33];
-    let captions = ["\u{3c0}* 0.065", "\u{3c0}* 0.065", "\u{3c3} 0.799", "\u{3c0} 0.994", "\u{3c0} 0.994"];
+    let mos = [8, 9, 7, 5, 6];
+    let captions = [
+        "\u{3c0}* 0.065", "\u{3c0}* 0.065", "\u{3c3} 0.799", "\u{3c0} 0.994", "\u{3c0} 0.994",
+        "CO \u{3c0}*", "CO \u{3c0}*", "CO \u{3c3} (HOMO)", "CO \u{3c0}", "CO \u{3c0}",
+    ];
     let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| {
+        let labels = harness.state().structure_labels();
+        show_structure(harness, &labels[0]);
         generate_in_order(harness, "EOS EFOs", &rows.map(|r| (r - 1, false)));
+        show_structure(harness, &labels[1]);
+        generate_scf_in_order(harness, &mos);
+        show_structure(harness, &labels[0]);
         open_window(harness, "Export");
         click(harness, "Panels");
+        show_structure(harness, &labels[1]);
+        open_window(harness, "Export");
+        click(harness, "All surfaces");
+        show_structure(harness, &labels[0]);
     };
-    let mut patch = format!("{FIGURE_LOOK}[[structures]]\n");
+    // Free CO in its own view: C below, O above, at the scale of a CO in
+    // the complex's panels.
+    let molecule = apost3dview_core::Molecule::from_fchk(&co).unwrap();
+    let (c, o) = (molecule.positions[0], molecule.positions[1]);
+    let co_view = orientation(o - c, Vec3::X, 0.0, 0.0);
+    let center = (c + o) / 2.0;
+    let mut patch = format!("{FIGURE_LOOK}[view]\nkeep_view = false\n[[structures]]\n");
     for _ in rows {
         patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\n");
     }
-    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 1\ncolumns = 5\n{CAPTION_SIZE}"));
+    patch.push_str(&format!(
+        "[[structures]]\n[structures.view]\ntarget = [{}, {}, {}]\ndistance = 6.5\norientation = [{}, {}, {}, {}]\n",
+        center.x, center.y, center.z, co_view[0], co_view[1], co_view[2], co_view[3]
+    ));
+    for _ in mos {
+        patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\n");
+    }
+    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 2\ncolumns = 5\n{CAPTION_SIZE}"));
     for caption in captions {
         patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
     }
-    let mut harness = build(vec![results], setup, &out.join("carbonyl-efos.a3dview"), &patch, carbonyl_view(&atoms), 1.0);
+    let mut harness = build(vec![results, co], setup, &out.join("carbonyl-efos.a3dview"), &patch, carbonyl_view(&atoms), 1.0);
+    eprintln!("carbonyl: {:?}", harness.state().panel_captions());
     save_figure(&mut harness, &out, "carbonyl-efos");
 }
