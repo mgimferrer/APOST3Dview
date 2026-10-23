@@ -19,7 +19,7 @@ opens with its results.
 | `H2O-CAS44` | Water, CASSCF(4,4)/STO-3G from PySCF, TFVC atoms | Correlated density, natural orbitals, local spin |
 | `FeCp2-EOS-OSLO` | Ferrocene, B3LYP/def2-TZVPP, TFVC atoms, Fe and two Cp | EOS and OSLO: the Fe d and Cp pi effective fragment orbitals, OSLOs with their FOLI |
 | `FeCp2-IQA` | Ferrocene, as above | Energy decomposition (IQA) between Fe and the rings, and atom by atom |
-| `FeCO6-EOS` | [Fe(CO)6]²⁺, B3LYP/def2-TZVP, TFVC atoms, Fe and six CO | The sigma, pi and pi* effective fragment orbitals of a carbonyl |
+| `FeCO6-EOS` | [Fe(CO)6]²⁺, B3LYP/def2-TZVP, TFVC atoms, Fe and six CO; free CO (`CO.fchk`) | The sigma, pi and pi* effective fragment orbitals of a carbonyl, next to free CO's own MOs |
 
 In each folder:
 

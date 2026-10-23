@@ -81,5 +81,9 @@ for entry in FeCp2/FeCp2-EOS-OSLO FeCp2/FeCp2-IQA FeCO6/FeCO6-EOS; do
     for file in "$src/$job"-*.fchk; do
         [ ! -f "$file" ] || cp "$file" "$dest/"
     done
+    # Free CO, for comparing the carbonyl's EFOs with its MOs.
+    if [ "$job" = FeCO6-EOS ] && [ -f "$src/CO.fchk" ]; then
+        cp "$src/CO.fchk" "$dest/"
+    fi
     echo "examples/$job: $(ls "$dest" | wc -l | tr -d ' ') files"
 done
