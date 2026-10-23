@@ -962,6 +962,27 @@ fn toc_pictures() {
     let session = out.join("toc-np.a3dview");
     let mut harness = build(vec![results], |_| {}, &session, &patch, view, 0.8);
     save_png(&mut harness, &out.join("toc-np.png"), 2400, 1300);
+    // Ferrocene on its side, Cp-Fe-Cp horizontal: three fragments, three
+    // labels, for the wide strip.
+    let results = dir.join("FeCp2/FeCp2-EOS-OSLO.apost.json");
+    let atoms = Atoms::of(&read_results(&results));
+    let axis = atoms.centroid(&atoms.fragments[2]) - atoms.centroid(&atoms.fragments[1]);
+    let front = atoms.fragments[1].iter().copied().find(|&a| atoms.symbols[a] == "C").unwrap();
+    let toward = atoms.positions[front] - atoms.centroid(&atoms.fragments[1]);
+    let view = orientation(axis.cross(toward), axis, 0.45, 0.35);
+    // Value labels keep a fixed share of the view's height (the window's
+    // slider stops at 48 px), so the camera is moved back instead: the
+    // molecule shrinks, the labels don't, and the crop brings both up.
+    for (name, zoom_out) in [("toc-fecp2", 1.0), ("toc-fecp2-big", 1.6), ("toc-fecp2-huge", 2.2)] {
+        let patch = format!(
+            "{FIGURE_LOOK}{}{}",
+            structure_patch(&atoms, false),
+            results_view("eos.fragments.oxidation_states", 0).replace("labels = true\n", "labels = true\nlabel_size = 48.0\n")
+        );
+        let session = out.join(format!("{name}.a3dview"));
+        let mut harness = build(vec![results.clone()], |_| {}, &session, &patch, view, zoom_out);
+        save_png(&mut harness, &out.join(format!("{name}.png")), 3600, 1650);
+    }
     // Be and Mg, aligned, each structure's HONO alone.
     for (folder, job, name) in [("Be-cAAC-Dip", "Be-cAAC-Dip-EOS", "toc-be"), ("Mg-cAAC-Dip", "Mg-cAAC-Dip-EOS", "toc-mg")] {
         let results = dir.join(format!("{folder}/{job}.apost.json"));
