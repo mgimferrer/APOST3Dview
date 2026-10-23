@@ -24,7 +24,9 @@ fn case_studies() -> Option<PathBuf> {
 }
 
 /// (folder, job, orbital sets in the Surfaces window's Orbitals menu).
-const RUNS: [(&str, &str, &[&str]); 10] = [
+const RUNS: [(&str, &str, &[&str]); 12] = [
+    ("Nitroprusside", "NP-EOS", &["EOS EFOs"]),
+    ("p-Benzyne", "pB-CAS22", &[]),
     ("FeCp2", "FeCp2-EOS-OSLO", &["EOS EFOs", "OSLOs"]),
     ("FeCp2", "FeCp2-IQA", &[]),
     ("FeCO6", "FeCO6-EOS", &["EOS EFOs"]),
@@ -807,4 +809,104 @@ fn carbonyl_efos() {
     let mut harness = build(vec![results, co], setup, &out.join("carbonyl-efos.a3dview"), &patch, carbonyl_view(&atoms), 1.0);
     eprintln!("carbonyl: {:?}", harness.state().panel_captions());
     save_figure(&mut harness, &out, "carbonyl-efos");
+}
+
+/// Octahedral complexes as usually drawn: the ligand on fragment `axial`
+/// (1-based) up from the metal, an equatorial ligand to the right, seen
+/// from a little above and turned so the ligand in front doesn't hide the
+/// metal (as `carbonyl_view`, for any first atom of a fragment).
+fn octahedral_view(atoms: &Atoms, axial: usize) -> [f32; 4] {
+    let metal = atoms.fragments[0][0];
+    let donor = |f: usize| atoms.fragments[f][0];
+    let up = atoms.positions[donor(axial - 1)] - atoms.positions[metal];
+    let right = (1..atoms.fragments.len())
+        .filter(|&f| f != axial - 1)
+        .map(|f| atoms.positions[donor(f)] - atoms.positions[metal])
+        .min_by(|a, b| a.normalize().dot(up.normalize()).abs().total_cmp(&b.normalize().dot(up.normalize()).abs()))
+        .unwrap();
+    orientation(up, right, 0.17, 0.55)
+}
+
+#[test]
+fn nitroprusside_figure() {
+    let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    let results = dir.join("Nitroprusside/NP-EOS.apost.json");
+    let atoms = Atoms::of(&read_results(&results));
+    let view = octahedral_view(&atoms, 2);
+    // (b) EOS oxidation states, (c) fragment bond orders from Fe.
+    for (name, id) in [("np-oxidation-states", "eos.fragments.oxidation_states"), ("np-bond-orders", "bond_orders.fragments.matrix")] {
+        let patch = format!("{FIGURE_LOOK}[[structures]]\n{}", results_view(id, 0));
+        let session = out.join(format!("{name}.a3dview"));
+        let mut harness = build(vec![results.clone()], |_| {}, &session, &patch, view, 0.95);
+        eprintln!("{name}: {:?}", harness.state().legend_title());
+        save_png(&mut harness, &out.join(format!("{name}.png")), 1400, 1400);
+        harness.state().save_session_to(&session).unwrap();
+    }
+    // (d, e) the frontier EFOs: Fe d (last occupied) and NO pi* (first
+    // unoccupied), rows 54 and 57 of the results file's frontier lists.
+    let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| {
+        generate_in_order(harness, "EOS EFOs", &[(53, false), (56, false)]);
+        open_window(harness, "Export");
+        click(harness, "Panels");
+    };
+    let mut patch = format!("{FIGURE_LOOK}[[structures]]\n");
+    for _ in 0..2 {
+        patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\n");
+    }
+    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 1\ncolumns = 2\n{CAPTION_SIZE}"));
+    for caption in ["LO 0.632 (Fe)", "FU 0.338 (NO)"] {
+        patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
+    }
+    let mut harness = build(vec![results.clone()], setup, &out.join("np-frontier-efos.a3dview"), &patch, view, 0.95);
+    save_figure(&mut harness, &out, "np-frontier-efos");
+
+    // (a) The whole window: the fragment bond orders seen from Fe (the
+    // focus view) on the molecule, the APOST-3D window with its matrix
+    // tools beside it.
+    let mut harness = common::app_with_scale(vec![results], 2.0);
+    harness.run_steps(4);
+    harness.state_mut().set_view_orientation(view);
+    harness.state_mut().zoom_view(1.15);
+    assert!(harness.state_mut().show_on_molecule("bond_orders.fragments.matrix"));
+    harness.state_mut().clear_toasts();
+    harness.run_steps(8);
+    harness.remove_cursor();
+    let image = harness.render().expect("render");
+    image.save(out.join("np-window.png")).unwrap();
+}
+
+#[test]
+fn p_benzyne_figure() {
+    let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    let results = dir.join("p-Benzyne/pB-CAS22.apost.json");
+    let atoms = Atoms::of(&read_results(&results));
+    // The ring facing the viewer, the two radical carbons (C1, C4) left and
+    // right.
+    let p = &atoms.positions;
+    let view = orientation((p[1] + p[2]) - (p[4] + p[5]), p[0] - p[3], 0.0, 0.0);
+    // The frontier natural orbitals (HONO, LUNO).
+    let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| {
+        frontier_natural_orbitals(harness);
+        open_window(harness, "Export");
+        click(harness, "Panels");
+    };
+    let mut patch = format!("{FIGURE_LOOK}[[structures]]\n");
+    for _ in 0..2 {
+        patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\nvisible = true\n");
+    }
+    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 1\ncolumns = 2\n{CAPTION_SIZE}"));
+    for caption in ["HONO 1.200", "LUNO 0.800"] {
+        patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
+    }
+    let mut harness = build(vec![results.clone()], setup, &out.join("pb-natural-orbitals.a3dview"), &patch, view, 1.3);
+    eprintln!("pb: {:?}", harness.state().panel_captions());
+    save_figure(&mut harness, &out, "pb-natural-orbitals");
+    // The local spin: each atom's own <S^2> (the diagonal), as halos.
+    let local = results_view("local_spin.atoms.s2", 0).replace("labels = true\n", "labels = true\ndiagonal = true\nnames = false\n");
+    let patch = format!("{FIGURE_LOOK}[[structures]]\n{local}");
+    let session = out.join("pb-local-spin.a3dview");
+    let mut harness = build(vec![results], |_| {}, &session, &patch, view, 1.35);
+    eprintln!("pb local spin: {:?}", harness.state().legend_title());
+    save_png(&mut harness, &out.join("pb-local-spin.png"), 1400, 1100);
+    harness.state().save_session_to(&session).unwrap();
 }
