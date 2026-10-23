@@ -194,10 +194,15 @@ fn automatic_scale(entry: &IndexEntry, values: &[f64]) -> ColorScale {
 }
 
 /// Decimals enough to show two significant digits of the largest value;
-/// energies always with their unit's (`EnergyUnit::decimals`).
+/// energies always with their unit's (`EnergyUnit::decimals`); none when
+/// every value is a whole number (oxidation states, electron counts: "+2",
+/// not "+2.00").
 fn automatic_decimals(values: &[f64], energy: Option<EnergyUnit>) -> usize {
     if let Some(unit) = energy {
         return unit.decimals();
+    }
+    if !values.is_empty() && values.iter().all(|v| (v - v.round()).abs() < 1e-9) {
+        return 0;
     }
     let max_abs = values.iter().fold(0.0f64, |m, v| m.max(v.abs()));
     match max_abs {
@@ -777,6 +782,9 @@ mod tests {
         assert_eq!(automatic_decimals(&[0.018, -0.018], None), 3);
         assert_eq!(automatic_decimals(&[0.004], None), 4);
         assert_eq!(automatic_decimals(&[26.1], None), 2);
+        // Whole numbers (oxidation states) without decimals.
+        assert_eq!(automatic_decimals(&[2.0, -1.0, 0.0], None), 0);
+        assert_eq!(automatic_decimals(&[2.0, -1.5], None), 2);
         // Energies: their unit's decimals, whatever the size.
         assert_eq!(automatic_decimals(&[-338.8, 20.8], Some(EnergyUnit::KcalPerMol)), 1);
         assert_eq!(automatic_decimals(&[0.004], Some(EnergyUnit::KcalPerMol)), 1);
