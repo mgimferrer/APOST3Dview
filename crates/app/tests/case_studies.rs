@@ -938,3 +938,41 @@ fn rendering_options() {
         harness.state().save_session_to(&session).unwrap();
     }
 }
+
+/// Pictures for the table-of-contents graphic: nitroprusside with its
+/// NO-Fe-CN axis horizontal (NO to the right), oxidation states on the
+/// envelopes; and the two aligned HONOs of the Be and Mg complexes alone.
+#[test]
+fn toc_pictures() {
+    let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    let results = dir.join("Nitroprusside/NP-EOS.apost.json");
+    let atoms = Atoms::of(&read_results(&results));
+    let metal = atoms.positions[atoms.fragments[0][0]];
+    let axis = atoms.positions[atoms.fragments[1][0]] - metal;
+    let up = (2..atoms.fragments.len())
+        .map(|f| atoms.positions[atoms.fragments[f][0]] - metal)
+        .min_by(|a, b| a.normalize().dot(axis.normalize()).abs().total_cmp(&b.normalize().dot(axis.normalize()).abs()))
+        .unwrap();
+    let view = orientation(up, axis, 0.75, 0.5);
+    // Large labels: the picture is printed about 2.5 cm tall.
+    let patch = format!(
+        "{FIGURE_LOOK}[[structures]]\n{}",
+        results_view("eos.fragments.oxidation_states", 0).replace("labels = true\n", "labels = true\nlabel_size = 70.0\n")
+    );
+    let session = out.join("toc-np.a3dview");
+    let mut harness = build(vec![results], |_| {}, &session, &patch, view, 0.8);
+    save_png(&mut harness, &out.join("toc-np.png"), 2400, 1300);
+    // Be and Mg, aligned, each structure's HONO alone.
+    for (folder, job, name) in [("Be-cAAC-Dip", "Be-cAAC-Dip-EOS", "toc-be"), ("Mg-cAAC-Dip", "Mg-cAAC-Dip-EOS", "toc-mg")] {
+        let results = dir.join(format!("{folder}/{job}.apost.json"));
+        let atoms = Atoms::of(&read_results(&results));
+        let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| frontier_natural_orbitals(harness);
+        let patch = format!(
+            "{FIGURE_LOOK}[appearance.material]\natom_scale = 0.17\nbond_radius = 0.12\n[[structures]]\nhidden_atoms = {}\n[[structures.surfaces]]\nisovalue = 0.05\nvisible = true\n[[structures.surfaces]]\nvisible = false\n",
+            toml_array(&atoms.hydrogens())
+        );
+        let session = out.join(format!("{name}.a3dview"));
+        let mut harness = build(vec![results], setup, &session, &patch, carbene_pi_view(&atoms, 0.0), 0.5);
+        save_png(&mut harness, &out.join(format!("{name}.png")), 1400, 1200);
+    }
+}
