@@ -910,3 +910,31 @@ fn p_benzyne_figure() {
     save_png(&mut harness, &out.join("pb-local-spin.png"), 1400, 1100);
     harness.state().save_session_to(&session).unwrap();
 }
+
+/// Supporting Information: the rendering options on one scene, Be(cAAC)2
+/// with its HONO: (a) no ambient occlusion, perspective; (b) ambient
+/// occlusion, perspective; (c) ambient occlusion, orthographic (the
+/// default); (d) translucent orbital; (e) depth of field.
+#[test]
+fn rendering_options() {
+    let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    let results = dir.join("Be-cAAC-Dip/Be-cAAC-Dip-EOS.apost.json");
+    let atoms = Atoms::of(&read_results(&results));
+    let hydrogens = format!("[[structures]]\nhidden_atoms = {}\n", toml_array(&atoms.hydrogens()));
+    let orbital = |opacity: f32| format!("[[structures.surfaces]]\nisovalue = 0.05\nvisible = true\nopacity = {opacity}\n[[structures.surfaces]]\nvisible = false\n");
+    let variants = [
+        ("render-a-plain", "[appearance]\nambient_occlusion = false\ndepth_of_field = false\n[view]\nprojection = \"perspective\"\n", 1.0),
+        ("render-b-ao", "[appearance]\nambient_occlusion = true\ndepth_of_field = false\n[view]\nprojection = \"perspective\"\n", 1.0),
+        ("render-c-orthographic", "[appearance]\nambient_occlusion = true\ndepth_of_field = false\n[view]\nprojection = \"orthographic\"\n", 1.0),
+        ("render-d-translucent", "[appearance]\nambient_occlusion = true\ndepth_of_field = false\n[view]\nprojection = \"orthographic\"\n", 0.5),
+        ("render-e-dof", "[appearance]\nambient_occlusion = true\ndepth_of_field = true\n[view]\nprojection = \"orthographic\"\n", 1.0),
+    ];
+    for (name, look, opacity) in variants {
+        let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| frontier_natural_orbitals(harness);
+        let patch = format!("{look}[appearance.material]\natom_scale = 0.17\nbond_radius = 0.12\n{hydrogens}{}", orbital(opacity));
+        let session = out.join(format!("{name}.a3dview"));
+        let mut harness = build(vec![results.clone()], setup, &session, &patch, carbene_view(&atoms), 0.62);
+        save_png(&mut harness, &out.join(format!("{name}.png")), 1200, 1000);
+        harness.state().save_session_to(&session).unwrap();
+    }
+}
