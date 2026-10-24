@@ -358,7 +358,7 @@ fn efos_without_the_unweighted_file_are_drawn_as_stored() {
     harness.run_steps(2);
     choose_orbitals(&mut harness, "GEOS EFOs");
     assert!(harness.query_by_label("Advanced").is_none(), "no choice without the unweighted file");
-    harness.get_by_label_contains("APOST-3D 0.17 and later also writes the unweighted EFOs");
+    harness.get_by_label_contains("For an EFO's exact shape use its cube file");
     harness.get_by_label("Frontier").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("Generate 2 orbital(s)").click_accesskit();

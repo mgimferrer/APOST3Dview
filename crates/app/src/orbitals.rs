@@ -270,7 +270,7 @@ pub(crate) fn orbital_surfaces(
                     surface.note = if weighted { None } else { label.and_then(approximate_note) };
                     surface.caption_facts = label.map(|l| {
                         let formulas = l.fragments.iter().map(|&f| fragment_formula_by_id(c.results, &c.molecule.atomic_numbers, f)).collect::<Vec<_>>().join(" + ");
-                        CaptionFacts::of_set_orbital(l, formulas)
+                        CaptionFacts::of_set_orbital(l, formulas, weighted)
                     });
                 }
                 OrbitalNames::Natural(n) => {

@@ -164,7 +164,9 @@ fn number(value: f64) -> String {
 
 impl CaptionFacts {
     /// For an EFO or OSLO, from its row in the results tables.
-    pub(crate) fn of_set_orbital(label: &OrbitalLabel, fragments: String) -> Self {
+    /// `exact`: drawn from APOST-3D's unweighted file, where the fit of the
+    /// other file doesn't matter.
+    pub(crate) fn of_set_orbital(label: &OrbitalLabel, fragments: String, exact: bool) -> Self {
         let (detail, value) = match &label.detail {
             OrbitalDetail::Oslo { foli: Some(foli), .. } => (format!("FOLI {}", number(*foli)), number(*foli)),
             OrbitalDetail::Efo { negative: true, net, .. } => {
@@ -177,10 +179,10 @@ impl CaptionFacts {
             },
             OrbitalDetail::Oslo { foli: None, .. } => (String::new(), String::new()),
         };
-        // The fit only when the orbital is approximate (as the Surfaces
-        // window calls it).
+        // The fit only when the orbital drawn is approximate (as the
+        // Surfaces window calls it): a poor fit of the fitted file.
         let fit = match label.detail {
-            OrbitalDetail::Efo { fit_percent: Some(p), .. } if p < APPROXIMATE_FIT_PERCENT => format!("fit {p:.0}%"),
+            OrbitalDetail::Efo { fit_percent: Some(p), .. } if p < APPROXIMATE_FIT_PERCENT && !exact => format!("fit {p:.0}%"),
             _ => String::new(),
         };
         let detail = [detail, fit].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" \u{b7} ");

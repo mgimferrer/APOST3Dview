@@ -38,7 +38,7 @@ More in [Effective fragment orbitals and OSLOs](results/efos-oslos.md).
 
 Fluoromethane at BP86/def2-SVP, with TFVC atoms, F and CH3 as fragments, and GEOS oxidation states.
 
-Open **Surfaces**, choose *GEOS EFOs* in the **Orbitals:** menu, click **Select all**, then **Generate**. Each orbital is listed with its fragment, its occupation and its fit. Click a name to show that orbital alone.
+Open **Surfaces**, choose *GEOS EFOs* in the **Orbitals:** menu, click **Select all**, then **Generate**. Each orbital is listed with its fragment, its occupation and its fit. Click a name to show that orbital alone. The EFOs are drawn exactly, as in APOST-3D's cube files, not from the approximate projections that other programs show (see [Exact EFOs and the fitted ones](results/efos-oslos.md#exact-efos-and-the-fitted-ones)).
 
 <img class="window" src="images/tour-geos-surfaces.png" alt="The Surfaces window with the GEOS EFOs of CH3F">
 

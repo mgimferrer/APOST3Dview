@@ -201,8 +201,9 @@ impl App {
                     let scheme = results.input.as_ref().and_then(|i| i.atomic_definition.as_ref()).and_then(|d| d.short_name.clone()).unwrap_or_else(|| "atomic".to_string());
                     let hint = format!(
                         "EFOs are drawn from APOST-3D's unweighted orbitals times their fragment's {scheme} weight w_F: exactly the function of \
-                         APOST-3D's cube files. Ticked: the orbitals of the first .fchk exactly as stored, basis-set fits of w_F times the EFO with \
-                         small tails on the other fragments. Changing this redraws the EFOs already generated."
+                         APOST-3D's cube files, and the way to judge an EFO's shape. Ticked: the orbitals of the first .fchk exactly as stored, \
+                         projections of the EFOs onto the basis set, approximate, with small tails on the other fragments (what other programs show \
+                         from that file). Changing this redraws the EFOs already generated."
                     );
                     let mut as_stored = !self.orbital_generation.fragment_weighted;
                     if ui.checkbox(&mut as_stored, "Draw as stored in the .fchk").on_hover_text(hint).changed() {
@@ -217,8 +218,9 @@ impl App {
             None if fitted_only(set, results) => {
                 ui.label(
                     RichText::new(
-                        "Drawn as stored in the .fchk: basis-set fits of the EFOs, with small tails on other fragments. \
-                         APOST-3D 0.17 and later also writes the unweighted EFOs, from which their exact shape is drawn.",
+                        "Drawn as stored in the .fchk: projections of the EFOs onto the basis set, approximate, with small tails on other \
+                         fragments. For an EFO's exact shape use its cube file, or results of APOST-3D 0.17 and later, whose unweighted EFOs \
+                         are drawn exactly.",
                     )
                     .small()
                     .weak(),
