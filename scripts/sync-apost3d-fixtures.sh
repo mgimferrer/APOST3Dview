@@ -91,7 +91,7 @@ if [ -d "$src/tests/reference-orbitals" ]; then
     rm -rf "$orbitals"
     mkdir -p "$orbitals"
     for file in "$src"/tests/reference-orbitals/*.fchk; do
-        job=$(basename "$file" | sed -E 's/-(EOS-EFOs|GEOS-EFOs|OSLOs-preortho|OSLOs)\.fchk$//')
+        job=$(basename "$file" | sed -E 's/-(EOS-EFOs-unweighted|GEOS-EFOs-unweighted|EOS-EFOs|GEOS-EFOs|OSLOs-preortho|OSLOs)\.fchk$//')
         cp "$file" "$orbitals/"
         for f in "$src/tests/reference/$job.apost.json" "$src/tests/reference/$job.apost" "$src/tests/inputs/$job.fchk"; do
             if [ -f "$f" ]; then

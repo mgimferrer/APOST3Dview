@@ -41,6 +41,7 @@ fn facts_line(draft: &InputDraft) -> String {
                 FchkProgram::Gaussian => Some("Gaussian"),
                 FchkProgram::QChem => Some("Q-Chem"),
                 FchkProgram::PySCF => Some("pySCF"),
+                FchkProgram::Orca => Some("ORCA (orca2fchk.py)"),
                 FchkProgram::Unknown => None,
             };
             let shell = if f.correlated { "correlated" } else if f.unrestricted { "unrestricted" } else { "restricted" };

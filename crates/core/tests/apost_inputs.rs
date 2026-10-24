@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use apost3dview_core::{
-    fragments_around, load_apost_results, read_apost_input, read_fchk_facts, separate_molecules, ApostInput, DmFiles, EnpartOptions, Molecule, OxidationStates,
+    fragments_around, load_apost_results, read_apost_input, read_fchk_facts, separate_molecules, ApostInput, DmFiles, FchkProgram, EnpartOptions, Molecule, OxidationStates,
 };
 
 fn fixtures_dir() -> Option<PathBuf> {
@@ -128,7 +128,8 @@ fn rebuilds_the_reference_inputs_from_their_fchk() {
         // (APOST-3D, 2026-10-21), also where a reference input left it out.
         let mut expected = reference.input.clone();
         if facts.correlated && expected.dm.is_none() {
-            expected.dm = Some(DmFiles { dm1: format!("{job}.dm1"), dm2: format!("{job}.dm2") });
+            let program = if facts.program == FchkProgram::Orca { "ORCA" } else { "pySCF" };
+            expected.dm = Some(DmFiles { dm1: format!("{job}.dm1"), dm2: format!("{job}.dm2"), program: program.to_string() });
             dm_added.push(job.clone());
         }
         assert_eq!(input.normalized(), expected.normalized(), "{job}: rebuilt from {job}.fchk");

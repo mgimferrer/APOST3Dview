@@ -139,12 +139,14 @@ pub struct EnpartOptions {
     pub fast_grid: bool,
 }
 
-/// The `# DM` block of a correlated wavefunction from pySCF: `DM 2`, the
-/// 1- and 2-RDM files.
+/// The `# DM` block of a correlated wavefunction: `DM 2`, the 1- and 2-RDM
+/// files, and the program that wrote them ("pySCF" through APOST-3D's
+/// apost3d.py, "ORCA" through its orca2fchk.py).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DmFiles {
     pub dm1: String,
     pub dm2: String,
+    pub program: String,
 }
 
 /// An APOST-3D input, as far as the generator handles one.
@@ -234,7 +236,7 @@ impl ApostInput {
             block("OSLO", &[]);
         }
         if let Some(dm) = &self.dm {
-            block("DM", &[dm.dm1.clone(), dm.dm2.clone(), "pySCF".into()]);
+            block("DM", &[dm.dm1.clone(), dm.dm2.clone(), dm.program.clone()]);
         }
         if let Some(enpart) = &self.enpart
             && enpart.fast_grid
@@ -306,7 +308,8 @@ impl ApostInput {
         // on the local spin section.
         if facts.correlated {
             if self.dm.is_none() {
-                self.dm = Some(DmFiles { dm1: format!("{job}.dm1"), dm2: format!("{job}.dm2") });
+                let program = if facts.program == FchkProgram::Orca { "ORCA" } else { "pySCF" };
+                self.dm = Some(DmFiles { dm1: format!("{job}.dm1"), dm2: format!("{job}.dm2"), program: program.to_string() });
             }
         } else {
             self.dm = None;
@@ -496,7 +499,7 @@ pub fn read_apost_input(text: &str, n_atoms: usize) -> ReadInput {
 
     if dm {
         match block("DM") {
-            [dm1, dm2, program] if *program == "pySCF" => input.dm = Some(DmFiles { dm1: dm1.to_string(), dm2: dm2.to_string() }),
+            [dm1, dm2, program] if *program == "pySCF" || *program == "ORCA" => input.dm = Some(DmFiles { dm1: dm1.to_string(), dm2: dm2.to_string(), program: program.to_string() }),
             lines => other.push(format!("DM 2 with # DM: {}", lines.join(" / "))),
         }
     }
@@ -512,6 +515,8 @@ pub enum FchkProgram {
     Gaussian,
     QChem,
     PySCF,
+    /// An ORCA calculation converted by APOST-3D's orca2fchk.py.
+    Orca,
     Unknown,
 }
 
@@ -552,7 +557,7 @@ impl FchkFacts {
 /// values are skipped, so a large file reads quickly).
 pub fn read_fchk_facts(path: &Path) -> io::Result<FchkFacts> {
     let mut lines = BufReader::new(File::open(path)?).lines();
-    let _title = lines.next().transpose()?;
+    let title = lines.next().transpose()?.unwrap_or_default();
     let line2 = lines.next().transpose()?.unwrap_or_default();
     let method = line2.split_whitespace().nth(1).unwrap_or_default().to_string();
     let mut facts = FchkFacts { program: FchkProgram::Unknown, method, unrestricted: false, open_shell: false, correlated: false, reference_energies: false };
@@ -585,7 +590,9 @@ pub fn read_fchk_facts(path: &Path) -> io::Result<FchkFacts> {
     if upper.contains("CAS") || upper == "CCSD" {
         facts.correlated = true;
     }
-    facts.program = if energies_after_coefficients {
+    facts.program = if title.contains("orca2fchk.py") {
+        FchkProgram::Orca
+    } else if energies_after_coefficients {
         FchkProgram::QChem
     } else if gaussian_version {
         FchkProgram::Gaussian
@@ -623,7 +630,7 @@ mod tests {
             spin: true,
             enpart: Some(EnpartOptions { method: Some(EnpartMethod::Casscf), fast_grid: true }),
             fragments: Some(vec![vec![2], vec![1, 3]]),
-            dm: Some(DmFiles { dm1: "a.dm1".into(), dm2: "a.dm2".into() }),
+            dm: Some(DmFiles { dm1: "a.dm1".into(), dm2: "a.dm2".into(), program: "pySCF".into() }),
             qchem: true,
         };
         let read = read_apost_input(&input.to_text(3), 3);
@@ -642,7 +649,7 @@ mod tests {
         assert_eq!(read.input.oxidation, Some(OxidationStates::Geos));
         assert!(!read.input.spin, "SPIN after the block's end is ignored");
         assert_eq!(read.input.fragments, Some(vec![vec![1, 2, 4], vec![3, 5]]));
-        assert_eq!(read.input.dm, Some(DmFiles { dm1: "x.dm1".into(), dm2: "x.dm2".into() }));
+        assert_eq!(read.input.dm, Some(DmFiles { dm1: "x.dm1".into(), dm2: "x.dm2".into(), program: "pySCF".into() }));
         assert_eq!(read.other, vec!["VERBOSE 1"]);
 
         let text = "# METHOD\nTFVC\nENPART\nOSLO\nCUBE\n#\n# ENPART\nb3lyp\nTHREBOD 50\nTHREBOD 10\n# \n# OSLO\nFOLI_TOLERANCE 3\nPRINT_NONORTHO\n#\n# GRID\nRADIAL_2E 40\nANGULAR_2E 146\nRADIAL 70\n#\n# CUBE\nMAX_OCC 700\n#\n";
