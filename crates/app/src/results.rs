@@ -117,6 +117,14 @@ impl App {
             Ok(_) => self.show_status(format!("APOST-3D results loaded from {results_name}")),
             Err(reason) => self.show_warning(format!("{reason} The results were not loaded.")),
         }
+        // The density drawn is the one APOST-3D analysed (a Gaussian file
+        // with an MP2 density, analysed without DENS 2, shows the SCF one).
+        if let Ok(r) = &results
+            && let Some(densities) = self.structures[index].densities.as_mut()
+            && let Some(kind) = crate::natural::analysed_density_kind(r, &densities.info)
+        {
+            densities.choose_kind(&kind);
+        }
         let sets = results.as_ref().map(|r| crate::orbital_sets::find_orbital_sets(r, results_path)).unwrap_or_default();
         self.structures[index].orbital_sets = sets;
         self.structures[index].active_orbital_set = 0;

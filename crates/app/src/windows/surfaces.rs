@@ -9,7 +9,7 @@ use crate::app::App;
 use crate::windows::ToolWindow;
 use crate::orbital_sets::show_set_checklist;
 use crate::isosurfaces::SurfaceSettings;
-use crate::orbitals::{fragment_weighting, show_mo_checklist, OrbitalAccuracyPreset};
+use crate::orbitals::{fitted_only, fragment_weighting, show_mo_checklist, OrbitalAccuracyPreset};
 use crate::state::LoadedStructure;
 
 /// What the surface list asks for after drawing.
@@ -181,25 +181,28 @@ impl App {
         });
         let has_beta = set.labels(true).iter().any(Option::is_some);
         let list_height = if has_beta { 110.0 } else { 160.0 };
-        show_set_checklist(ui, set, false, results, molecule, list_height);
+        // Drawn from the unweighted file, EFOs are exact (no "approximate").
+        let exact = self.orbital_generation.fragment_weighted && matches!(fragment_weighting(set, results), Some(Ok(_)));
+        show_set_checklist(ui, set, false, results, molecule, list_height, exact);
         if has_beta {
-            show_set_checklist(ui, set, true, results, molecule, list_height);
+            show_set_checklist(ui, set, true, results, molecule, list_height, exact);
         } else if let Some(note) = &set.set.beta_note {
             ui.label(RichText::new(note).small().weak());
         }
-        // EFOs are drawn times their fragment's weight whenever the results
-        // have the atomic weights (APOST-3D 0.16 on, real-space atoms), as
-        // APOST-3D's cube files are; drawing them as stored is kept out of
-        // the way, under Advanced (Martí, 2026-10-22).
+        // EFOs are drawn from APOST-3D's unweighted file times their
+        // fragment's weight whenever the results have both (APOST-3D 0.17
+        // on, real-space atoms): exactly the function of its cube files.
+        // Drawing the other file as stored is kept out of the way, under
+        // Advanced (Martí, 2026-10-22).
         let mut reweigh = None;
-        match fragment_weighting(&set.set, results).map(|cells| cells.err()) {
+        match fragment_weighting(set, results).map(|cells| cells.err()) {
             Some(None) => {
                 egui::CollapsingHeader::new(RichText::new("Advanced").small()).id_salt("set_orbitals_advanced").default_open(false).show(ui, |ui| {
                     let scheme = results.input.as_ref().and_then(|i| i.atomic_definition.as_ref()).and_then(|d| d.short_name.clone()).unwrap_or_else(|| "atomic".to_string());
                     let hint = format!(
-                        "EFOs are drawn times their fragment's {scheme} weight w_F, like APOST-3D's cube files: the orbitals of the .fchk are basis-set fits \
-                         of w_F times the EFO, with small tails on the other fragments, which the weight removes. Ticked: the orbitals exactly as stored \
-                         in the .fchk, tails included. Changing this redraws the EFOs already generated."
+                        "EFOs are drawn from APOST-3D's unweighted orbitals times their fragment's {scheme} weight w_F: exactly the function of \
+                         APOST-3D's cube files. Ticked: the orbitals of the first .fchk exactly as stored, basis-set fits of w_F times the EFO with \
+                         small tails on the other fragments. Changing this redraws the EFOs already generated."
                     );
                     let mut as_stored = !self.orbital_generation.fragment_weighted;
                     if ui.checkbox(&mut as_stored, "Draw as stored in the .fchk").on_hover_text(hint).changed() {
@@ -210,6 +213,16 @@ impl App {
             }
             Some(Some(reason)) => {
                 ui.label(RichText::new(format!("The atomic weights of the results can't be used: {reason}")).small().color(ui.visuals().warn_fg_color));
+            }
+            None if fitted_only(set, results) => {
+                ui.label(
+                    RichText::new(
+                        "Drawn as stored in the .fchk: basis-set fits of the EFOs, with small tails on other fragments. \
+                         APOST-3D 0.17 and later also writes the unweighted EFOs, from which their exact shape is drawn.",
+                    )
+                    .small()
+                    .weak(),
+                );
             }
             None => {}
         }

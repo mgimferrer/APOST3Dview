@@ -200,3 +200,37 @@ fn a_mean_field_file_has_no_density_choice() {
     assert_eq!(harness.query_all(By::new().role(egui::accesskit::Role::ComboBox)).filter(|n| n.value().as_deref() == Some("SCF")).count(), 0);
     assert_eq!(harness.query_all_by_label_contains("Natural orbitals").count(), 0);
 }
+
+/// With APOST-3D results attached, the density drawn is the one APOST-3D
+/// analysed: the block the results file names (`wavefunction.density`,
+/// schema 0.17), or, in an older file, the `DENS n` of its input. A Gaussian
+/// MP2 file analysed without `DENS 2` shows its SCF density.
+#[test]
+fn the_density_apost3d_analysed_is_drawn() {
+    let Some(dir) = fixtures_dir() else { return };
+    let job = "H2O-MP2-DENS2";
+    let original: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join(format!("{job}.apost.json"))).unwrap()).unwrap();
+    if original.pointer("/wavefunction/density").is_none() {
+        eprintln!("{job} predates APOST-3D 0.17 (no wavefunction.density): test skipped");
+        return;
+    }
+    let mut scf = original.clone();
+    scf["wavefunction"]["density"] = serde_json::json!({"fchk_block": "Total SCF Density", "index": 1, "source": "fchk"});
+    let mut older = original.clone();
+    older["wavefunction"].as_object_mut().unwrap().remove("density");
+    for (case, results, expected) in [("mp2", &original, "Total density (MP2)"), ("scf", &scf, "Total density"), ("dens-2", &older, "Total density (MP2)")] {
+        let folder = scratch_dir(&format!("analysed-density-{case}"));
+        std::fs::copy(dir.join(format!("{job}.fchk")), folder.join(format!("{job}.fchk"))).unwrap();
+        std::fs::write(folder.join(format!("{job}.apost.json")), serde_json::to_vec(results).unwrap()).unwrap();
+        let mut harness = app_with(vec![folder.join(format!("{job}.apost.json"))]);
+        harness.get_by_label("Surfaces").click_accesskit();
+        harness.run_steps(2);
+        harness.get_by_label("Clear").click_accesskit();
+        harness.get_by_label("Total density").click_accesskit();
+        harness.run_steps(2);
+        harness.get_by_label("Generate 1 surface(s)").click_accesskit();
+        harness.run_steps(4);
+        let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
+        assert_eq!(labels, vec![expected.to_string()], "{case}");
+    }
+}

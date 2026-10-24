@@ -87,6 +87,15 @@ fn efos_say_how_closely_the_file_reproduces_them() {
     assert_eq!(harness.query_all_by_label_contains("Approximate shape").count(), 0);
     harness.get_all_by_label(&labels[1]).next().unwrap().click_accesskit();
     harness.run_steps(2);
+    // With APOST-3D's unweighted file (0.17) the EFO is drawn exactly: no
+    // note until the fitted file is drawn as stored.
+    if harness.query_by_label("Advanced").is_some() {
+        assert_eq!(harness.query_all_by_label_contains("Approximate shape").count(), 0, "drawn exactly");
+        harness.get_by_label("Advanced").click_accesskit();
+        harness.run_steps(2);
+        harness.get_by_label("Draw as stored in the .fchk").click_accesskit();
+        harness.run_steps(4);
+    }
     harness.get_by_label_contains("reproduces this EFO to 52% only");
     screenshot(&mut harness, "efo-approximate");
 }

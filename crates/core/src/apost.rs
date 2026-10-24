@@ -270,6 +270,27 @@ pub struct WavefunctionSummary {
     pub n_alpha: Option<u32>,
     pub n_beta: Option<u32>,
     pub energy_au: Option<f64>,
+    /// The density APOST-3D analysed (since 0.17).
+    pub density: Option<DensityAnalysed>,
+}
+
+/// Which density of the `.fchk` APOST-3D analysed (`wavefunction.density`,
+/// since 0.17): the block's literal header ("Total SCF Density", "Total MP2
+/// Density"), its position among the file's total-density blocks (`DENS n`),
+/// and whether the 1-RDM of `# DM` replaced it ("dm1": the block named is
+/// then the one its writer filled with the same density).
+#[derive(Debug, Clone, Deserialize)]
+pub struct DensityAnalysed {
+    pub fchk_block: String,
+    pub index: Option<u32>,
+    pub source: Option<String>,
+}
+
+impl DensityAnalysed {
+    /// The block's kind as the `.fchk` density scan names it: "SCF", "MP2".
+    pub fn kind(&self) -> Option<&str> {
+        self.fchk_block.strip_prefix("Total ")?.strip_suffix(" Density")
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -474,6 +495,11 @@ pub struct OrbitalSet {
     pub preortho: bool,
     /// The `.fchk` file, a bare name in the results file's folder.
     pub file: String,
+    /// The same EFOs before the multiplication by their fragment's weight
+    /// (`orbital_file_unweighted`, since 0.17, real-space atoms only): each
+    /// is an exact basis-set vector φ, and the EFO is w_F·φ, exactly what
+    /// APOST-3D's cube file holds. `file` holds least-squares fits of w_F·φ.
+    pub unweighted_file: Option<String>,
     /// The run id the file must carry on its first line (since 0.8).
     pub file_id: Option<String>,
     /// Per alpha orbital of the file (index = `.fchk` column - 1): its
@@ -601,7 +627,8 @@ impl ApostResults {
             let Some(block) = self.raw.pointer(&base) else { continue };
             let Some(file) = block.get("orbital_file").and_then(Value::as_str) else { continue };
             let file_id = block.get("orbital_file_id").and_then(Value::as_str).map(str::to_string);
-            let mut set = OrbitalSet { analysis: analysis.to_string(), preortho: false, file: file.to_string(), file_id, alpha: Vec::new(), beta: Vec::new(), beta_note: None, frontier: None };
+            let unweighted_file = block.get("orbital_file_unweighted").and_then(Value::as_str).map(str::to_string);
+            let mut set = OrbitalSet { analysis: analysis.to_string(), preortho: false, file: file.to_string(), unweighted_file, file_id, alpha: Vec::new(), beta: Vec::new(), beta_note: None, frontier: None };
             let beta = block.get("beta");
             if beta.and_then(|b| b.get("same_as_alpha")).and_then(Value::as_bool) == Some(true) {
                 set.beta_note = Some("The \u{3b2} orbitals are the same as the \u{3b1} ones.".to_string());
@@ -661,7 +688,7 @@ impl ApostResults {
             }
             // The same OSLOs before orthogonalization, labeled alike.
             if let Some(preortho) = block.get("orbital_file_preortho").and_then(Value::as_str) {
-                let before = OrbitalSet { preortho: true, file: preortho.to_string(), ..set.clone() };
+                let before = OrbitalSet { preortho: true, file: preortho.to_string(), unweighted_file: None, ..set.clone() };
                 sets.push(set);
                 sets.push(before);
             } else {

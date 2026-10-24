@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use apost3dview_core::{generate_density_grid, generate_mo_grids, generate_weighted_mo_grids, ApostResults, AtomCells, MolecularOrbitals, Molecule, OrbitalSet, Wavefunction};
+use apost3dview_core::{generate_density_grid, generate_mo_grids, generate_weighted_mo_grids, ApostResults, AtomCells, MolecularOrbitals, Molecule, Wavefunction};
 
 use crate::app::App;
 use crate::isosurfaces::{density_settings, Surface, SurfaceSettings, SurfaceSource};
@@ -178,18 +178,25 @@ pub(crate) struct SetContext<'a> {
 }
 
 /// What an EFO set's orbitals are multiplied by: their fragment's atomic
-/// weight w_F, from the results file's `atomic_weights` (schema 0.16:
-/// BECKE, BECKE-RHO and TFVC atoms). The orbitals APOST-3D writes are
-/// basis-set fits of w_F times the EFO, with small tails on the other
-/// fragments; times w_F once more, the tails go. `None` for OSLOs (exact
-/// localized orbitals, not fragment-weighted), for Hilbert-space and
-/// Hirshfeld atoms and for files before 0.16 (no weights: drawn as stored);
-/// `Err` when the file's weights can't be used.
-pub(crate) fn fragment_weighting(set: &OrbitalSet, results: &ApostResults) -> Option<Result<AtomCells, String>> {
-    if !matches!(set.analysis.as_str(), "eos" | "geos") {
+/// weight w_F, from the results file's `atomic_weights` (BECKE, BECKE-RHO
+/// and TFVC atoms). Only for sets with the unweighted file (schema 0.17):
+/// its orbitals φ are exact basis-set vectors and w_F·φ is the EFO, exactly
+/// what APOST-3D's cube file holds. The other file holds least-squares fits
+/// of w_F·φ (small tails on other fragments) and is never multiplied again:
+/// that would draw ≈ w_F²·φ. `None` for OSLOs, for Hilbert-space and
+/// Hirshfeld atoms and for files before 0.17 (drawn as stored); `Err` when
+/// the file's weights can't be used.
+pub(crate) fn fragment_weighting(set: &LoadedOrbitalSet, results: &ApostResults) -> Option<Result<AtomCells, String>> {
+    if !matches!(set.set.analysis.as_str(), "eos" | "geos") || set.unweighted_path.is_none() {
         return None;
     }
     results.atom_cells()
+}
+
+/// An EOS/GEOS set of results with atomic weights but no unweighted file
+/// (written by APOST-3D before 0.17): its EFOs can only be drawn as stored.
+pub(crate) fn fitted_only(set: &LoadedOrbitalSet, results: &ApostResults) -> bool {
+    matches!(set.set.analysis.as_str(), "eos" | "geos") && set.unweighted_path.is_none() && results.atom_cells().is_some()
 }
 
 /// How generated orbitals are named: the SCF ones "HOMO"/"MO 12", an
@@ -213,6 +220,19 @@ pub(crate) fn orbital_surfaces(
     settings: SurfaceSettings,
     names: OrbitalNames,
 ) -> Result<Vec<Surface>, String> {
+    let weighting = match &names {
+        OrbitalNames::Set(c) if c.weighted => fragment_weighting(c.set, c.results).transpose().map_err(|reason| format!("the atomic weights of the results file can't be used: {reason}"))?,
+        _ => None,
+    };
+    // Weighted EFOs come from the unweighted file (same orbital layout).
+    let wfn = match (&weighting, &names) {
+        (Some(_), OrbitalNames::Set(c)) => match &c.set.unweighted {
+            Some(Ok(unweighted)) => unweighted,
+            Some(Err(reason)) => return Err(reason.clone()),
+            None => return Err("the unweighted EFO file was not read".to_string()),
+        },
+        _ => wfn,
+    };
     let mut requests: Vec<(&MolecularOrbitals, usize)> = Vec::new();
     for choice in choices {
         let orbitals = if choice.beta { wfn.beta.as_ref().ok_or("this wavefunction has no beta orbitals")? } else { &wfn.alpha };
@@ -221,10 +241,6 @@ pub(crate) fn orbital_surfaces(
         }
         requests.push((orbitals, choice.mo_index));
     }
-    let weighting = match &names {
-        OrbitalNames::Set(c) if c.weighted => fragment_weighting(&c.set.set, c.results).transpose().map_err(|reason| format!("the atomic weights of the results file can't be used: {reason}"))?,
-        _ => None,
-    };
     let grids = match &weighting {
         Some(cells) => {
             let OrbitalNames::Set(c) = &names else { unreachable!() };
@@ -250,7 +266,8 @@ pub(crate) fn orbital_surfaces(
                 OrbitalNames::Set(c) => {
                     let label = c.set.labels(choice.beta).get(choice.mo_index).and_then(Option::as_ref);
                     surface.fragment_tint = label.map(|l| fragment_tint(c.results, c.molecule, l));
-                    surface.note = label.and_then(approximate_note);
+                    // Drawn from the unweighted file, an EFO is exact.
+                    surface.note = if weighted { None } else { label.and_then(approximate_note) };
                     surface.caption_facts = label.map(|l| {
                         let formulas = l.fragments.iter().map(|&f| fragment_formula_by_id(c.results, &c.molecule.atomic_numbers, f)).collect::<Vec<_>>().join(" + ");
                         CaptionFacts::of_set_orbital(l, formulas)

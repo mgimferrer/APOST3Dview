@@ -11,7 +11,7 @@
 
 use std::path::Path;
 
-use apost3dview_core::{natural_orbitals, read_fchk_density, scan_fchk_densities, FchkDensities, MolecularOrbitals, Wavefunction};
+use apost3dview_core::{natural_orbitals, read_fchk_density, scan_fchk_densities, ApostResults, FchkDensities, MolecularOrbitals, Wavefunction};
 
 /// Natural occupations below this are left out of a density (their sum
 /// stays far below anything an isosurface shows).
@@ -75,6 +75,37 @@ impl Densities {
     pub(crate) fn by_key(&self, key: &str) -> Option<&NaturalOrbitals> {
         self.natural.iter().find(|n| n.key() == key)
     }
+
+    /// Makes "Total density" and "Spin density" the density of block
+    /// `kind` ("SCF", "MP2"), when it is offered.
+    pub(crate) fn choose_kind(&mut self, kind: &str) {
+        if let Some(i) = self.natural.iter().position(|n| n.kind == kind) {
+            self.chosen = Some(i);
+        } else if kind == "SCF" && self.offers_mean_field() {
+            self.chosen = None;
+        }
+    }
+}
+
+/// The density block APOST-3D analysed, as a kind of the `.fchk`'s density
+/// scan ("SCF", "MP2"): named by the results file (`wavefunction.density`,
+/// since 0.17), or else the n-th total-density block of `DENS n` in the
+/// input it stores (the first without DENS), as APOST-3D reads it.
+pub(crate) fn analysed_density_kind(results: &ApostResults, info: &FchkDensities) -> Option<String> {
+    if let Some(density) = results.wavefunction.as_ref().and_then(|w| w.density.as_ref()) {
+        return density.kind().map(str::to_string);
+    }
+    let text = results.input.as_ref()?.text.as_deref()?;
+    let n = text
+        .lines()
+        .find_map(|line| {
+            let line = line.trim().replace('=', " ");
+            let mut words = line.split_whitespace();
+            words.next().filter(|w| w.eq_ignore_ascii_case("DENS"))?;
+            words.next()?.parse::<usize>().ok()
+        })
+        .unwrap_or(1);
+    info.kinds.get(n.checked_sub(1)?).cloned()
 }
 
 /// The two natural orbitals either side of occupation 1 (the last above

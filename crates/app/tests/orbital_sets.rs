@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use egui_kittest::kittest::{By, Queryable};
 
-use common::{app_with, example, repo_dir, scratch_dir, screenshot, toasts};
+use common::{app_with, example, fixtures_dir, repo_dir, scratch_dir, screenshot, toasts};
 
 fn orbital_fixtures() -> Option<PathBuf> {
     let dir = repo_dir().join("fixtures/apost3d-orbitals");
@@ -261,23 +261,30 @@ fn sessions_keep_analysis_orbitals() {
     assert_eq!(harness.state().surface_labels(), vec![("OSLO 9 \u{b7} 1 CH3 + 2 CH3".to_string(), true)]);
 }
 
-/// Schema 0.16: EOS/GEOS EFOs are drawn times their fragment's atomic
-/// weight (the fit's tails on other fragments go); "Draw as stored in the
-/// .fchk", under Advanced, redraws the ones already drawn as stored in the
-/// file, unticking it gives back the same picture, and a session keeps the
-/// choice. OSLOs have no such box.
+/// A CH3F GEOS run with APOST-3D's unweighted EFO file (schema 0.17): the
+/// example once refreshed, else the reference run of the fixtures.
+fn ch3f_geos_with_unweighted_efos() -> Option<PathBuf> {
+    let candidates = [example("CH3F-GEOS").join("CH3F-GEOS.apost.json"), fixtures_dir().map(|d| d.join("../apost3d-orbitals/CH3F-GEOS.apost.json")).unwrap_or_default()];
+    let found = candidates.into_iter().find(|p| std::fs::read_to_string(p).is_ok_and(|t| t.contains("orbital_file_unweighted")));
+    if found.is_none() {
+        eprintln!("no CH3F-GEOS results with the unweighted EFO file (APOST-3D 0.17): test skipped");
+    }
+    found
+}
+
+/// EFOs are drawn from APOST-3D's unweighted file times their fragment's
+/// weight, the function of its cube files (core test `efo_cubes`). The
+/// fitted file can still be drawn as stored, under Advanced; unticking
+/// gives the same picture back, and a session keeps the choice. OSLOs
+/// have no such box.
 #[test]
-fn efos_lose_their_tails_on_other_fragments() {
-    let dir = example("CH3F-GEOS");
-    let mut harness = app_with(vec![dir.join("CH3F-GEOS.apost.json")]);
+fn efos_are_drawn_from_the_unweighted_file() {
+    let Some(results) = ch3f_geos_with_unweighted_efos() else { return };
+    let mut harness = app_with(vec![results]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     choose_orbitals(&mut harness, "GEOS EFOs");
     let trim = "Draw as stored in the .fchk";
-    if harness.query_by_label("Advanced").is_none() {
-        eprintln!("examples/CH3F-GEOS predates APOST-3D 0.16: no atomic weights");
-        return;
-    }
     harness.get_by_label("Frontier").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("Generate 2 orbital(s)").click_accesskit();
@@ -320,4 +327,43 @@ fn efos_lose_their_tails_on_other_fragments() {
     oslo.run_steps(2);
     choose_orbitals(&mut oslo, "OSLOs");
     assert!(oslo.query_by_label("Advanced").is_none() && oslo.query_by_label(trim).is_none());
+}
+
+/// Results written before APOST-3D 0.17 have no unweighted file: their
+/// EFOs are drawn as stored (multiplying the fits by the weight again would
+/// draw w_F² times the EFO), with a note saying why.
+#[test]
+fn efos_without_the_unweighted_file_are_drawn_as_stored() {
+    let source = example("CH3F-GEOS");
+    let dir = scratch_dir("efos-before-0.17");
+    for entry in std::fs::read_dir(&source).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if name.contains("unweighted") {
+            continue;
+        }
+        let text_or_bytes = std::fs::read(&path).unwrap();
+        if name.ends_with(".apost.json") {
+            let mut json: serde_json::Value = serde_json::from_slice(&text_or_bytes).unwrap();
+            if let Some(geos) = json.pointer_mut("/analyses/geos").and_then(|g| g.as_object_mut()) {
+                geos.remove("orbital_file_unweighted");
+            }
+            std::fs::write(dir.join(&name), serde_json::to_vec(&json).unwrap()).unwrap();
+        } else {
+            std::fs::write(dir.join(&name), text_or_bytes).unwrap();
+        }
+    }
+    let mut harness = app_with(vec![dir.join("CH3F-GEOS.apost.json")]);
+    harness.get_by_label("Surfaces").click_accesskit();
+    harness.run_steps(2);
+    choose_orbitals(&mut harness, "GEOS EFOs");
+    assert!(harness.query_by_label("Advanced").is_none(), "no choice without the unweighted file");
+    harness.get_by_label_contains("APOST-3D 0.17 and later also writes the unweighted EFOs");
+    harness.get_by_label("Frontier").click_accesskit();
+    harness.run_steps(2);
+    harness.get_by_label("Generate 2 orbital(s)").click_accesskit();
+    harness.run_steps(4);
+    let session = dir.join("stored.a3dview");
+    harness.state().save_session_to(&session).unwrap();
+    assert!(!std::fs::read_to_string(&session).unwrap().contains("fragment_weighted"), "drawn as stored");
 }

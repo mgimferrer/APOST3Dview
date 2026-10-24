@@ -22,6 +22,11 @@ pub(crate) struct LoadedOrbitalSet {
     /// Read on first use, after checking the file belongs to the open
     /// `.fchk` (same atoms and basis): `Err` says why it can't be used.
     pub(crate) wavefunction: Option<Result<Wavefunction, String>>,
+    /// The unweighted EFOs (since 0.17), when that file is next to the
+    /// results: what EFOs are drawn from, times their fragment's weight.
+    pub(crate) unweighted_path: Option<PathBuf>,
+    /// Read with `wavefunction`, with the same checks.
+    pub(crate) unweighted: Option<Result<Wavefunction, String>>,
     pub(crate) selected_alpha: HashSet<usize>,
     pub(crate) selected_beta: HashSet<usize>,
 }
@@ -34,7 +39,8 @@ pub(crate) fn find_orbital_sets(results: &ApostResults, results_path: &Path) -> 
         .into_iter()
         .filter_map(|set| {
             let path = dir.join(Path::new(&set.file).file_name()?);
-            path.is_file().then(|| LoadedOrbitalSet { set, path, wavefunction: None, selected_alpha: HashSet::new(), selected_beta: HashSet::new() })
+            let unweighted_path = set.unweighted_file.as_ref().and_then(|f| Path::new(f).file_name()).map(|f| dir.join(f)).filter(|p| p.is_file());
+            path.is_file().then(|| LoadedOrbitalSet { set, path, wavefunction: None, unweighted_path, unweighted: None, selected_alpha: HashSet::new(), selected_beta: HashSet::new() })
         })
         .collect()
 }
@@ -45,16 +51,9 @@ impl LoadedOrbitalSet {
         if self.wavefunction.is_some() {
             return;
         }
-        let name = self.set.file.clone();
-        let result = (|| {
-            let main = parse_fchk_summary(main_fchk).map_err(|e| e.to_string())?;
-            let own = parse_fchk_summary(&self.path).map_err(|e| e.to_string())?;
-            check_orbital_file(&main, &own).map_err(|reason| format!("{name} does not belong to the open .fchk: {reason}"))?;
-            let found = orbital_file_run_id(&self.path).map_err(|e| format!("{name} could not be read: {e}"))?;
-            check_orbital_file_id(self.set.file_id.as_deref(), found.as_deref()).map_err(|reason| format!("{name} does not belong to these results: {reason}. Run APOST-3D again to write it anew."))?;
-            parse_fchk_wavefunction(&self.path).map_err(|e| format!("{name} could not be read: {e}"))
-        })();
-        self.wavefunction = Some(result);
+        let file_id = self.set.file_id.clone();
+        self.wavefunction = Some(read_orbital_file(main_fchk, &self.path, file_id.as_deref()));
+        self.unweighted = self.unweighted_path.as_ref().map(|path| read_orbital_file(main_fchk, path, file_id.as_deref()));
     }
 
     /// The channel names of this set: alpha/beta, paired/unpaired (GEOS),
@@ -92,6 +91,18 @@ impl LoadedOrbitalSet {
     }
 }
 
+/// Reads an orbital file of the results at `path`, after checking it
+/// belongs to the open `.fchk` (same atoms and basis) and to the run.
+fn read_orbital_file(main_fchk: &Path, path: &Path, file_id: Option<&str>) -> Result<Wavefunction, String> {
+    let name = crate::util::file_display_name(path);
+    let main = parse_fchk_summary(main_fchk).map_err(|e| e.to_string())?;
+    let own = parse_fchk_summary(path).map_err(|e| e.to_string())?;
+    check_orbital_file(&main, &own).map_err(|reason| format!("{name} does not belong to the open .fchk: {reason}"))?;
+    let found = orbital_file_run_id(path).map_err(|e| format!("{name} could not be read: {e}"))?;
+    check_orbital_file_id(file_id, found.as_deref()).map_err(|reason| format!("{name} does not belong to these results: {reason}. Run APOST-3D again to write it anew."))?;
+    parse_fchk_wavefunction(path).map_err(|e| format!("{name} could not be read: {e}"))
+}
+
 /// "1 CH3 + 2 CH3".
 fn fragments_text(results: &ApostResults, molecule: &Molecule, label: &OrbitalLabel) -> String {
     label.fragments.iter().map(|&f| fragment_name_by_id(results, &molecule.atomic_numbers, f)).collect::<Vec<_>>().join(" + ")
@@ -100,7 +111,8 @@ fn fragments_text(results: &ApostResults, molecule: &Molecule, label: &OrbitalLa
 /// Below this fit, the orbital APOST-3D writes to the `.fchk` (a basis-set
 /// fit of the EFO times its fragment's weight) can show lobes the exact
 /// orbital doesn't have (APOST-3D docs, guide/visualization.md, "What the
-/// surfaces show"; checked there against the exact cubes).
+/// surfaces show"; checked there against the exact cubes). Drawn from the
+/// unweighted file (0.17), an EFO is exact and the fit doesn't matter.
 pub(crate) const APPROXIMATE_FIT_PERCENT: f64 = 60.0;
 
 /// How closely the orbital in the file reproduces the EFO, in percent.
@@ -163,7 +175,7 @@ fn frontier_kind(set: &OrbitalSet, beta: bool, index: usize) -> Option<FrontierK
 
 /// The tick-box list of one channel of a set: only the orbitals the tables
 /// describe, each with its fragment colors, name and numbers.
-pub(crate) fn show_set_checklist(ui: &mut egui::Ui, set: &mut LoadedOrbitalSet, beta: bool, results: &ApostResults, molecule: &Molecule, height: f32) {
+pub(crate) fn show_set_checklist(ui: &mut egui::Ui, set: &mut LoadedOrbitalSet, beta: bool, results: &ApostResults, molecule: &Molecule, height: f32, exact: bool) {
     let count = set.labels(beta).iter().flatten().count();
     if count == 0 {
         return;
@@ -199,7 +211,7 @@ pub(crate) fn show_set_checklist(ui: &mut egui::Ui, set: &mut LoadedOrbitalSet, 
                     };
                     ui.label(RichText::new(tag).small().strong()).on_hover_text(meaning);
                 }
-                if let Some(note) = approximate_note(label) {
+                if let Some(note) = approximate_note(label).filter(|_| !exact) {
                     ui.label(RichText::new("approximate").small().color(ui.visuals().warn_fg_color)).on_hover_text(note);
                 }
             });
