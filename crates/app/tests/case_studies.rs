@@ -571,25 +571,65 @@ fn results_view(id: &str, focus: usize) -> String {
     format!("[structures.results_view]\nvisible = true\nfocus = {focus}\nlabels = true\n[structures.results_view.shown]\nshow = \"quantity\"\nid = \"{id}\"\n")
 }
 
+/// `view` with value labels and legend sized for a picture printed small
+/// (both relative to the defaults: 34 px labels, legend size 1).
+fn print_sized(view: &str, label_size: f32, legend_size: f32) -> String {
+    view.replace("labels = true\n", &format!("labels = true\nlabel_size = {label_size:.1}\nlegend_size = {legend_size:.2}\n"))
+}
+
 #[test]
 fn ferrocene_iqa() {
     let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
-    let results = dir.join("FeCp2/FeCp2-IQA.apost.json");
+    // The run with every atom pair integrated numerically (THREBOD -1, the
+    // paper's numbers; revision-1 on the cluster), next to a copy of its
+    // .fchk under the job's name.
+    let job = "FeCp2-IQA-ALLPAIRS";
+    let run = dir.join(format!("revision-1/results/ferrocene-iqa/{job}.apost.json"));
+    if !run.is_file() {
+        eprintln!("{} not found", run.display());
+        return;
+    }
+    let folder = common::scratch_dir("ferrocene-iqa-allpairs");
+    std::fs::copy(&run, folder.join(format!("{job}.apost.json"))).unwrap();
+    std::fs::copy(dir.join("FeCp2/FeCp2-IQA.fchk"), folder.join(format!("{job}.fchk"))).unwrap();
+    let results = folder.join(format!("{job}.apost.json"));
     let atoms = Atoms::of(&read_results(&results));
-    // A Cp as focus, colors on a logarithmic scale: Fe-Cp strongly
-    // attractive, Cp-Cp weakly repulsive (JCP 2024 Table II). Fe as focus
-    // between atoms: each Fe-C (Table III), values only.
+    // Ferrocene on its side (the rings left and right, as in the TOC
+    // picture), so fragment labels don't overlap.
+    let axis = atoms.centroid(&atoms.fragments[2]) - atoms.centroid(&atoms.fragments[1]);
+    let front = atoms.fragments[1].iter().copied().find(|&a| atoms.symbols[a] == "C").unwrap();
+    let toward = atoms.positions[front] - atoms.centroid(&atoms.fragments[1]);
+    let side = orientation(axis.cross(toward), axis, 0.45, 0.35);
+    // Between atoms, seen more from above and without the H atoms (their Fe-H
+    // values are small), so the ten Fe-C values stand clear of each other.
+    let above = orientation(axis.cross(toward), axis, 0.8, 0.35);
+    // (a) A Cp as focus: Fe-Cp strongly attractive, Cp-Cp repulsive. (b, c)
+    // Fe as focus, between atoms: the classical (electrostatic) and the
+    // exchange-correlation part of each Fe-C and Fe-H interaction, on one
+    // fixed range (the largest, xc Fe-C), so the two compare.
+    let fixed = 0.095;
+    let ranges = format!(
+        "[color_ranges.\"enpart.classical_interaction.atoms\"]\nscale = \"diverging\"\nmax_abs = {fixed}\nhalf = \"negative\"\n\
+         [color_ranges.\"enpart.xc.atoms\"]\nscale = \"diverging\"\nmax_abs = {fixed}\nhalf = \"negative\"\n"
+    );
     let views = [
-        ("ferrocene-iqa-fragments", "enpart.total.fragments", 1, "log_scale = true\n"),
-        ("ferrocene-iqa-atoms", "enpart.total.atoms", 0, "names = false\n"),
+        ("ferrocene-iqa-fragments", "enpart.total.fragments", 1, "", side, 1.6),
+        ("ferrocene-iqa-classical", "enpart.classical_interaction.atoms", 0, "names = false\n", above, 1.0),
+        ("ferrocene-iqa-xc", "enpart.xc.atoms", 0, "names = false\n", above, 1.0),
     ];
-    for (name, id, focus, extra) in views {
-        let view = results_view(id, focus).replace("labels = true\n", &format!("labels = true\n{extra}"));
-        let patch = format!("{FIGURE_LOOK}{}{view}", structure_patch(&atoms, false));
+    for (name, id, focus, extra, view_orientation, zoom) in views {
+        // Each part prints at a third of the page width (5.6 cm), at the
+        // size it is rendered (1328 px at 600 DPI).
+        let view = print_sized(&results_view(id, focus), 40.0, 1.7).replace("labels = true\n", &format!("labels = true\n{extra}"));
+        let mut structure = structure_patch(&atoms, false);
+        if focus == 0 {
+            structure.push_str(&format!("hidden_atoms = {}\n", toml_array(&atoms.hydrogens())));
+        }
+        let patch = format!("{FIGURE_LOOK}{ranges}{structure}{view}");
         let session = out.join(format!("{name}.a3dview"));
-        let mut harness = build(vec![results.clone()], |_| {}, &session, &patch, ferrocene_view(&atoms), 1.05);
+        let mut harness = build(vec![results.clone()], |_| {}, &session, &patch, view_orientation, zoom);
         eprintln!("{name}: {:?}", harness.state().legend_title());
-        save_png(&mut harness, &out.join(format!("{name}.png")), 1200, 1000);
+        save_png(&mut harness, &out.join(format!("{name}.png")), 1328, 1500);
         harness.state().save_session_to(&session).unwrap();
     }
 }
@@ -761,15 +801,15 @@ fn carbonyl_efos() {
     let results = dir.join("FeCO6/FeCO6-EOS.apost.json");
     let co = dir.join("FeCO6/CO.fchk");
     let atoms = Atoms::of(&read_results(&results));
-    // TCA 2026 Fig 1: the pi*, sigma and pi EFOs of the CO pointing up in
+    // TCA 2026 Fig 1: the sigma, pi and pi* EFOs of the CO pointing up in
     // [Fe(CO)6]2+ (fragment 2), above the same orbitals of free CO, its
-    // canonical MOs (neutral CO: 1pi = MOs 5, 6; 5sigma, the HOMO, = 7;
-    // 2pi* = 8, 9), at 0.05.
-    let rows = [65, 66, 47, 32, 33];
-    let mos = [8, 9, 7, 5, 6];
+    // canonical MOs (neutral CO: 5sigma, the HOMO, = 7; 1pi = MOs 5, 6;
+    // 2pi* = 8, 9), at 0.05, in the order sigma, pi, pi*.
+    let rows = [47, 32, 33, 65, 66];
+    let mos = [7, 5, 6, 8, 9];
     let captions = [
-        "\u{3c0}* 0.065", "\u{3c0}* 0.065", "\u{3c3} 0.799", "\u{3c0} 0.994", "\u{3c0} 0.994",
-        "CO \u{3c0}*", "CO \u{3c0}*", "CO \u{3c3} (HOMO)", "CO \u{3c0}", "CO \u{3c0}",
+        "\u{3c3} 0.799", "\u{3c0} 0.994", "\u{3c0} 0.994", "\u{3c0}* 0.065", "\u{3c0}* 0.065",
+        "CO \u{3c3} (HOMO)", "CO \u{3c0}", "CO \u{3c0}", "CO \u{3c0}*", "CO \u{3c0}*",
     ];
     let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| {
         let labels = harness.state().structure_labels();
@@ -785,28 +825,66 @@ fn carbonyl_efos() {
         click(harness, "All surfaces");
         show_structure(harness, &labels[0]);
     };
-    // Free CO in its own view: C below, O above, at the scale of a CO in
-    // the complex's panels.
-    let molecule = apost3dview_core::Molecule::from_fchk(&co).unwrap();
-    let (c, o) = (molecule.positions[0], molecule.positions[1]);
-    let co_view = orientation(o - c, Vec3::X, 0.0, 0.0);
-    let center = (c + o) / 2.0;
     let mut patch = format!("{FIGURE_LOOK}[view]\nkeep_view = false\n[[structures]]\n");
     for _ in rows {
         patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\n");
     }
-    patch.push_str(&format!(
-        "[[structures]]\n[structures.view]\ntarget = [{}, {}, {}]\ndistance = 6.5\norientation = [{}, {}, {}, {}]\n",
-        center.x, center.y, center.z, co_view[0], co_view[1], co_view[2], co_view[3]
-    ));
-    for _ in mos {
+    patch.push_str("[[structures]]\n");
+    for mo in mos {
         patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\n");
+        // The sign of an orbital is arbitrary: this one's colors swapped so
+        // that it reads like the complex's pi EFO above it.
+        if mo == 5 {
+            patch.push_str("positive_color = [175, 25, 60, 255]\nnegative_color = [20, 95, 170, 255]\n");
+        }
     }
     patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 2\ncolumns = 5\n{CAPTION_SIZE}"));
     for caption in captions {
         patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
     }
-    let mut harness = build(vec![results, co], setup, &out.join("carbonyl-efos.a3dview"), &patch, carbonyl_view(&atoms), 1.0);
+    let session = out.join("carbonyl-efos.a3dview");
+    drop(build(vec![results, co.clone()], setup, &session, &patch, carbonyl_view(&atoms), 1.0));
+
+    // Free CO seen exactly as the complex's axial CO: the complex's camera
+    // carried into CO's coordinates by the rotation that takes CO's axis to
+    // the axial CO's (C to O) and CO's x axis (Gaussian's standard
+    // orientation, the direction of its pi MO 5) to an equatorial Fe-C
+    // direction, the plane of a pi EFO. Same orientation, scale and place in
+    // the panel; the alignment of the app needs three atoms, a diatomic has
+    // two.
+    let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(&session).unwrap()).unwrap();
+    let vec3 = |v: &toml::Value| Vec3::new(v[0].as_float().unwrap() as f32, v[1].as_float().unwrap() as f32, v[2].as_float().unwrap() as f32);
+    let target = vec3(&value["view"]["camera_target"]);
+    let distance = value["view"]["camera_distance"].as_float().unwrap();
+    let o = &value["view"]["camera_orientation"];
+    let camera = glam::Quat::from_xyzw(o[0].as_float().unwrap() as f32, o[1].as_float().unwrap() as f32, o[2].as_float().unwrap() as f32, o[3].as_float().unwrap() as f32);
+    let angstrom = |p: Vec3| p * apost3dview_core::units::ANGSTROM_PER_BOHR as f32;
+    let fe = atoms.of_element("Fe")[0];
+    let atom_of = |f: usize, symbol: &str| atoms.fragments[f].iter().copied().find(|&a| atoms.symbols[a] == symbol).unwrap();
+    let (c_ax, o_ax) = (angstrom(atoms.positions[atom_of(1, "C")]), angstrom(atoms.positions[atom_of(1, "O")]));
+    let z_c = (o_ax - c_ax).normalize();
+    let equatorial = (2..atoms.fragments.len())
+        .map(|f| atoms.positions[atom_of(f, "C")] - atoms.positions[fe])
+        .min_by(|a, b| a.normalize().dot(z_c).abs().total_cmp(&b.normalize().dot(z_c).abs()))
+        .unwrap();
+    let x_c = (equatorial - z_c * equatorial.dot(z_c)).normalize();
+    let frame_c = glam::Mat3::from_cols(x_c, z_c.cross(x_c), z_c);
+    let molecule = apost3dview_core::Molecule::from_fchk(&co).unwrap();
+    let (c, o) = (molecule.positions[0], molecule.positions[1]);
+    let z_f = (o - c).normalize();
+    let x_f = (Vec3::X - z_f * Vec3::X.dot(z_f)).normalize();
+    let frame_f = glam::Mat3::from_cols(x_f, z_f.cross(x_f), z_f);
+    let to_free = frame_f * frame_c.transpose();
+    let orientation = (glam::Quat::from_mat3(&to_free) * camera).normalize();
+    let target_free = to_free * (target - (c_ax + o_ax) / 2.0) + (c + o) / 2.0;
+    let mut view = toml::map::Map::new();
+    view.insert("target".into(), toml::Value::Array(target_free.to_array().iter().map(|&x| toml::Value::Float(f64::from(x))).collect()));
+    view.insert("distance".into(), toml::Value::Float(distance));
+    view.insert("orientation".into(), toml::Value::Array(orientation.to_array().iter().map(|&x| toml::Value::Float(f64::from(x))).collect()));
+    value["structures"][1].as_table_mut().unwrap().insert("view".into(), toml::Value::Table(view));
+    std::fs::write(&session, toml::to_string(&value).unwrap()).unwrap();
+    let mut harness = app_with(vec![session]);
+    harness.run_steps(8);
     eprintln!("carbonyl: {:?}", harness.state().panel_captions());
     save_figure(&mut harness, &out, "carbonyl-efos");
 }
@@ -816,6 +894,12 @@ fn carbonyl_efos() {
 /// from a little above and turned so the ligand in front doesn't hide the
 /// metal (as `carbonyl_view`, for any first atom of a fragment).
 fn octahedral_view(atoms: &Atoms, axial: usize) -> [f32; 4] {
+    octahedral_view_at(atoms, axial, 0.17, 0.55)
+}
+
+/// The same frame, seen from `elevation` above and turned `turn` about the
+/// axial direction (0: looking along an equatorial ligand).
+fn octahedral_view_at(atoms: &Atoms, axial: usize, elevation: f32, turn: f32) -> [f32; 4] {
     let metal = atoms.fragments[0][0];
     let donor = |f: usize| atoms.fragments[f][0];
     let up = atoms.positions[donor(axial - 1)] - atoms.positions[metal];
@@ -824,7 +908,7 @@ fn octahedral_view(atoms: &Atoms, axial: usize) -> [f32; 4] {
         .map(|f| atoms.positions[donor(f)] - atoms.positions[metal])
         .min_by(|a, b| a.normalize().dot(up.normalize()).abs().total_cmp(&b.normalize().dot(up.normalize()).abs()))
         .unwrap();
-    orientation(up, right, 0.17, 0.55)
+    orientation(up, right, elevation, turn)
 }
 
 #[test]
@@ -835,9 +919,11 @@ fn nitroprusside_figure() {
     let view = octahedral_view(&atoms, 2);
     // (b) EOS oxidation states, (c) fragment bond orders from Fe.
     for (name, id) in [("np-oxidation-states", "eos.fragments.oxidation_states"), ("np-bond-orders", "bond_orders.fragments.matrix")] {
-        let patch = format!("{FIGURE_LOOK}[[structures]]\n{}", results_view(id, 0));
+        // (b) prints at about 5.7 cm; zoomed out so that the molecule and its
+        // labels stay clear of the legend.
+        let patch = format!("{FIGURE_LOOK}[[structures]]\n{}", print_sized(&results_view(id, 0), 46.0, 1.6));
         let session = out.join(format!("{name}.a3dview"));
-        let mut harness = build(vec![results.clone()], |_| {}, &session, &patch, view, 0.95);
+        let mut harness = build(vec![results.clone()], |_| {}, &session, &patch, view, 1.3);
         eprintln!("{name}: {:?}", harness.state().legend_title());
         save_png(&mut harness, &out.join(format!("{name}.png")), 1400, 1400);
         harness.state().save_session_to(&session).unwrap();
@@ -857,14 +943,23 @@ fn nitroprusside_figure() {
     for caption in ["LO 0.632 (Fe)", "FU 0.338 (NO)"] {
         patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
     }
-    let mut harness = build(vec![results.clone()], setup, &out.join("np-frontier-efos.a3dview"), &patch, view, 0.95);
+    // Looking along an equatorial CN, so the Fe d lobes (between NO and the
+    // CN arms) lie in the picture's plane instead of among the cyanides.
+    let efo_view = octahedral_view_at(&atoms, 2, 0.12, 0.0);
+    let mut harness = build(vec![results.clone()], setup, &out.join("np-frontier-efos.a3dview"), &patch, efo_view, 0.95);
     save_figure(&mut harness, &out, "np-frontier-efos");
 
     // (a) The whole window: the fragment bond orders seen from Fe (the
     // focus view) on the molecule, the APOST-3D window with its matrix
     // tools beside it.
-    let mut harness = common::app_with_scale(vec![results], 2.0);
+    // A smaller window at 2x, so its text prints larger in the figure; the
+    // Molecule window closed, so the APOST-3D window has the full height.
+    let mut harness = common::app_with_size(vec![results], [1100.0, 780.0], 2.0);
     harness.run_steps(4);
+    let ctx = harness.ctx.clone();
+    if harness.state().window_expanded(&ctx, "Molecule") {
+        click(&mut harness, "Molecule");
+    }
     harness.state_mut().set_view_orientation(view);
     harness.state_mut().zoom_view(1.15);
     assert!(harness.state_mut().show_on_molecule("bond_orders.fragments.matrix"));
@@ -894,7 +989,8 @@ fn p_benzyne_figure() {
     for _ in 0..2 {
         patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\nvisible = true\n");
     }
-    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 1\ncolumns = 2\n{CAPTION_SIZE}"));
+    // A single-column figure (3.31 in), its captions at 8 pt as printed.
+    patch.push_str("[figure.settings]\nfixed_layout = true\nrows = 1\ncolumns = 2\nfigure_width_in = 3.31\nfont_size_pt = 8.0\n");
     for caption in ["HONO 1.200", "LUNO 0.800"] {
         patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
     }
@@ -902,10 +998,10 @@ fn p_benzyne_figure() {
     eprintln!("pb: {:?}", harness.state().panel_captions());
     save_figure(&mut harness, &out, "pb-natural-orbitals");
     // The local spin: each atom's own <S^2> (the diagonal), as halos.
-    let local = results_view("local_spin.atoms.s2", 0).replace("labels = true\n", "labels = true\ndiagonal = true\nnames = false\n");
+    let local = print_sized(&results_view("local_spin.atoms.s2", 0), 40.0, 1.6).replace("labels = true\n", "labels = true\ndiagonal = true\nnames = false\n");
     let patch = format!("{FIGURE_LOOK}[[structures]]\n{local}");
     let session = out.join("pb-local-spin.a3dview");
-    let mut harness = build(vec![results], |_| {}, &session, &patch, view, 1.35);
+    let mut harness = build(vec![results], |_| {}, &session, &patch, view, 1.6);
     eprintln!("pb local spin: {:?}", harness.state().legend_title());
     save_png(&mut harness, &out.join("pb-local-spin.png"), 1400, 1100);
     harness.state().save_session_to(&session).unwrap();

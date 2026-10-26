@@ -58,8 +58,15 @@ pub fn app_with(files: Vec<PathBuf>) -> Harness<'static, App> {
 
 /// `app_with` at `pixels_per_point` (2 for the guide's sharper pictures).
 pub fn app_with_scale(files: Vec<PathBuf>, pixels_per_point: f32) -> Harness<'static, App> {
+    app_with_size(files, [1400.0, 900.0], pixels_per_point)
+}
+
+/// `app_with_scale` in a window of `size` points (a smaller window makes
+/// its text larger relative to a figure of it).
+#[allow(dead_code)]
+pub fn app_with_size(files: Vec<PathBuf>, size: [f32; 2], pixels_per_point: f32) -> Harness<'static, App> {
     let mut harness = Harness::builder()
-        .with_size([1400.0, 900.0])
+        .with_size(size)
         .with_pixels_per_point(pixels_per_point)
         .renderer(AppRenderer::new())
         .build_eframe(move |cc| App::with_options(cc, StartupOptions { files, splash: false }));
