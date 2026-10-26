@@ -15,7 +15,7 @@ The form starts with the file's name and what APOST3Dview read from it (the prog
 
 For a correlated wavefunction written by APOST-3D's `apost3d.py` script (CASSCF, FCI, CISD, CCSD from PySCF), the input asks for its density matrices (the `.dm1` and `.dm2` files next to the `.fchk`), which also gives the local spin analysis: **Local spin (SPIN)** is then ticked and grayed out.
 
-For the energy decomposition, the section **Energy decomposition (ENPART)** chooses the **Functional** of the calculation: it is taken from the `.fchk` when the file names it (Gaussian files); otherwise choose it from the menu. Meta-GGA and range-separated functionals aren't supported by APOST-3D's decomposition. **Two-electron grid** is APOST-3D's **Standard (150 × 590)** grid, or a **Faster (40 × 146)** one, much cheaper and less accurate, for tests.
+For the energy decomposition, the section **Energy decomposition (ENPART)** chooses the **Functional** of the calculation: it is taken from the `.fchk` when the file names it (Gaussian files, and PySCF and ORCA files written by APOST-3D's scripts); otherwise choose it from the menu. The menu's names are Gaussian's functionals. For an ORCA calculation converted with APOST-3D's `orca2fchk.py` it lists ORCA's functionals instead, given to APOST-3D by their libxc ids (`LIBRARY`), because a functional of the same name can differ between the two programs (ORCA's B3LYP is not Gaussian's); only those APOST-3D has checked against ORCA are offered. Range-separated functionals aren't supported by APOST-3D's decomposition. **Two-electron grid** is APOST-3D's **Standard (150 × 590)** grid, or a **Faster (40 × 146)** one, much cheaper and less accurate, for tests.
 
 ## Fragments
 

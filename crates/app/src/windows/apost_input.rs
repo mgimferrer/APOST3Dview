@@ -3,7 +3,7 @@
 //! `input_generator`). Kept small on purpose (Martí, 2026-10-21): it is for
 //! users who don't write inputs by hand.
 
-use apost3dview_core::{fragments_around, hill_formula, separate_molecules, AimScheme, EnpartMethod, EnpartOptions, FchkProgram, OxidationStates, ENPART_FUNCTIONALS};
+use apost3dview_core::{fragments_around, hill_formula, orca_functional, separate_molecules, AimScheme, EnpartMethod, EnpartOptions, FchkProgram, OxidationStates, ENPART_FUNCTIONALS, ORCA_FUNCTIONALS};
 use egui::{Color32, RichText};
 
 use crate::app::App;
@@ -153,6 +153,7 @@ fn show_fragments(ui: &mut egui::Ui, draft: &InputDraft, atomic_numbers: &[u32],
 fn show_enpart_options(ui: &mut egui::Ui, draft: &mut InputDraft) {
     let from_file = draft.facts.as_ref().ok().and_then(|f| f.enpart_method());
     let method_line = draft.facts.as_ref().map(|f| f.method.clone()).unwrap_or_default();
+    let orca = draft.facts.as_ref().is_ok_and(|f| f.program == FchkProgram::Orca);
     let correlated = draft.correlated();
     let Some(enpart) = &mut draft.input.enpart else { return };
     if correlated {
@@ -164,17 +165,34 @@ fn show_enpart_options(ui: &mut egui::Ui, draft: &mut InputDraft) {
         let text = match &current {
             Some(EnpartMethod::Hf) => "HF".to_string(),
             Some(EnpartMethod::Functional(name)) => name.clone(),
+            Some(EnpartMethod::Library { name: Some(name), .. }) => format!("{name} (ORCA)"),
+            Some(EnpartMethod::Library { exchange_correlation, exchange, correlation, .. }) => {
+                let ids: Vec<String> = [exchange_correlation, exchange, correlation].iter().filter_map(|id| id.map(|i| i.to_string())).collect();
+                format!("libxc {}", ids.join(" + "))
+            }
             _ => "choose...".to_string(),
         };
         ui.horizontal(|ui| {
             ui.label("Functional");
             egui::ComboBox::from_id_salt("input_enpart_functional").selected_text(text).show_ui(ui, |ui| {
                 ui.selectable_value(&mut enpart.method, Some(EnpartMethod::Hf), "HF");
-                for (keyword, description) in ENPART_FUNCTIONALS {
-                    ui.selectable_value(&mut enpart.method, Some(EnpartMethod::Functional(keyword.to_string())), keyword).on_hover_text(description);
+                if orca {
+                    // ORCA's functionals by their libxc ids: Gaussian's of
+                    // the same name differ (B3LYP by ~23 kcal/mol on water).
+                    for (keyword, ..) in ORCA_FUNCTIONALS {
+                        let method = orca_functional(keyword);
+                        ui.selectable_value(&mut enpart.method, method, format!("{keyword} (ORCA)")).on_hover_text("ORCA's functional, by the libxc ids APOST-3D checked against ORCA");
+                    }
+                } else {
+                    for (keyword, description) in ENPART_FUNCTIONALS {
+                        ui.selectable_value(&mut enpart.method, Some(EnpartMethod::Functional(keyword.to_string())), keyword).on_hover_text(description);
+                    }
                 }
             });
         });
+        if orca {
+            hint(ui, "An ORCA calculation (orca2fchk.py): ENPART uses ORCA's functional by its libxc ids. The usual keywords reproduce Gaussian's functionals, which are not always ORCA's.");
+        }
         match &from_file {
             Some(m) if current.as_ref() == Some(m) => hint(ui, &format!("From the .fchk ({method_line}). It must be the functional of the calculation.")),
             Some(_) => {
@@ -184,7 +202,7 @@ fn show_enpart_options(ui: &mut egui::Ui, draft: &mut InputDraft) {
                 let text = if method_line.is_empty() {
                     "Choose the functional of the calculation.".to_string()
                 } else {
-                    format!("The .fchk says \"{method_line}\": choose the functional of the calculation (meta-GGA and range-separated ones are not supported).")
+                    format!("The .fchk says \"{method_line}\": choose the functional of the calculation (range-separated ones are not supported).")
                 };
                 ui.label(RichText::new(text).small().color(NOTICE));
             }

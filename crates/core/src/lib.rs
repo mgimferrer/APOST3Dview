@@ -28,7 +28,7 @@ pub use apost::{
     report_path_for, results_path_for, wavefunction_path_for, ApostResults, Enpart, EnpartFunctional, Fragment, FunctionalComponent, TwoElectronIntegration, ENPART_TERMS, FragmentCoverage, FrontierEfo, FrontierEfos, FrontierKind, FrontierOrbital, IndexEntry, MatrixObject, OrbitalDetail, OrbitalLabel, OrbitalSet,
     Quantity, QuantityKind, TableCell, TableColumn, TableObject,
 };
-pub use apost_input::{read_apost_input, read_fchk_facts, AimScheme, ApostInput, DmFiles, EnpartMethod, EnpartOptions, FchkFacts, FchkProgram, OxidationStates, ReadInput, ENPART_FUNCTIONALS};
+pub use apost_input::{orca_functional, read_apost_input, read_fchk_facts, AimScheme, ApostInput, DmFiles, EnpartMethod, EnpartOptions, FchkFacts, FchkProgram, OxidationStates, ReadInput, ENPART_FUNCTIONALS, ORCA_FUNCTIONALS};
 pub use atomic_weights::{AtomCells, AtomicWeights, CellScratch};
 pub use fragmentation::{fragments_around, separate_molecules};
 pub use coordinates::{format_coordinates, CoordinateFormat};

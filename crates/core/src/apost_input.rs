@@ -97,11 +97,51 @@ pub enum EnpartMethod {
     /// CASSCF, also FCI and CISD wavefunctions written by APOST-3D's pySCF
     /// script.
     Casscf,
+    /// A functional given by its libxc ids (`LIBRARY` in `# ENPART`):
+    /// `exchange_correlation` (`EXC_FUNCTIONAL`), or `exchange` and
+    /// `correlation` (`EX_FUNCTIONAL`, `EC_FUNCTIONAL`). `name`: the ORCA
+    /// functional it reproduces, when known (not written to the input).
+    Library { name: Option<String>, exchange_correlation: Option<u32>, exchange: Option<u32>, correlation: Option<u32> },
+}
+
+/// ORCA's functionals with the libxc ids that reproduce them in ENPART,
+/// each checked by APOST-3D against ORCA 6.1.1 (xc energy within 0.02
+/// kcal/mol, water, def2-TZVP; APOST-3D docs, "Preparing the wavefunction",
+/// ORCA). (ORCA keyword, EXC id, EX id, EC id.) ORCA's B3LYP is not the
+/// `B3LYP` keyword of `# ENPART`, which reproduces Gaussian's.
+pub const ORCA_FUNCTIONALS: [(&str, Option<u32>, Option<u32>, Option<u32>); 20] = [
+    ("LSD", None, Some(1), Some(7)),
+    ("LDA", None, Some(1), Some(7)),
+    ("BLYP", None, Some(106), Some(131)),
+    ("PBE", None, Some(101), Some(130)),
+    ("REVPBE", None, Some(102), Some(130)),
+    ("TPSS", None, Some(202), Some(231)),
+    ("R2SCAN", None, Some(497), Some(498)),
+    ("M06L", None, Some(203), Some(233)),
+    ("B3LYP", Some(475), None, None),
+    ("B3LYP/G", Some(402), None, None),
+    ("PBE0", Some(406), None, None),
+    ("B3PW91", Some(401), None, None),
+    ("B3PW", Some(401), None, None),
+    ("BHANDHLYP", Some(436), None, None),
+    ("TPSSH", Some(457), None, None),
+    ("TPSS0", Some(396), None, None),
+    ("M06", None, Some(449), Some(235)),
+    ("M062X", None, Some(450), Some(236)),
+    ("PW6B95", Some(451), None, None),
+    ("R2SCANH", Some(659), None, None),
+];
+
+/// The ENPART method of an ORCA functional (`name` without R/U/RO), from
+/// `ORCA_FUNCTIONALS`; `None` for one without a checked mapping.
+pub fn orca_functional(name: &str) -> Option<EnpartMethod> {
+    let upper = name.to_ascii_uppercase();
+    ORCA_FUNCTIONALS.iter().find(|(k, ..)| *k == upper).map(|&(k, exc, ex, ec)| EnpartMethod::Library { name: Some(k.to_string()), exchange_correlation: exc, exchange: ex, correlation: ec })
 }
 
 /// APOST-3D's predefined functional keywords, each reproducing Gaussian
 /// 16's functional of the same name, with a short description.
-pub const ENPART_FUNCTIONALS: [(&str, &str); 10] = [
+pub const ENPART_FUNCTIONALS: [(&str, &str); 11] = [
     ("SVWN", "Slater + VWN (RPA), Gaussian's SVWN"),
     ("SVWN5", "Slater + VWN5"),
     ("BLYP", "Becke 88 + LYP"),
@@ -112,6 +152,7 @@ pub const ENPART_FUNCTIONALS: [(&str, &str); 10] = [
     ("B3P86", "Gaussian's B3P86"),
     ("PBE0", "PBE0 (Gaussian's PBE1PBE)"),
     ("BHANDHLYP", "Gaussian's BHandHLYP"),
+    ("M062X", "M06-2X (hybrid meta-GGA)"),
 ];
 
 /// A functional or method name as APOST-3D's keyword: the predefined
@@ -228,6 +269,13 @@ impl ApostInput {
                 Some(EnpartMethod::Hf) => vec!["HF".to_string()],
                 Some(EnpartMethod::Functional(name)) => vec![name.clone()],
                 Some(EnpartMethod::Casscf) => vec!["CASSCF".to_string()],
+                Some(EnpartMethod::Library { exchange_correlation, exchange, correlation, .. }) => {
+                    let mut lines = vec!["LIBRARY".to_string()];
+                    lines.extend(exchange_correlation.map(|id| format!("EXC_FUNCTIONAL {id}")));
+                    lines.extend(exchange.map(|id| format!("EX_FUNCTIONAL {id}")));
+                    lines.extend(correlation.map(|id| format!("EC_FUNCTIONAL {id}")));
+                    lines
+                }
                 None => Vec::new(),
             };
             block("ENPART", &line);
@@ -477,13 +525,23 @@ pub fn read_apost_input(text: &str, n_atoms: usize) -> ReadInput {
 
     if enpart {
         let mut method = None;
+        let (mut library, mut ids) = (false, [None::<u32>; 3]);
         for &line in block("ENPART") {
             let (keyword, value) = keyword_value(line);
-            match (keyword, value) {
+            match (keyword.to_ascii_uppercase().as_str(), value) {
                 ("THREBOD", "50") | ("TWOELTOLER", "0.25") => {}
-                (k, "") if method.is_none() && enpart_keyword(k).is_some() => method = enpart_keyword(k),
+                ("LIBRARY", "") => library = true,
+                ("EXC_FUNCTIONAL", v) if v.parse::<u32>().is_ok() => ids[0] = v.parse().ok(),
+                ("EX_FUNCTIONAL", v) if v.parse::<u32>().is_ok() => ids[1] = v.parse().ok(),
+                ("EC_FUNCTIONAL", v) if v.parse::<u32>().is_ok() => ids[2] = v.parse().ok(),
+                (_, "") if method.is_none() && enpart_keyword(keyword).is_some() => method = enpart_keyword(keyword),
                 _ => other.push(format!("# ENPART: {line}")),
             }
+        }
+        if library && method.is_none() {
+            // Named after the ORCA functional with the same ids, if any.
+            let name = ORCA_FUNCTIONALS.iter().find(|(_, exc, ex, ec)| [*exc, *ex, *ec] == ids).map(|(k, ..)| k.to_string());
+            method = Some(EnpartMethod::Library { name, exchange_correlation: ids[0], exchange: ids[1], correlation: ids[2] });
         }
         input.enpart = Some(EnpartOptions { method, fast_grid });
     }
@@ -549,6 +607,12 @@ impl FchkFacts {
             return None;
         }
         let name = upper.strip_prefix("RO").or_else(|| upper.strip_prefix('R')).or_else(|| upper.strip_prefix('U')).unwrap_or(&upper);
+        // An ORCA functional (orca2fchk.py writes its name as Gaussian
+        // does) is not Gaussian's functional of the same name: only the
+        // libxc ids APOST-3D checked against ORCA; HF as HF.
+        if self.program == FchkProgram::Orca {
+            return if name == "HF" { Some(EnpartMethod::Hf) } else { orca_functional(name) };
+        }
         enpart_keyword(name).filter(|m| *m != EnpartMethod::Casscf)
     }
 }
@@ -675,6 +739,17 @@ mod tests {
         assert_eq!(facts("UBLYP").enpart_method(), Some(EnpartMethod::Functional("BLYP".into())));
         assert_eq!(facts("RPBEPBE").enpart_method(), Some(EnpartMethod::Functional("PBE".into())));
         assert_eq!(facts("RPBE1PBE").enpart_method(), Some(EnpartMethod::Functional("PBE0".into())));
+        // orca2fchk.py: ORCA's B3LYP is libxc 475, not the B3LYP keyword.
+        let orca = |method: &str| FchkFacts { program: FchkProgram::Orca, ..facts(method) };
+        let b3lyp = orca("RB3LYP").enpart_method();
+        assert_eq!(b3lyp, Some(EnpartMethod::Library { name: Some("B3LYP".into()), exchange_correlation: Some(475), exchange: None, correlation: None }));
+        assert_eq!(orca("UPBE").enpart_method(), Some(EnpartMethod::Library { name: Some("PBE".into()), exchange_correlation: None, exchange: Some(101), correlation: Some(130) }));
+        assert_eq!(orca("RHF").enpart_method(), Some(EnpartMethod::Hf));
+        assert_eq!(orca("RCAM-B3LYP").enpart_method(), None, "no checked mapping: the user chooses");
+        let input = ApostInput { enpart: Some(EnpartOptions { method: b3lyp, fast_grid: false }), ..ApostInput::default() };
+        let text = input.to_text(3);
+        assert!(text.contains("# ENPART\nLIBRARY\nEXC_FUNCTIONAL 475\n#"), "{text}");
+        assert_eq!(read_apost_input(&text, 3).input.enpart, input.enpart, "read back");
         assert_eq!(facts("ROHF").enpart_method(), Some(EnpartMethod::Hf));
         assert_eq!(facts("UHF").enpart_method(), Some(EnpartMethod::Hf));
         assert_eq!(facts("RTPSSTPSS").enpart_method(), None);

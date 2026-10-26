@@ -7,7 +7,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use common::{app_with, fixtures_dir, scratch_dir, screenshot, toasts};
+use common::{app_with, fixtures_dir, repo_dir, scratch_dir, screenshot, toasts};
 use egui_kittest::kittest::{By, NodeT, Queryable};
 use egui::accesskit::Role;
 use egui_kittest::Harness;
@@ -172,4 +172,25 @@ fn alt_drag_selects_the_atoms_in_a_box() {
     assert!(all.starts_with(&some), "a box adds to the selection");
     all.sort_unstable();
     assert_eq!(all, (0..13).collect::<Vec<_>>());
+}
+
+/// An ORCA calculation converted by orca2fchk.py: recognized, HF taken from
+/// the file, and the functional menu lists ORCA's functionals (by their
+/// libxc ids), not Gaussian's keywords of the same names.
+#[test]
+fn an_orca_file_gets_orca_functionals() {
+    let dir = scratch_dir("input-orca");
+    let fchk = dir.join("water.fchk");
+    std::fs::copy(repo_dir().join("validation/orca/orca2fchk/H2O-ORCA-ccpVTZ.fchk"), &fchk).unwrap();
+    let mut harness = generator(&fchk);
+    harness.get_by_label_contains("ORCA (orca2fchk.py)");
+    click(&mut harness, "Energy decomposition, IQA (ENPART)");
+    assert!(harness.state().input_text().unwrap().contains("# ENPART\nHF\n#"), "{}", harness.state().input_text().unwrap());
+    harness.get_by_label_contains("ENPART uses ORCA's functional by its libxc ids");
+    harness.get_all(By::new().role(Role::ComboBox)).find(|n| n.value().as_deref() == Some("HF")).expect("functional menu").click_accesskit();
+    harness.run_steps(2);
+    assert!(harness.query_by_label("SVWN5").is_none(), "Gaussian's keywords are not offered");
+    harness.get_by_label("B3LYP (ORCA)").click_accesskit();
+    harness.run_steps(2);
+    assert!(harness.state().input_text().unwrap().contains("# ENPART\nLIBRARY\nEXC_FUNCTIONAL 475\n#"), "{}", harness.state().input_text().unwrap());
 }
