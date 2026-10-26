@@ -41,6 +41,33 @@ pub use fchk::{parse_fchk_summary, FchkSummary};
 pub(crate) fn invalid_data(message: impl Into<String>) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, message.into())
 }
+
+/// Parses a number written by a Fortran program, also in the two forms a
+/// plain parse refuses: a `D` exponent (`1.5D-03`), and the exponent of an
+/// `E16.8` field below 1e-99 or above 1e99, where Fortran has no room for
+/// the `E` (`1.27052287-118` means 1.27052287E-118). The repair is only
+/// tried when the plain parse fails.
+pub(crate) fn parse_fortran<T: std::str::FromStr>(token: &str) -> Option<T> {
+    if let Ok(v) = token.parse::<T>() {
+        return Some(v);
+    }
+    if token.contains(['D', 'd'])
+        && let Ok(v) = token.replace(['D', 'd'], "E").parse::<T>()
+    {
+        return Some(v);
+    }
+    // Missing E: a sign not preceded by E/e (index 0 may be the mantissa's sign).
+    let bytes = token.as_bytes();
+    for i in 1..bytes.len() {
+        if matches!(bytes[i], b'+' | b'-')
+            && !matches!(bytes[i - 1], b'E' | b'e')
+            && let Ok(v) = format!("{}E{}", &token[..i], &token[i..]).parse::<T>()
+        {
+            return Some(v);
+        }
+    }
+    None
+}
 pub use element::{atomic_number_from_symbol, element_data, hill_formula, ElementData};
 pub use gto::{evaluate_basis_functions, evaluate_mo, generate_density_grid, generate_mo_grids, generate_weighted_mo_grids};
 pub use interpolation::refine_grid;
@@ -52,3 +79,19 @@ pub use superpose::{superpose, Superposition};
 pub use units::LengthUnit;
 pub use wavefunction::{parse_fchk_wavefunction, BasisSet, MolecularOrbitals, Shell, Wavefunction};
 pub use xyz::parse_xyz;
+
+#[cfg(test)]
+mod fortran_numbers {
+    use super::parse_fortran;
+
+    #[test]
+    fn plain_d_exponent_and_missing_e() {
+        assert_eq!(parse_fortran::<f64>("-1.25E-03"), Some(-1.25e-3));
+        assert_eq!(parse_fortran::<f64>("1.5D-03"), Some(1.5e-3));
+        assert_eq!(parse_fortran::<f64>("1.27052287-118"), Some(1.27052287e-118));
+        assert_eq!(parse_fortran::<f64>("-4.5+101"), Some(-4.5e101));
+        assert_eq!(parse_fortran::<f32>("0.78396-17"), Some(0.78396e-17));
+        assert_eq!(parse_fortran::<f64>("abc"), None);
+        assert_eq!(parse_fortran::<i64>("12"), Some(12));
+    }
+}

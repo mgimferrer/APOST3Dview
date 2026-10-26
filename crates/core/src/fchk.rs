@@ -102,7 +102,7 @@ pub fn parse_fchk_summary(path: &Path) -> io::Result<FchkSummary> {
                 match header.label.as_str() {
                     "Atomic numbers" => atomic_numbers = Some(tokens.iter().map(|t| t.parse().unwrap_or(0)).collect()),
                     // The first block: Q-Chem repeats it (frequency jobs).
-                    "Current cartesian coordinates" if coordinates.is_none() => coordinates = Some(tokens.iter().map(|t| t.parse().unwrap_or(0.0)).collect()),
+                    "Current cartesian coordinates" if coordinates.is_none() => coordinates = Some(tokens.iter().map(|t| crate::parse_fortran(t).unwrap_or(0.0)).collect()),
                     _ => {}
                 }
             }

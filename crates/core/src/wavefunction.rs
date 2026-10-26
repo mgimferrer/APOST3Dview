@@ -145,7 +145,7 @@ impl Wavefunction {
 }
 
 fn parse_tokens<T: std::str::FromStr>(tokens: &[String], what: &str) -> io::Result<Vec<T>> {
-    tokens.iter().map(|t| t.parse::<T>().map_err(|_| invalid_data(format!("malformed {what} value '{t}' in .fchk")))).collect()
+    tokens.iter().map(|t| crate::parse_fortran::<T>(t).ok_or_else(|| invalid_data(format!("malformed {what} value '{t}' in .fchk")))).collect()
 }
 
 pub fn parse_fchk_wavefunction(path: &Path) -> io::Result<Wavefunction> {

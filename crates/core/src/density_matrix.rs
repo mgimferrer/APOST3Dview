@@ -134,7 +134,7 @@ pub fn read_fchk_density(path: &Path, kind: &str) -> io::Result<DensityMatrix> {
             Some((k, is_spin)) if k == kind => {
                 let tokens = read_array_tokens(&mut lines, count)?;
                 let values: Vec<f64> =
-                    tokens.iter().map(|t| t.parse().map_err(|_| invalid_data(format!("malformed density value '{t}' in .fchk")))).collect::<io::Result<_>>()?;
+                    tokens.iter().map(|t| crate::parse_fortran(t).ok_or_else(|| invalid_data(format!("malformed density value '{t}' in .fchk")))).collect::<io::Result<_>>()?;
                 if is_spin {
                     spin = Some(values);
                 } else {

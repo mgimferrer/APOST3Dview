@@ -202,34 +202,10 @@ pub struct CubeFile {
     pub grid: ScalarGrid,
 }
 
-/// Parses a float the way Rust's own `str::parse` does, but also repairs
-/// two Fortran fixed-width output quirks it can't handle on its own — see
-/// this module's doc comment. Only falls back to the repair attempts when
-/// a plain parse fails, so well-formed tokens (the overwhelming majority)
-/// pay no extra cost.
+/// A cube value: also in Fortran's `D`-exponent and missing-`E` forms
+/// (see this module's doc comment and `crate::parse_fortran`).
 fn parse_fortran_f32(token: &str) -> Option<f32> {
-    if let Ok(v) = token.parse::<f32>() {
-        return Some(v);
-    }
-    if token.contains(['D', 'd'])
-        && let Ok(v) = token.replace(['D', 'd'], "E").parse::<f32>()
-    {
-        return Some(v);
-    }
-    // Missing-E exponent: scan for a `+`/`-` not already preceded by
-    // `E`/`e` (skipping index 0, which may be the mantissa's own sign)
-    // and insert the `E` that should have been there.
-    let bytes = token.as_bytes();
-    for i in 1..bytes.len() {
-        let c = bytes[i];
-        if (c == b'+' || c == b'-') && !matches!(bytes[i - 1], b'E' | b'e') {
-            let repaired = format!("{}E{}", &token[..i], &token[i..]);
-            if let Ok(v) = repaired.parse::<f32>() {
-                return Some(v);
-            }
-        }
-    }
-    None
+    crate::parse_fortran(token)
 }
 
 fn next_line<'a>(all_lines: &[&'a str], line_index: &mut usize) -> Option<&'a str> {
