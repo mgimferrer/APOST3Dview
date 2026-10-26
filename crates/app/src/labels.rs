@@ -166,7 +166,10 @@ impl App {
                 let wpp = world_per_px(position);
                 let px = text_scale * if on_atom { view.label_size * ATOM_VALUE_SIZE } else { view.label_size };
                 let focus = label.color == FOCUS_COLOR;
-                let color = if label.color == [0.0; 3] { ink } else { label.color };
+                // The focus's name in ink like the others: gold text on a
+                // metal's orange (or on its gold envelope) read poorly; the
+                // gold envelope or halo already marks the focus.
+                let color = if label.color == [0.0; 3] || focus { ink } else { label.color };
                 let line = |text: String, px: f32, color: [f32; 3]| Line {
                     text,
                     scale: glyph_scale_for_font_size(px, wpp),
