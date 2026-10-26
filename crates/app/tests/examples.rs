@@ -117,7 +117,7 @@ fn geos_efos() {
 #[test]
 fn correlated_density_and_natural_orbitals() {
     let mut harness = open("H2O-CAS44");
-    menu_offers(&mut harness, "Nothing", &["Intra-atomic S\u{b2} (local spin) (TFVC)", "Inter-atomic bond order (exchange-only bond orders, TFVC)", "Inter-atomic bond order (improved bond orders, TFVC)"]);
+    menu_offers(&mut harness, "Nothing", &["Intra-atomic S\u{b2} (local spin, TFVC)", "Inter-atomic bond order (exchange-only bond orders, TFVC)", "Inter-atomic bond order (improved bond orders, TFVC)"]);
     harness.get_by_label("Surfaces").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("Clear").click_accesskit();

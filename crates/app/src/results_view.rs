@@ -632,12 +632,22 @@ pub(crate) struct Choice<'a> {
 
 /// How a quantity is named in the Show menu: a matrix by what its
 /// diagonal or its pairs hold, always saying intra or inter
-/// ("Intra-atomic S² (local spin) (TFVC)", "Inter-fragment bond order
+/// ("Intra-atomic S² (local spin, TFVC)", "Inter-fragment bond order
 /// (TFVC)"); anything else by its title.
 pub(crate) fn choice_label(results: &ApostResults, entry: &IndexEntry, diagonal: bool) -> String {
     match part_meaning(results, entry, diagonal) {
-        Some(meaning) => format!("{} {}", capitalize(&meaning), part_source(results, entry, diagonal)),
+        Some(meaning) => join_parentheses(&capitalize(&meaning), &part_source(results, entry, diagonal)),
         None => entry.title.clone(),
+    }
+}
+
+/// "Intra-atomic S² (local spin)" + "(TFVC)" -> "Intra-atomic S² (local
+/// spin, TFVC)": one parenthesis, not two in a row.
+fn join_parentheses(name: &str, source: &str) -> String {
+    match (name.strip_suffix(')'), source.strip_prefix('(')) {
+        (Some(open), Some(rest)) => format!("{open}, {rest}"),
+        _ if source.is_empty() => name.to_string(),
+        _ => format!("{name} {source}"),
     }
 }
 

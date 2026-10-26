@@ -156,12 +156,12 @@ fn a_matrix_diagonal_on_every_atom_or_fragment() {
 
     // Atomic and fragment S^2 (the diagonal, local spin), CISD run.
     let mut harness = app_with(vec![dir.join("H2O-CISD.apost.json")]);
-    show(&mut harness, "Intra-atomic S\u{b2} (local spin) (TFVC)");
-    assert_eq!(harness.state().legend_title().as_deref(), Some("Intra-atomic S\u{b2} (local spin) (TFVC)"));
+    show(&mut harness, "Intra-atomic S\u{b2} (local spin, TFVC)");
+    assert_eq!(harness.state().legend_title().as_deref(), Some("Intra-atomic S\u{b2} (local spin, TFVC)"));
     screenshot(&mut harness, "local-spin");
-    show(&mut harness, "Intra-fragment S\u{b2} (local spin) (TFVC)");
-    assert_eq!(harness.state().legend_title().as_deref(), Some("Intra-fragment S\u{b2} (local spin) (TFVC)"));
-    show(&mut harness, "Inter-fragment S\u{b2} (spin coupling) (TFVC)");
+    show(&mut harness, "Intra-fragment S\u{b2} (local spin, TFVC)");
+    assert_eq!(harness.state().legend_title().as_deref(), Some("Intra-fragment S\u{b2} (local spin, TFVC)"));
+    show(&mut harness, "Inter-fragment S\u{b2} (spin coupling, TFVC)");
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-fragment S\u{b2} (spin coupling) with 1 O (TFVC)"));
 }
 
@@ -184,8 +184,8 @@ fn show_menu_names_every_part_once() {
         "Inter-atomic bond order (exchange-only bond orders, TFVC)",
         "Inter-atomic bond order (improved bond orders, TFVC)",
         "Inter-atomic delocalization index (TFVC)",
-        "Intra-atomic S\u{b2} (local spin) (TFVC)",
-        "Inter-atomic S\u{b2} (spin coupling) (TFVC)",
+        "Intra-atomic S\u{b2} (local spin, TFVC)",
+        "Inter-atomic S\u{b2} (spin coupling, TFVC)",
         "Intra-atomic (self) energy (TFVC)",
         "Inter-atomic interaction energy (TFVC)",
     ] {

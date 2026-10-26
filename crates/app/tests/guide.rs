@@ -350,10 +350,10 @@ fn local_spin() {
     let mut guide = open_example("H2O-CAS44");
     frame(&mut guide, 0.0, 0.0, 0.55);
     open_menu(&mut guide, "Nothing");
-    for entry in ["Intra-fragment S\u{b2} (local spin) (TFVC)", "Inter-atomic S\u{b2} (spin coupling) (TFVC)"] {
+    for entry in ["Intra-fragment S\u{b2} (local spin, TFVC)", "Inter-atomic S\u{b2} (spin coupling, TFVC)"] {
         sees(&guide, entry);
     }
-    choose(&mut guide, "Nothing", "Intra-atomic S\u{b2} (local spin) (TFVC)");
+    choose(&mut guide, "Nothing", "Intra-atomic S\u{b2} (local spin, TFVC)");
     settle(&mut guide);
     snap_figure(&mut guide, "local-spin-intra", 1200, 750);
 }

@@ -6,15 +6,15 @@ This page uses the example `H2O-CAS44`: water at CASSCF(4,4)/STO-3G, with TFVC a
 
 ## Local spins
 
-In the **APOST-3D** window, choose *Intra-atomic S² (local spin) (TFVC)* under *Atom values* in **Show**. Each atom gets a halo in the color of its local spin, with the value beside it.
+In the **APOST-3D** window, choose *Intra-atomic S² (local spin, TFVC)* under *Atom values* in **Show**. Each atom gets a halo in the color of its local spin, with the value beside it.
 
 ![The local spins of the CASSCF water](../images/local-spin-intra.png)
 
-For fragments, the same is *Intra-fragment S² (local spin) (TFVC)* under *Fragment values*.
+For fragments, the same is *Intra-fragment S² (local spin, TFVC)* under *Fragment values*.
 
 ## Spin couplings
 
-The pairs are under *Between atoms* (or *Between fragments*), as *Inter-atomic S² (spin coupling) (TFVC)*. As for every pair quantity, the molecule is seen from one atom at a time: click another atom to see its couplings. A negative coupling between two atoms with local spin points to antiferromagnetically coupled unpaired electrons, a positive one to a ferromagnetic coupling.
+The pairs are under *Between atoms* (or *Between fragments*), as *Inter-atomic S² (spin coupling, TFVC)*. As for every pair quantity, the molecule is seen from one atom at a time: click another atom to see its couplings. A negative coupling between two atoms with local spin points to antiferromagnetically coupled unpaired electrons, a positive one to a ferromagnetic coupling.
 
 ## Which wavefunctions
 
