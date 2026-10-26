@@ -333,7 +333,7 @@ fn heat_map(
             } else {
                 let v = matrix.get(i, j).unwrap_or(0.0);
                 if signed {
-                    rgb_to_color32(ColorScale::Diverging { max_abs: if max > 0.0 { max } else { 1.0 }, log }.color(v))
+                    rgb_to_color32(ColorScale::Diverging { max_abs: if max > 0.0 { max } else { 1.0 }, log, half: Default::default() }.color(v))
                 } else {
                     rgb_to_color32(apost3dview_render::colormap::sequential(if max > 0.0 { (v.abs() / max) as f32 } else { 0.0 }))
                 }

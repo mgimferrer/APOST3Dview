@@ -22,7 +22,7 @@ pub mod viewport;
 
 pub use ao::{AoSettings, AO_KERNEL_SIZE, AO_LIVE_SAMPLE_COUNT};
 pub use camera::OrbitCamera;
-pub use colormap::{draw_legend, format_signed, ColorScale, Legend};
+pub use colormap::{draw_legend, format_signed, ColorScale, Half, Legend};
 pub use consts::{DEPTH_BUFFER_BITS, DEPTH_FORMAT, MSAA_SAMPLES};
 pub use dof::DofSettings;
 pub use export::{downsample_rgba, readback_to_rgba, ExportSettings};

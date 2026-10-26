@@ -42,6 +42,18 @@ pub fn sequential(t: f32) -> [f32; 3] {
 /// decades of magnitude get distinct colors).
 const LOG_DECADES_FACTOR: f64 = 100.0;
 
+/// The part of a diverging scale its legend shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Half {
+    #[default]
+    Both,
+    /// From zero to +max_abs (white to blue).
+    Positive,
+    /// From -max_abs to zero (red to white).
+    Negative,
+}
+
 /// How values map to colors.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "scale", rename_all = "lowercase")]
@@ -54,6 +66,11 @@ pub enum ColorScale {
         max_abs: f64,
         #[serde(default)]
         log: bool,
+        /// Which part of the scale the legend shows: both signs, or only
+        /// the half the values use (all positive, or all negative). Colors
+        /// are the same either way: blue positive, red negative.
+        #[serde(default)]
+        half: Half,
     },
     /// From min (light) to max (dark).
     Sequential { min: f64, max: f64 },
@@ -62,7 +79,7 @@ pub enum ColorScale {
 impl ColorScale {
     pub fn color(&self, value: f64) -> [f32; 3] {
         match *self {
-            ColorScale::Diverging { max_abs, log } => diverging(if max_abs <= 0.0 {
+            ColorScale::Diverging { max_abs, log, .. } => diverging(if max_abs <= 0.0 {
                 0.0
             } else if log {
                 let c = max_abs / LOG_DECADES_FACTOR;
@@ -77,7 +94,7 @@ impl ColorScale {
     /// The same scale for values multiplied by `factor` (a unit change).
     pub fn scaled(&self, factor: f64) -> Self {
         match *self {
-            ColorScale::Diverging { max_abs, log } => ColorScale::Diverging { max_abs: max_abs * factor, log },
+            ColorScale::Diverging { max_abs, log, half } => ColorScale::Diverging { max_abs: max_abs * factor, log, half },
             ColorScale::Sequential { min, max } => ColorScale::Sequential { min: min * factor, max: max * factor },
         }
     }
@@ -85,16 +102,20 @@ impl ColorScale {
     /// The colors along the legend bar, left to right, `u` in [0, 1].
     pub fn bar_color(&self, u: f32) -> [f32; 3] {
         match self {
-            ColorScale::Diverging { .. } => diverging(u * 2.0 - 1.0),
+            ColorScale::Diverging { half: Half::Both, .. } => diverging(u * 2.0 - 1.0),
+            ColorScale::Diverging { half: Half::Positive, .. } => diverging(u),
+            ColorScale::Diverging { half: Half::Negative, .. } => diverging(u - 1.0),
             ColorScale::Sequential { .. } => sequential(u),
         }
     }
 
-    /// The values printed under the bar: left end, middle (diverging
-    /// only: zero), right end.
+    /// The values printed under the bar: left end, middle (diverging over
+    /// both signs only: zero), right end.
     pub fn bar_labels(&self, decimals: usize) -> (String, Option<String>, String) {
         match *self {
-            ColorScale::Diverging { max_abs, .. } => (format_signed(-max_abs, decimals), Some("0".to_string()), format_signed(max_abs, decimals)),
+            ColorScale::Diverging { max_abs, half: Half::Both, .. } => (format_signed(-max_abs, decimals), Some("0".to_string()), format_signed(max_abs, decimals)),
+            ColorScale::Diverging { max_abs, half: Half::Positive, .. } => ("0".to_string(), None, format_signed(max_abs, decimals)),
+            ColorScale::Diverging { max_abs, half: Half::Negative, .. } => (format_signed(-max_abs, decimals), None, "0".to_string()),
             ColorScale::Sequential { min, max } => (format!("{min:.decimals$}"), None, format!("{max:.decimals$}")),
         }
     }
@@ -205,9 +226,23 @@ mod tests {
         a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-6)
     }
 
+    /// A one-sided diverging scale colors values as the full one and shows
+    /// only its half in the legend.
+    #[test]
+    fn half_scales() {
+        let full = ColorScale::Diverging { max_abs: 0.6, log: false, half: Half::Both };
+        let positive = ColorScale::Diverging { max_abs: 0.6, log: false, half: Half::Positive };
+        let negative = ColorScale::Diverging { max_abs: 0.6, log: false, half: Half::Negative };
+        assert!(close(positive.color(0.3), full.color(0.3)) && close(negative.color(-0.3), full.color(-0.3)));
+        assert!(close(positive.bar_color(0.0), diverging(0.0)) && close(positive.bar_color(1.0), diverging(1.0)));
+        assert!(close(negative.bar_color(0.0), diverging(-1.0)) && close(negative.bar_color(1.0), diverging(0.0)));
+        assert_eq!(positive.bar_labels(2), ("0".to_string(), None, "+0.60".to_string()));
+        assert_eq!(negative.bar_labels(2), ("\u{2212}0.60".to_string(), None, "0".to_string()));
+    }
+
     #[test]
     fn scales() {
-        let d = ColorScale::Diverging { max_abs: 0.5, log: false };
+        let d = ColorScale::Diverging { max_abs: 0.5, log: false, half: Half::Both };
         assert!(close(d.color(0.0), hex(0xf0efec)));
         assert!(close(d.color(0.5), hex(0x184f95)));
         assert!(close(d.color(-0.5), hex(0x9c2523)));
@@ -215,7 +250,7 @@ mod tests {
         let s = ColorScale::Sequential { min: 0.0, max: 2.0 };
         assert!(close(s.color(0.0), hex(0xf0efec)));
         assert!(close(s.color(2.0), hex(0x184f95)));
-        let l = ColorScale::Diverging { max_abs: 0.5, log: true };
+        let l = ColorScale::Diverging { max_abs: 0.5, log: true, half: Half::Both };
         assert!(close(l.color(0.5), hex(0x184f95)) && close(l.color(-0.5), hex(0x9c2523)) && close(l.color(0.0), hex(0xf0efec)));
         // A value 100 times smaller still gets a third of the way out.
         let t = |c: [f32; 3]| (c[0] - hex(0xf0efec)[0]).abs();
@@ -229,7 +264,7 @@ mod tests {
     fn the_legend_draws_its_bar_and_text() {
         let (w, h) = (800u32, 600u32);
         let mut pixels = vec![255u8; (w * h * 4) as usize];
-        draw_legend(&mut pixels, w, h, &Legend { title: "Fragment charge (TFVC)".into(), scale: ColorScale::Diverging { max_abs: 0.5, log: false }, decimals: 2 }, [30, 30, 30]);
+        draw_legend(&mut pixels, w, h, &Legend { title: "Fragment charge (TFVC)".into(), scale: ColorScale::Diverging { max_abs: 0.5, log: false, half: Half::Both }, decimals: 2 }, [30, 30, 30]);
         let changed = pixels.chunks(4).filter(|p| p[..3] != [255, 255, 255]).count();
         assert!(changed > 2000, "{changed}");
     }

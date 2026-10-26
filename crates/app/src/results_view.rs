@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 
 use apost3dview_core::{envelope_mesh, ApostResults, IndexEntry, IsosurfaceMesh, MatrixObject, Molecule, Quantity, QuantityKind};
-use apost3dview_render::{format_signed, AtomInstance, ColorScale, EnvelopeRange, IsosurfaceVertex, Legend};
+use apost3dview_render::{format_signed, AtomInstance, ColorScale, EnvelopeRange, Half, IsosurfaceVertex, Legend};
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
@@ -182,11 +182,21 @@ fn is_signed(entry: &IndexEntry, values: &[f64]) -> bool {
 }
 
 /// The automatic scale for some values: diverging up to the largest
-/// magnitude for signed quantities, sequential from zero otherwise.
+/// magnitude for signed quantities, sequential from zero otherwise. When
+/// the values shown all have one sign (a local spin, the interactions of
+/// one atom), the legend shows only that half: the colors stay those of
+/// the full scale (blue positive, red negative), so figures still compare.
 fn automatic_scale(entry: &IndexEntry, values: &[f64]) -> ColorScale {
     let max_abs = values.iter().fold(0.0f64, |m, v| m.max(v.abs()));
     if is_signed(entry, values) {
-        ColorScale::Diverging { max_abs: if max_abs > 0.0 { max_abs } else { 1.0 }, log: false }
+        let half = if values.iter().all(|&v| v >= 0.0) && max_abs > 0.0 {
+            Half::Positive
+        } else if values.iter().all(|&v| v <= 0.0) && max_abs > 0.0 {
+            Half::Negative
+        } else {
+            Half::Both
+        };
+        ColorScale::Diverging { max_abs: if max_abs > 0.0 { max_abs } else { 1.0 }, log: false, half }
     } else {
         let max = values.iter().copied().fold(0.0f64, f64::max);
         ColorScale::Sequential { min: 0.0, max: if max > 0.0 { max } else { 1.0 } }

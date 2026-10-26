@@ -372,7 +372,7 @@ mod tests {
     fn the_legend_goes_once_below_the_grid() {
         let l = layout(2, 1);
         let gray = [128u8, 128, 128, 255].repeat(120 * 100);
-        let legend = Legend { title: "Fragment charge (TFVC)".into(), scale: ColorScale::Diverging { max_abs: 0.5, log: false }, decimals: 2 };
+        let legend = Legend { title: "Fragment charge (TFVC)".into(), scale: ColorScale::Diverging { max_abs: 0.5, log: false, half: crate::colormap::Half::Both }, decimals: 2 };
         let captions = vec![String::new(), String::new()];
         let with = compose_figure(&l, &[&gray, &gray], &captions, Some(&legend));
         let without = compose_figure(&l, &[&gray, &gray], &captions, None);
