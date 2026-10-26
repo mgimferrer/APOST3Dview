@@ -161,6 +161,10 @@ struct StructureState {
     file_absolute: String,
     /// The atoms the settings below refer to, to notice a changed file.
     atomic_numbers: Vec<u32>,
+    /// Size and SHA-256 of `file` when the session was saved (sessions
+    /// saved before 2026-10-26 have none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    file_fingerprint: Option<Fingerprint>,
     /// The APOST-3D results file opened for this structure (relative, then
     /// absolute), when it is not `file` itself: a `.fchk` is opened
     /// without its results, which are loaded on request (2026-10-19).
@@ -170,6 +174,8 @@ struct StructureState {
     results: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     results_absolute: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    results_fingerprint: Option<Fingerprint>,
     /// What the APOST-3D results show on the molecule.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     results_view: Option<ResultsView>,
@@ -216,7 +222,12 @@ struct MeasurementState {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum SurfaceOrigin {
-    Cube { file: String, file_absolute: String },
+    Cube {
+        file: String,
+        file_absolute: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fingerprint: Option<Fingerprint>,
+    },
     Orbital {
         spin: Spin,
         orbital: usize,
@@ -304,6 +315,57 @@ fn resolve(base: &Path, relative: &str, absolute: &str) -> Option<PathBuf> {
     original.is_file().then_some(original)
 }
 
+/// What a file held when a session was saved: its size and SHA-256, so
+/// that reopening the session notices a file that changed (rerun, edited,
+/// replaced) even when its atoms are the same.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+struct Fingerprint {
+    size: u64,
+    sha256: String,
+}
+
+/// The fingerprint of `path`, cached by size and modification time: a large
+/// `.fchk` is read once, not at every export that saves its session.
+fn fingerprint(path: &Path) -> Option<Fingerprint> {
+    use sha2::Digest;
+    use std::collections::HashMap;
+    use std::io::Read;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::SystemTime;
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, (u64, SystemTime, String)>>> = OnceLock::new();
+    let meta = std::fs::metadata(path).ok()?;
+    let (size, modified) = (meta.len(), meta.modified().ok()?);
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some((s, m, hash)) = cache.lock().ok()?.get(path)
+        && *s == size
+        && *m == modified
+    {
+        return Some(Fingerprint { size, sha256: hash.clone() });
+    }
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buffer = vec![0u8; 1 << 20];
+    loop {
+        let read = file.read(&mut buffer).ok()?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let sha256: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    cache.lock().ok()?.insert(path.to_path_buf(), (size, modified, sha256.clone()));
+    Some(Fingerprint { size, sha256 })
+}
+
+/// Notes a file that differs from the one the session was saved with.
+fn check_fingerprint(path: &Path, saved: Option<&Fingerprint>, problems: &mut Vec<String>) {
+    if let Some(saved) = saved
+        && fingerprint(path).as_ref() != Some(saved)
+    {
+        problems.push(format!("{} is not the file this session was saved with (its contents changed)", crate::util::file_display_name(path)));
+    }
+}
+
 fn file_name(path: &str) -> String {
     Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string())
 }
@@ -330,7 +392,7 @@ impl App {
                     .iter()
                     .map(|surface| {
                         let origin = match &surface.source {
-                            SurfaceSource::Cube(file) => SurfaceOrigin::Cube { file: relative_path(base, file), file_absolute: file.to_string_lossy().into_owned() },
+                            SurfaceSource::Cube(file) => SurfaceOrigin::Cube { file: relative_path(base, file), file_absolute: file.to_string_lossy().into_owned(), fingerprint: fingerprint(file) },
                             SurfaceSource::Density { spin, spacing_bohr, padding_bohr, natural } => SurfaceOrigin::Density {
                                 spin_density: *spin,
                                 grid_spacing_bohr: *spacing_bohr,
@@ -370,8 +432,10 @@ impl App {
                     file: relative_path(base, path),
                     file_absolute: path.to_string_lossy().into_owned(),
                     atomic_numbers: molecule.atomic_numbers.clone(),
+                    file_fingerprint: fingerprint(path),
                     results: results.map(|r| relative_path(base, r)),
                     results_absolute: results.map(|r| r.to_string_lossy().into_owned()),
+                    results_fingerprint: results.and_then(|r| fingerprint(r)),
                     results_view: structure.apost.as_ref().and_then(|a| a.view.clone()),
                     selected_surface: structure.selected_surface,
                     hidden_atoms,
@@ -532,6 +596,7 @@ impl App {
                 problems.push(format!("{} was not found", file_name(&state.file)));
                 continue;
             };
+            check_fingerprint(&file, state.file_fingerprint.as_ref(), &mut problems);
             let Some(index) = self.open_structure_file(&file) else {
                 problems.push(format!("{} could not be opened", file_name(&state.file)));
                 continue;
@@ -550,6 +615,7 @@ impl App {
                 _ => None,
             };
             if let Some(results) = results {
+                check_fingerprint(&results, state.results_fingerprint.as_ref(), &mut problems);
                 self.attach_results(index, &results);
             }
             self.restore_structure(index, state, &base, &mut problems);
@@ -700,8 +766,11 @@ impl App {
         let mut groups: BTreeMap<Group, Vec<(usize, OrbitalChoice)>> = BTreeMap::new();
         for (slot, state) in states.iter().enumerate() {
             match &state.origin {
-                SurfaceOrigin::Cube { file, file_absolute } => match resolve(base, file, file_absolute).map(|p| (parse_cube(&p), p)) {
-                    Some((Ok(cube), path)) => slots[slot] = Some(Surface::new(state.label.clone(), cube.grid, settings_of(state), SurfaceSource::Cube(path))),
+                SurfaceOrigin::Cube { file, file_absolute, fingerprint: saved } => match resolve(base, file, file_absolute).map(|p| (parse_cube(&p), p)) {
+                    Some((Ok(cube), path)) => {
+                        check_fingerprint(&path, saved.as_ref(), problems);
+                        slots[slot] = Some(Surface::new(state.label.clone(), cube.grid, settings_of(state), SurfaceSource::Cube(path)));
+                    }
                     Some((Err(_), _)) => problems.push(format!("{} could not be read", file_name(file))),
                     None => problems.push(format!("{} was not found", file_name(file))),
                 },

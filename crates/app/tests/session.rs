@@ -139,6 +139,29 @@ fn missing_and_changed_files_are_reported() {
     assert_eq!(second.state().structure_labels(), vec!["CH3F.fchk"]);
 }
 
+/// A file that changed but kept its atoms (a rerun, another functional) is
+/// noticed by its fingerprint (size and SHA-256), and an unchanged one
+/// isn't reported.
+#[test]
+fn a_changed_file_with_the_same_atoms_is_reported() {
+    let dir = scratch_dir("session-fingerprint");
+    let fchk = copy_into(&dir, &repo_dir().join("validation/gaussian/H2O-631G.fchk"));
+    let first = app_with(vec![fchk.clone()]);
+    let session = dir.join("s.a3dview");
+    first.state().save_session_to(&session).unwrap();
+    assert!(std::fs::read_to_string(&session).unwrap().contains("sha256 = "));
+
+    let unchanged = app_with(vec![session.clone()]);
+    assert_eq!(toasts(&unchanged), vec!["Session s.a3dview opened".to_string()]);
+
+    // Same atoms, other contents: the 6-31G* file of the same water.
+    std::fs::copy(repo_dir().join("validation/gaussian/H2O-631Gstar.fchk"), &fchk).unwrap();
+    let changed = app_with(vec![session]);
+    let messages = toasts(&changed).join("\n");
+    assert!(messages.contains("H2O-631G.fchk is not the file this session was saved with"), "{messages}");
+    assert!(!messages.contains("has changed since the session was saved"), "same atoms: {messages}");
+}
+
 #[test]
 fn a_session_is_opened_from_the_open_menu_like_any_file() {
     let dir = scratch_dir("session-kind");
