@@ -1,0 +1,11 @@
+H2O-631G2df-cart         MO=Homo          H2O-631G2df-cart-HOMO
+H2O-631G2df-cart         MO=Lumo          H2O-631G2df-cart-LUMO
+H2O-631G2df-cart         MO=1             H2O-631G2df-cart-MO1
+H2O-augccpVTZ            MO=Homo          H2O-augccpVTZ-HOMO
+H2O-augccpVTZ            MO=Lumo          H2O-augccpVTZ-LUMO
+H2O-augccpVTZ            MO=1             H2O-augccpVTZ-MO1
+CH2-T-ROHF-ccpVTZ        MO=Homo          CH2-T-ROHF-ccpVTZ-HOMO
+CH2-T-ROHF-ccpVTZ        MO=Lumo          CH2-T-ROHF-ccpVTZ-LUMO
+CH2-T-ROHF-ccpVTZ        MO=3             CH2-T-ROHF-ccpVTZ-MO3
+H2O-MP2-ccpVTZ           Density=MP2      H2O-MP2-ccpVTZ-density-MP2
+H2O-MP2-ccpVTZ           Density=SCF      H2O-MP2-ccpVTZ-density-SCF

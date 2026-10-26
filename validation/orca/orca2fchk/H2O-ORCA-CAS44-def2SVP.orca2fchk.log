@@ -1,0 +1,2 @@
+orca2fchk.py: H2O-ORCA-CAS44-def2SVP.fchk written (CASSCF, 24 basis functions, overlap check 2.2e-13)
+orca2fchk.py: H2O-ORCA-CAS44-def2SVP.dm1 and H2O-ORCA-CAS44-def2SVP.dm2 written: CAS(4,4), 18 determinants; give them in the # DM block, with ORCA
