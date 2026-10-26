@@ -181,6 +181,16 @@ fn is_signed(entry: &IndexEntry, values: &[f64]) -> bool {
     id.contains("charges") || id.ends_with(".spin") || id.contains(".s2") || values.iter().any(|v| *v < -1e-3)
 }
 
+/// The overall reliability index R (%) of an EOS or GEOS run, from its
+/// key number (`<analysis>.reliability_percent`).
+fn reliability(results: &ApostResults, analysis: &str) -> Option<f64> {
+    let entry = results.entry(&format!("{analysis}.reliability_percent"))?;
+    match results.quantity(entry).ok()? {
+        Quantity::Scalar(value) => value,
+        _ => None,
+    }
+}
+
 /// The automatic scale for some values: diverging up to the largest
 /// magnitude for signed quantities, sequential from zero otherwise. When
 /// the values shown all have one sign (a local spin, the interactions of
@@ -471,6 +481,12 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             };
             let title = match unit {
                 Some(unit) => format!("{title}, {unit}"),
+                None => title,
+            };
+            // Oxidation states with the reliability index R of their
+            // assignment, which says how clear-cut they are.
+            let title = match entry.id.strip_suffix(".fragments.oxidation_states").and_then(|analysis| reliability(results, analysis)) {
+                Some(r) => format!("{title}, R = {r:.1}%"),
                 None => title,
             };
             let title = if matches!(scale, ColorScale::Diverging { log: true, .. }) { format!("{title}, log scale") } else { title };

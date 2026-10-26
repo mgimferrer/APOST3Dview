@@ -7,7 +7,7 @@ mod common;
 
 use egui_kittest::kittest::Queryable;
 
-use common::{app_with, fixtures_dir, screenshot};
+use common::{app_with, example, fixtures_dir, screenshot};
 
 fn differing(a: &[u8], b: &[u8]) -> usize {
     a.chunks(4).zip(b.chunks(4)).filter(|(p, q)| p != q).count()
@@ -139,4 +139,15 @@ fn other_values_are_listed_only_on_request() {
     for shown in other {
         assert!(harness.query_by_label(shown).is_some(), "{shown} listed on request");
     }
+}
+
+/// Oxidation states carry the reliability index R of their assignment in
+/// the legend, so a figure says how clear-cut they are.
+#[test]
+fn oxidation_states_show_their_reliability_index() {
+    let mut harness = app_with(vec![example("FeCN5NO3--UBLYP").join("FeCN5NO3--UBLYP.apost.json")]);
+    harness.run_steps(2);
+    assert!(harness.state_mut().show_on_molecule("eos.fragments.oxidation_states"));
+    harness.run_steps(2);
+    assert_eq!(harness.state().legend_title().as_deref(), Some("EOS oxidation states (Lowdin), R = 64.5%"));
 }
