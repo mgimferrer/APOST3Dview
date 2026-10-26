@@ -99,3 +99,15 @@ fn efos_say_how_closely_the_file_reproduces_them() {
     harness.get_by_label_contains("reproduces this EFO to 52% only");
     screenshot(&mut harness, "efo-approximate");
 }
+
+/// A surface cut flat by the edge of its grid's box says so: a cube at a
+/// low isovalue reaches the box; at the default it doesn't.
+#[test]
+fn a_surface_reaching_the_edge_of_its_box_says_so() {
+    let mut harness = app_with(vec![repo_dir().join("validation/gaussian/H2O-ccpVDZ-LUMO.cube")]);
+    harness.get_by_label("Surfaces").click_accesskit();
+    harness.run_steps(3);
+    assert_eq!(harness.query_all_by_label_contains("reaches the edge").count(), 0, "not at the default isovalue");
+    set_isovalue(&mut harness, 0.0005);
+    harness.get_by_label_contains("reaches the edge of the cube file's box");
+}

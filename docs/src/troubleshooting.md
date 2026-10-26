@@ -31,7 +31,7 @@ An orbital file (EFOs, OSLOs) of another run is refused the same way, with the r
 
 ## An orbital looks cut flat on one side
 
-The grid an orbital is computed on reaches 4 Bohr beyond the outermost atoms by default. A diffuse orbital (often a high virtual one, or at a small isovalue) can reach further and is then cut at the edge of the grid. Raise **Box padding (Bohr)** in the **Surfaces** window and generate it again.
+The grid an orbital is computed on reaches 4 Bohr beyond the outermost atoms by default. A diffuse orbital (often a high virtual one, or at a small isovalue) can reach further and is then cut at the edge of the grid; the **Surfaces** window says so under the surface's name. Raise **Box padding (Bohr)** and generate it again. A cube file has its own box: write it with a larger one, or raise the isovalue.
 
 ## An orbital looks faceted or rough
 

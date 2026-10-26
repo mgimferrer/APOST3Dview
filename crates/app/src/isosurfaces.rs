@@ -151,11 +151,28 @@ pub(crate) struct Surface {
     /// What `positive`/`negative` were extracted with; `None` before the
     /// first extraction.
     extracted_with: Option<ExtractionKey>,
+    /// The surface reaches a face of its grid's box at the last
+    /// extraction, so it is cut flat there.
+    pub(crate) reaches_edge: bool,
+}
+
+/// Whether a point on a face of the grid's box is beyond the isovalue:
+/// the surface would be cut flat there.
+fn reaches_edge(grid: &ScalarGrid, isovalue: f32, both_signs: bool) -> bool {
+    let [nx, ny, nz] = grid.dims;
+    let beyond = |i: usize, j: usize, k: usize| {
+        let v = grid.value_at(i, j, k);
+        v >= isovalue || (both_signs && -v >= isovalue)
+    };
+    let face = |a: usize, b: usize, at: &dyn Fn(usize, usize) -> bool| (0..a).any(|x| (0..b).any(|y| at(x, y)));
+    face(ny, nz, &|j, k| beyond(0, j, k) || beyond(nx - 1, j, k))
+        || face(nx, nz, &|i, k| beyond(i, 0, k) || beyond(i, ny - 1, k))
+        || face(nx, ny, &|i, j| beyond(i, j, 0) || beyond(i, j, nz - 1))
 }
 
 impl Surface {
     pub(crate) fn new(label: String, grid: ScalarGrid, settings: SurfaceSettings, source: SurfaceSource) -> Self {
-        Self { label, source, grid, visible: false, settings, fragment_tint: None, note: None, caption_facts: None, positive: None, negative: None, extracted_with: None }
+        Self { label, source, grid, visible: false, settings, fragment_tint: None, note: None, caption_facts: None, positive: None, negative: None, extracted_with: None, reaches_edge: false }
     }
 
     /// A total or spin density, which has its own defaults
@@ -213,6 +230,7 @@ impl Surface {
         self.positive = Some(extract_isosurface(grid, key.isovalue));
         self.negative = key.both_signs.then(|| extract_isosurface(&grid.negated(), key.isovalue));
         self.extracted_with = Some(key);
+        self.reaches_edge = reaches_edge(&self.grid, key.isovalue, key.both_signs);
     }
 
     fn push_vertices(&self, vertices: &mut Vec<IsosurfaceVertex>) {

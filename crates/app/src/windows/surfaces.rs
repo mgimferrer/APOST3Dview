@@ -8,7 +8,7 @@ use egui::{RichText, Slider};
 use crate::app::App;
 use crate::windows::ToolWindow;
 use crate::orbital_sets::show_set_checklist;
-use crate::isosurfaces::SurfaceSettings;
+use crate::isosurfaces::{SurfaceSettings, SurfaceSource};
 use crate::orbitals::{fitted_only, fragment_weighting, show_mo_checklist, OrbitalAccuracyPreset};
 use crate::state::LoadedStructure;
 
@@ -517,6 +517,13 @@ impl App {
         ui.separator();
         ui.label(RichText::new(&surface.label).strong());
         if let Some(note) = &surface.note {
+            ui.label(RichText::new(note).small().color(ui.visuals().warn_fg_color));
+        }
+        if surface.reaches_edge && surface.visible {
+            let note = match surface.source {
+                SurfaceSource::Cube(_) => "This surface reaches the edge of the cube file's box and is cut flat there: write the cube with a larger box, or raise the isovalue.",
+                _ => "This surface reaches the edge of its grid's box and is cut flat there: raise Box padding (Bohr) and generate it again, or raise the isovalue.",
+            };
             ui.label(RichText::new(note).small().color(ui.visuals().warn_fg_color));
         }
         let before = surface.settings;
