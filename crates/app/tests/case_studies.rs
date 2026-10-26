@@ -762,20 +762,31 @@ fn pnictoranide_frontier_efos() {
     let sb = dir.join("Pn-4c/4c-Sb-EOS.apost.json");
     let bi = dir.join("Pn-4d/4d-Bi-EOS.apost.json");
     let (sb_atoms, bi_atoms) = (Atoms::of(&read_results(&sb)), Atoms::of(&read_results(&bi)));
-    // Chem. Sci. 2025 Fig 9: the frontier EFOs of the Fe-Pn bond (4d′: the
-    // alpha ones; beta 0.468 / 0.404).
-    fn generate(harness: &mut egui_kittest::Harness<'static, apost3dview::App>, _: usize) {
-        generate_in_order(harness, "EOS EFOs", &[(194, false), (195, false)]);
+    // Chem. Sci. 2025 Fig 9: the frontier EFOs of the Fe-Pn bond (rows 195
+    // and 196 of each channel's list): 4c closed shell, 4d′ alpha and beta.
+    fn generate(harness: &mut egui_kittest::Harness<'static, apost3dview::App>, structure: usize) {
+        if structure == 0 {
+            generate_in_order(harness, "EOS EFOs", &[(194, false), (195, false)]);
+        } else {
+            generate_in_order(harness, "EOS EFOs", &[(194, false), (195, false), (194, true), (195, true)]);
+        }
     }
-    let captions = ["4c: LO 0.636 (Sb)", "4c: FU 0.447 (Fe)", "4d\u{2032}: LO 0.474 (Fe)", "4d\u{2032}: FU 0.408 (Bi)"];
+    let captions = [
+        "4c: LO 0.636 (Sb)",
+        "4c: FU 0.447 (Fe)",
+        "4d\u{2032} \u{3b1}: LO 0.474 (Fe)",
+        "4d\u{2032} \u{3b1}: FU 0.408 (Bi)",
+        "4d\u{2032} \u{3b2}: LO 0.468 (Fe)",
+        "4d\u{2032} \u{3b2}: FU 0.404 (Bi)",
+    ];
     let mut patch = format!("{FIGURE_LOOK}[appearance.material]\natom_scale = 0.17\nbond_radius = 0.12\n");
-    for atoms in [&sb_atoms, &bi_atoms] {
+    for (atoms, surfaces) in [(&sb_atoms, 2), (&bi_atoms, 4)] {
         patch.push_str(&format!("[[structures]]\nhidden_atoms = {}\n", toml_array(&atoms.hydrogens())));
-        for _ in 0..2 {
+        for _ in 0..surfaces {
             patch.push_str("[[structures.surfaces]]\nisovalue = 0.05\nvisible = true\n");
         }
     }
-    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 2\ncolumns = 2\npanel_shape = \"view\"\n{CAPTION_SIZE}"));
+    patch.push_str(&format!("[figure.settings]\nfixed_layout = true\nrows = 3\ncolumns = 2\npanel_shape = \"view\"\n{CAPTION_SIZE}"));
     for caption in captions {
         patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
     }
@@ -1092,4 +1103,60 @@ fn toc_pictures() {
         let mut harness = build(vec![results], setup, &session, &patch, carbene_pi_view(&atoms, 0.0), 0.5);
         save_png(&mut harness, &out.join(format!("{name}.png")), 1400, 1200);
     }
+}
+
+/// SI: what the projected EFOs of the orbital `.fchk` miss. Two EFOs of CH3F
+/// (EOS, TFVC; APOST-3D's cube files of them in `validation/`): EFO 10, the
+/// first unoccupied on CH3 (0.188, fit 70%), and EFO 15 on F (0.019, fit
+/// 49%), each drawn (a) as the projection stored in the orbital file, (b)
+/// exactly, w_F·φ, and (c) from APOST-3D's cube file, same view and
+/// isovalue. Three panel figures, one column each, placed side by side by
+/// the manuscript's compose.py.
+#[test]
+fn efo_shapes() {
+    let Some(out) = figures_dir() else { return };
+    let dir = repo_dir().join("validation/apost3d/efo-cubes/CH3F-EOS-CUBE");
+    let results = dir.join("CH3F-EOS-CUBE.apost.json");
+    let atoms = Atoms::of(&read_results(&results));
+    let p = &atoms.positions;
+    let view = orientation(p[1] - p[0], p[2] - p[0], 0.25, 0.4);
+    let isovalue = 0.05;
+    let figure = "[figure.settings]\nfixed_layout = true\nrows = 2\ncolumns = 1\nfigure_width_in = 2.2\nfont_size_pt = 8.0\n";
+    let captions = ["EFO 10 (CH3) 0.188", "EFO 15 (F) 0.019"];
+    for (name, weighted) in [("efo-shape-stored", false), ("efo-shape-exact", true)] {
+        let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| {
+            generate_in_order(harness, "EOS EFOs", &[(9, false), (14, false)]);
+            open_window(harness, "Export");
+            click(harness, "Panels");
+        };
+        let mut patch = format!("{FIGURE_LOOK}[[structures]]\n");
+        for _ in 0..2 {
+            patch.push_str(&format!("[[structures.surfaces]]\nisovalue = {isovalue}\nvisible = true\nfragment_weighted = {weighted}\n"));
+        }
+        patch.push_str(figure);
+        for caption in captions {
+            patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
+        }
+        let mut harness = build(vec![results.clone()], setup, &out.join(format!("{name}.a3dview")), &patch, view, 1.0);
+        eprintln!("{name}: {:?}", harness.state().surface_labels());
+        save_figure(&mut harness, &out, name);
+    }
+    // The cube files join the structure of the results (same geometry), so
+    // the framing is the same as above.
+    let files = vec![results.clone(), dir.join("CH3F-EOS-CUBE_tfvc_FR2_5.cube"), dir.join("CH3F-EOS-CUBE_tfvc_FR1_8.cube")];
+    let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| {
+        open_window(harness, "Export");
+        click(harness, "Panels");
+    };
+    let mut patch = format!("{FIGURE_LOOK}[[structures]]\n");
+    for _ in 0..2 {
+        patch.push_str(&format!("[[structures.surfaces]]\nisovalue = {isovalue}\nvisible = true\n"));
+    }
+    patch.push_str(figure);
+    for caption in captions {
+        patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
+    }
+    let mut harness = build(files, setup, &out.join("efo-shape-cube.a3dview"), &patch, view, 1.0);
+    eprintln!("efo-shape-cube: {:?} {:?}", harness.state().structure_labels(), harness.state().surface_labels());
+    save_figure(&mut harness, &out, "efo-shape-cube");
 }
