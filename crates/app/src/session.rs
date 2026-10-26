@@ -332,7 +332,9 @@ fn fingerprint(path: &Path) -> Option<Fingerprint> {
     use std::io::Read;
     use std::sync::{Mutex, OnceLock};
     use std::time::SystemTime;
-    static CACHE: OnceLock<Mutex<HashMap<PathBuf, (u64, SystemTime, String)>>> = OnceLock::new();
+    /// Path -> (size, modification time, SHA-256).
+    type Cache = Mutex<HashMap<PathBuf, (u64, SystemTime, String)>>;
+    static CACHE: OnceLock<Cache> = OnceLock::new();
     let meta = std::fs::metadata(path).ok()?;
     let (size, modified) = (meta.len(), meta.modified().ok()?);
     let cache = CACHE.get_or_init(Default::default);
