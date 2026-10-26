@@ -108,7 +108,13 @@ fn per_atom_settings_survive_and_a_moved_folder_still_opens() {
         copy_into(&moved, &entry.unwrap().path());
     }
     std::fs::remove_dir_all(&dir).unwrap();
-    let mut second = app_with(vec![moved.join("ch3f.a3dview")]);
+    // Shared with its files (a data deposit), a session needs only its
+    // relative paths: the absolute ones, which name the author's folders,
+    // can be left out.
+    let session = moved.join("ch3f.a3dview");
+    let shared: String = std::fs::read_to_string(&session).unwrap().lines().filter(|l| !l.contains("_absolute = ")).map(|l| format!("{l}\n")).collect();
+    std::fs::write(&session, shared).unwrap();
+    let mut second = app_with(vec![session]);
     second.run_steps(3);
     assert!(toasts(&second).iter().all(|m| !m.contains("but")), "{:?}", toasts(&second));
     second.get_by_label("Measure").click_accesskit();

@@ -197,8 +197,10 @@ fn merge(base: &mut toml::Value, patch: &toml::Value) {
     }
 }
 
+/// A single image, supersampled 2x as `apost3dview --render` makes it, so the
+/// deposited session renders back to this very picture.
 fn save_png(harness: &mut egui_kittest::Harness<'static, apost3dview::App>, path: &std::path::Path, width: u32, height: u32) {
-    let pixels = harness.state_mut().render_image(width, height).expect("render");
+    let pixels = harness.state_mut().render_image_supersampled(width, height, 2).expect("render");
     image::RgbaImage::from_raw(width, height, pixels).unwrap().save(path).unwrap();
 }
 

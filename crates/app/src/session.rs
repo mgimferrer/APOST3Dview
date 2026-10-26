@@ -157,7 +157,9 @@ struct StructureState {
     /// Relative to the session file's folder.
     file: String,
     /// Where the file was when the session was saved; tried when the
-    /// relative path doesn't lead to it.
+    /// relative path doesn't lead to it. Optional: a session shared with
+    /// its files (a data deposit) needs only the relative paths.
+    #[serde(default)]
     file_absolute: String,
     /// The atoms the settings below refer to, to notice a changed file.
     atomic_numbers: Vec<u32>,
@@ -224,6 +226,7 @@ struct MeasurementState {
 enum SurfaceOrigin {
     Cube {
         file: String,
+        #[serde(default)]
         file_absolute: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         fingerprint: Option<Fingerprint>,
