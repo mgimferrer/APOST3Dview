@@ -10,3 +10,14 @@ A session points to your files rather than copying them, with paths relative to 
 A session also records the size and a checksum (SHA-256) of every file it uses. If a file is missing, or isn't the file the session was saved with (rerun, replaced or edited, even with the same atoms), APOST3Dview opens the rest and says so; when its atoms differ, it also says what it couldn't restore (hidden atoms, bonds, measurements). A session doesn't contain the files themselves: to reproduce a figure elsewhere, keep the session together with its files. A session saved by a newer version of APOST3Dview asks you to update.
 
 By default, every exported image and video also gets its session (see [Figures and videos](figures.md)), so each figure keeps the setup that made it.
+
+## Rendering a session from the command line
+
+A session can be turned into its picture without opening a window:
+
+```
+apost3dview --render figure.a3dview figure.png
+apost3dview --render figure.a3dview figure.png --size 2400x1500
+```
+
+A session whose figure is a panel figure (or a single image with a caption) gives that figure, at the size and resolution it records; otherwise the view is rendered at the size given (1920x1200 by default). The picture is the one the **Export** window saves, pixel for pixel, so this is a quick way to check that a session gives back its figure, or to remake figures from a script. The program is `apost3dview` on Linux, `APOST3Dview.exe` on Windows (which writes the picture but prints nothing), and on macOS it is inside the app: `/Applications/APOST3Dview.app/Contents/MacOS/APOST3Dview --render ...`.

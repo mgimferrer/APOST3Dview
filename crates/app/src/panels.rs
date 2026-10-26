@@ -585,7 +585,7 @@ impl App {
 
     /// The figure (panels, or the single image with its caption) at full
     /// size, as RGBA8 rows.
-    fn render_figure(&mut self) -> Result<Figure, String> {
+    pub(crate) fn render_figure(&mut self) -> Result<Figure, String> {
         let job = self.figure_job(1.0)?;
         let panels = self.render_panels(&job)?;
         Ok(Self::compose(&job, &panels))

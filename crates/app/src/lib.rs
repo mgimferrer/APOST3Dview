@@ -8,6 +8,7 @@ mod alignment;
 mod app;
 mod export;
 mod files;
+mod headless;
 mod input_generator;
 mod isosurfaces;
 mod label_layout;
@@ -28,6 +29,7 @@ mod viewport;
 mod windows;
 
 pub use app::{App, StartupOptions};
+pub use headless::{render_session, DEFAULT_SIZE};
 
 /// The app's name for the system: eframe's folder for saved state (and our
 /// `presets/` inside it), and the window's app id, which on Linux must

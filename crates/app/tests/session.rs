@@ -202,3 +202,20 @@ fn surfaces_are_extracted_identically_every_time() {
     a.run_steps(3);
     assert!(first == image(&mut a), "extracted again in the same app");
 }
+
+/// A session rendered without a window (`apost3dview --render`) gives the
+/// picture the app exports, pixel for pixel.
+#[test]
+fn a_session_renders_from_the_command_line_as_in_the_app() {
+    let dir = scratch_dir("session-render");
+    let mut harness = app_with(vec![repo_dir().join("validation/gaussian/H2O-631G.fchk")]);
+    rotate(&mut harness);
+    let session = dir.join("water.a3dview");
+    harness.state().save_session_to(&session).unwrap();
+    let expected = harness.state_mut().render_image_supersampled(320, 240, 2).unwrap();
+    let out = dir.join("water.png");
+    let message = apost3dview::render_session(&session, &out, [320, 240]).unwrap();
+    assert!(message.contains("image, 320x240"), "{message}");
+    let written = image::open(&out).unwrap().to_rgba8();
+    assert!(written.as_raw() == &expected, "the command line's picture differs from the app's");
+}
