@@ -1,4 +1,4 @@
 # The APOST-3D commit (github.com/mgimferrer/APOST3D) whose reference results
 # CI tests against, fetched by `scripts/sync-apost3d-fixtures.sh --pinned`.
 # To move to newer results, replace the line below with the new commit.
-653ccd8ab6368f4877b757495044742d9be99a89
+83950cd088b36514bb09f472d8bf808865ed1c18
