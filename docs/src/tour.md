@@ -1,6 +1,6 @@
 # A five-minute tour
 
-Every download holds an `examples` folder with five complete APOST-3D calculations: each subfolder is one run, as APOST-3D leaves it (the input `.inp`, the wavefunction `.fchk`, the text report `.apost`, the results file `.apost.json`, and the orbital files some analyses write). They are also in the [source repository](https://github.com/mgimferrer/APOST3Dview/tree/main/examples).
+Every download holds an `examples` folder with eight complete APOST-3D calculations (the tour uses five of them): each subfolder is one run, as APOST-3D leaves it (the input `.inp`, the wavefunction `.fchk`, the text report `.apost`, the results file `.apost.json`, and the orbital files some analyses write). They are also in the [source repository](https://github.com/mgimferrer/APOST3Dview/tree/main/examples).
 
 To open one, open its `.apost.json` file (**Open**, or drag it onto the window). Its `.fchk` opens with it, and the **APOST-3D** window shows the results. Each section below takes a minute.
 
