@@ -29,7 +29,6 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
-use faer::linalg::solvers::Solve;
 use faer::{Mat, Side};
 
 use crate::fchk::{parse_header, read_array_tokens, HeaderKind};
@@ -166,10 +165,17 @@ pub fn natural_orbitals(mos: &MolecularOrbitals, lower: &[f64]) -> Result<Molecu
         let (a, b) = if i >= j { (i, j) } else { (j, i) };
         lower[a * (a + 1) / 2 + b]
     });
-    // L = (C^T C)^-1 C^T, the left inverse of C.
-    let gram = c.transpose() * &c;
-    let llt = gram.llt(Side::Lower).map_err(|_| "the orbitals are linearly dependent".to_string())?;
-    let left_inverse = llt.solve(c.transpose());
+    // L = (C^T C)^-1 C^T, the left inverse of C, from C = QR as R^-1 Q^T:
+    // forming C^T C would square C's condition number.
+    let qr = c.qr();
+    let r = qr.thin_R();
+    let diagonal: Vec<f64> = (0..m).map(|k| r[(k, k)].abs()).collect();
+    let largest = diagonal.iter().cloned().fold(0.0, f64::max);
+    if diagonal.iter().any(|&d| d <= 1e-12 * largest) {
+        return Err("the orbitals are linearly dependent".to_string());
+    }
+    let mut left_inverse = qr.compute_thin_Q().transpose().to_owned();
+    faer::linalg::triangular_solve::solve_upper_triangular_in_place(r, left_inverse.as_mut(), faer::Par::Seq);
     let p_mo = &left_inverse * &p * left_inverse.transpose();
     let p_mo = Mat::<f64>::from_fn(m, m, |i, j| 0.5 * (p_mo[(i, j)] + p_mo[(j, i)]));
     let eigen = p_mo.self_adjoint_eigen(Side::Lower).map_err(|_| "the density matrix could not be diagonalized".to_string())?;

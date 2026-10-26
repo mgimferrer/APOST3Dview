@@ -136,6 +136,14 @@ fn density_name(info: &FchkDensities, kind: &str) -> String {
 fn natural_set(path: &Path, wfn: &Wavefunction, kind: &str, name: String) -> Result<NaturalOrbitals, String> {
     let matrix = read_fchk_density(path, kind).map_err(|e| e.to_string())?;
     let total = natural_orbitals(&wfn.alpha, &matrix.total)?;
+    // The occupations add up to the number of electrons (the trace of the
+    // density matrix in the orbitals' basis): a check that the file's
+    // orbitals span its density.
+    let electrons: f64 = wfn.total_density_weights().iter().flat_map(|(_, w)| w.iter()).sum();
+    let trace: f64 = total.occupations.iter().sum();
+    if (trace - electrons).abs() > 1e-4 * electrons.max(1.0) {
+        return Err(format!("its natural occupations add up to {trace:.6} electrons, the file has {electrons:.0}"));
+    }
     // A singlet's spin block (apost3d.py writes one) is all zeros.
     let spin = match matrix.spin.filter(|s| s.iter().any(|v| v.abs() > 1e-10)) {
         Some(spin) => Some(natural_orbitals(&wfn.alpha, &spin)?),
