@@ -146,8 +146,9 @@ impl App {
         let Some(legend) = self.results_legend() else { return };
         let ink = self.label_colors().0;
         let ink = crate::util::rgb_to_color32(ink);
-        let (bar_w, bar_h) = (240.0, 11.0);
-        let origin = Pos2::new(rect.left() + 24.0, rect.bottom() - 52.0);
+        let k = legend.size;
+        let (bar_w, bar_h) = (240.0 * k, 11.0 * k);
+        let origin = Pos2::new(rect.left() + 24.0, rect.bottom() - 52.0 * k);
         let mut mesh = egui::Mesh::default();
         let steps = 48;
         for i in 0..steps {
@@ -157,10 +158,10 @@ impl App {
             mesh.add_colored_rect(Rect::from_min_max(Pos2::new(origin.x + u0 * bar_w, origin.y), Pos2::new(origin.x + u1 * bar_w, origin.y + bar_h)), color);
         }
         painter.add(egui::Shape::mesh(mesh));
-        let font = egui::FontId::proportional(13.0);
-        painter.text(Pos2::new(origin.x, origin.y - 4.0), egui::Align2::LEFT_BOTTOM, &legend.title, egui::FontId::proportional(14.0), ink);
+        let font = egui::FontId::proportional(13.0 * k);
+        painter.text(Pos2::new(origin.x, origin.y - 4.0 * k), egui::Align2::LEFT_BOTTOM, &legend.title, egui::FontId::proportional(14.0 * k), ink);
         let (lo, mid, hi) = legend.scale.bar_labels(legend.decimals);
-        let y = origin.y + bar_h + 3.0;
+        let y = origin.y + bar_h + 3.0 * k;
         painter.text(Pos2::new(origin.x, y), egui::Align2::LEFT_TOP, lo, font.clone(), ink);
         if let Some(mid) = mid {
             painter.text(Pos2::new(origin.x + bar_w / 2.0, y), egui::Align2::CENTER_TOP, mid, font.clone(), ink);

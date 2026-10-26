@@ -44,6 +44,10 @@ pub(crate) struct ResultsView {
     /// `None`: as many as the values need (2, or 3-4 for small values).
     pub(crate) decimals: Option<usize>,
     pub(crate) label_size: f32,
+    /// The legend's size relative to the default, for figures printed
+    /// small (a third of a page width).
+    #[serde(default = "one")]
+    pub(crate) legend_size: f32,
     /// Bonds drawn thicker for larger bond orders (off: all equal).
     pub(crate) bond_thickness: bool,
     /// Signed values colored by the logarithm of their magnitude (for
@@ -135,6 +139,10 @@ pub(crate) fn scaled_matrix(m: &MatrixObject, factor: f64) -> MatrixObject {
     m
 }
 
+fn one() -> f32 {
+    1.0
+}
+
 fn names_by_default() -> bool {
     true
 }
@@ -150,6 +158,7 @@ impl ResultsView {
             labels: true,
             decimals: None,
             label_size: 34.0,
+            legend_size: 1.0,
             bond_thickness: false,
             log_scale: false,
             energy_unit: EnergyUnit::default(),
@@ -493,7 +502,7 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             scene.caption = Some(title.clone());
             // Energies keep their decimals (four in au) at the bar's ends too.
             let legend_decimals = if energy.is_some() { decimals } else { decimals.min(3) };
-            scene.legend = Some(Legend { title, scale, decimals: legend_decimals });
+            scene.legend = Some(Legend { title, scale, decimals: legend_decimals, size: view.legend_size });
         }
     }
     scene

@@ -140,6 +140,10 @@ pub struct Legend {
     pub title: String,
     pub scale: ColorScale,
     pub decimals: usize,
+    /// Size relative to the default (1: the title 2.3% of the image's
+    /// height), for figures printed small. A panel figure's legend below the
+    /// grid follows the captions' size instead.
+    pub size: f32,
 }
 
 fn legend_font() -> &'static fontdue::Font {
@@ -188,7 +192,7 @@ fn draw_text(pixels: &mut [u8], width: u32, height: u32, text: &str, x: f32, bas
 /// export resolution. `ink` is the text color (dark on a light background,
 /// light on a dark one).
 pub fn draw_legend(pixels: &mut [u8], width: u32, height: u32, legend: &Legend, ink: [u8; 3]) {
-    let unit = (height as f32 / 860.0).max(0.25);
+    let unit = (height as f32 / 860.0).max(0.25) * legend.size;
     let x0 = (40.0 * unit) as u32;
     let y0 = height.saturating_sub((76.0 * unit) as u32);
     draw_legend_at(pixels, width, height, legend, ink, x0, y0, unit);
@@ -208,7 +212,12 @@ pub fn draw_legend_at(pixels: &mut [u8], width: u32, height: u32, legend: &Legen
         }
     }
     let (title_px, value_px) = (20.0 * unit, 18.0 * unit);
-    draw_text(pixels, width, height, &legend.title, x0 as f32, y0 as f32 - 9.0 * unit, title_px, ink);
+    // The title wraps to the picture's width (margins as on the left), its
+    // lines stacked upward from just above the bar.
+    let lines = wrap_title(&legend.title, title_px, width.saturating_sub(2 * x0) as f32);
+    for (k, line) in lines.iter().rev().enumerate() {
+        draw_text(pixels, width, height, line, x0 as f32, y0 as f32 - 9.0 * unit - k as f32 * 1.2 * title_px, title_px, ink);
+    }
     let (lo, mid, hi) = legend.scale.bar_labels(legend.decimals);
     let baseline = (y0 + bar_h) as f32 + 23.0 * unit;
     draw_text(pixels, width, height, &lo, x0 as f32, baseline, value_px, ink);
@@ -216,6 +225,22 @@ pub fn draw_legend_at(pixels: &mut [u8], width: u32, height: u32, legend: &Legen
         draw_text(pixels, width, height, &mid, x0 as f32 + bar_w as f32 / 2.0 - text_width(&mid, value_px) / 2.0, baseline, value_px, ink);
     }
     draw_text(pixels, width, height, &hi, x0 as f32 + bar_w as f32 - text_width(&hi, value_px), baseline, value_px, ink);
+}
+
+/// `title` in lines no wider than `max` at size `px`, broken at spaces (a
+/// word longer than `max` gets a line of its own).
+fn wrap_title(title: &str, px: f32, max: f32) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for word in title.split(' ') {
+        match lines.last_mut() {
+            Some(line) if text_width(&format!("{line} {word}"), px) <= max => {
+                line.push(' ');
+                line.push_str(word);
+            }
+            _ => lines.push(word.to_string()),
+        }
+    }
+    lines
 }
 
 #[cfg(test)]
@@ -238,6 +263,16 @@ mod tests {
         assert!(close(negative.bar_color(0.0), diverging(-1.0)) && close(negative.bar_color(1.0), diverging(0.0)));
         assert_eq!(positive.bar_labels(2), ("0".to_string(), None, "+0.60".to_string()));
         assert_eq!(negative.bar_labels(2), ("\u{2212}0.60".to_string(), None, "0".to_string()));
+    }
+
+    #[test]
+    fn long_titles_wrap() {
+        let title = "Inter-atomic classical (electrostatic) interaction with Fe1 (TFVC), kcal/mol";
+        assert_eq!(wrap_title(title, 20.0, 10_000.0), vec![title.to_string()]);
+        let lines = wrap_title(title, 20.0, text_width(title, 20.0) * 0.6);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines.join(" "), title);
+        assert!(lines.iter().all(|l| text_width(l, 20.0) <= text_width(title, 20.0) * 0.6));
     }
 
     #[test]
@@ -264,7 +299,7 @@ mod tests {
     fn the_legend_draws_its_bar_and_text() {
         let (w, h) = (800u32, 600u32);
         let mut pixels = vec![255u8; (w * h * 4) as usize];
-        draw_legend(&mut pixels, w, h, &Legend { title: "Fragment charge (TFVC)".into(), scale: ColorScale::Diverging { max_abs: 0.5, log: false, half: Half::Both }, decimals: 2 }, [30, 30, 30]);
+        draw_legend(&mut pixels, w, h, &Legend { title: "Fragment charge (TFVC)".into(), scale: ColorScale::Diverging { max_abs: 0.5, log: false, half: Half::Both }, decimals: 2, size: 1.0 }, [30, 30, 30]);
         let changed = pixels.chunks(4).filter(|p| p[..3] != [255, 255, 255]).count();
         assert!(changed > 2000, "{changed}");
     }

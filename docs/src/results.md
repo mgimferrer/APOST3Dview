@@ -54,7 +54,7 @@ A pair quantity, such as a bond order, can't be drawn on every pair at once in a
 - **Values on the molecule** prints each value beside its atom or fragment, **with names** above it (atom names follow the **Labels:** setting of the **Molecule** window). **decimals** is **auto**, or a number you choose, and **label size** sets their size. Labels never overlap: in a crowded view, a label that would cover another moves a line up or down or is left out, and the label of an atom hidden behind others is left out. Every value is still in the window's tables, and turning or zooming the view brings labels back.
 - **Bond thickness from bond orders** draws each bond by its bond order. It is off by default, since equal bonds usually look better in figures.
 
-The legend in the corner names what is shown and gives the scale. It is drawn into exported images too.
+The legend in the corner names what is shown and gives the scale. It is drawn into exported images too, at the same size relative to the picture; **legend size** makes it larger for a figure printed small, such as one of three parts side by side on a page.
 
 ## Values as numbers
 

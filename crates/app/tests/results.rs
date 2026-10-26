@@ -151,3 +151,31 @@ fn oxidation_states_show_their_reliability_index() {
     harness.run_steps(2);
     assert_eq!(harness.state().legend_title().as_deref(), Some("EOS oxidation states (Lowdin), R = 64.5%"));
 }
+
+/// The legend's size can be raised for a figure printed small: the exported
+/// legend grows, and a session keeps the size.
+#[test]
+fn the_legend_size_reaches_exports_and_sessions() {
+    use egui::accesskit::{Action, ActionData, ActionRequest, Role};
+    use egui_kittest::kittest::{By, NodeT};
+    let mut harness = app_with(vec![example("FeCN5NO3--UBLYP").join("FeCN5NO3--UBLYP.apost.json")]);
+    harness.run_steps(2);
+    assert!(harness.state_mut().show_on_molecule("populations.atoms.charges"));
+    harness.run_steps(3);
+    // Pixels in the bottom left that differ from the background.
+    let ink = |pixels: &[u8]| (300..450).flat_map(|y| (0..450).map(move |x| (y * 600 + x) * 4)).filter(|&i| pixels[i..i + 3] != pixels[..3]).count();
+    let normal = ink(&harness.state_mut().render_image(600, 450).unwrap());
+    let slider = harness.get_all(By::new().role(Role::Slider)).find(|n| n.accesskit_node().label().as_deref() == Some("legend size")).expect("legend size slider");
+    let (target_node, target_tree) = slider.accesskit_node().locate();
+    harness.event(egui::Event::AccessKitActionRequest(ActionRequest { action: Action::SetValue, target_node, target_tree, data: Some(ActionData::NumericValue(2.0)) }));
+    harness.run_steps(3);
+    let larger = harness.state_mut().render_image(600, 450).unwrap();
+    assert!(ink(&larger) > 2 * normal, "{} vs {normal}", ink(&larger));
+
+    let session = common::scratch_dir("legend-size").join("legend.a3dview");
+    harness.state().save_session_to(&session).unwrap();
+    assert!(std::fs::read_to_string(&session).unwrap().contains("legend_size = 2.0"));
+    let mut again = app_with(vec![session]);
+    again.run_steps(3);
+    assert_eq!(differing(&larger, &again.state_mut().render_image(600, 450).unwrap()), 0);
+}

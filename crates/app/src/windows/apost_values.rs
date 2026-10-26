@@ -177,6 +177,8 @@ impl App {
             if view.labels {
                 ui.add(egui::Slider::new(&mut view.label_size, 12.0..=48.0).text("label size"));
             }
+            ui.add(egui::Slider::new(&mut view.legend_size, 0.5..=3.0).text("legend size"))
+                .on_hover_text("The legend in the view and in exported images; larger for a figure printed small");
         }
 
         if results.entry("bond_orders.atoms.matrix").is_some() {
