@@ -104,12 +104,15 @@ pub enum EnpartMethod {
     Library { name: Option<String>, exchange_correlation: Option<u32>, exchange: Option<u32>, correlation: Option<u32> },
 }
 
+/// (ORCA keyword, EXC_FUNCTIONAL id, EX_FUNCTIONAL id, EC_FUNCTIONAL id).
+pub type OrcaFunctional = (&'static str, Option<u32>, Option<u32>, Option<u32>);
+
 /// ORCA's functionals with the libxc ids that reproduce them in ENPART,
 /// each checked by APOST-3D against ORCA 6.1.1 (xc energy within 0.02
 /// kcal/mol, water, def2-TZVP; APOST-3D docs, "Preparing the wavefunction",
 /// ORCA). (ORCA keyword, EXC id, EX id, EC id.) ORCA's B3LYP is not the
 /// `B3LYP` keyword of `# ENPART`, which reproduces Gaussian's.
-pub const ORCA_FUNCTIONALS: [(&str, Option<u32>, Option<u32>, Option<u32>); 20] = [
+pub const ORCA_FUNCTIONALS: [OrcaFunctional; 20] = [
     ("LSD", None, Some(1), Some(7)),
     ("LDA", None, Some(1), Some(7)),
     ("BLYP", None, Some(106), Some(131)),
