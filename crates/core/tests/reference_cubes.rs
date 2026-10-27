@@ -234,3 +234,39 @@ fn orca2fchk_files_match_orca_cubes() {
     let no = natural_orbitals(&wfn.alpha, &read_fchk_density(&path, "SCF").unwrap().total).unwrap();
     check("H2O-ORCA-CAS44-def2SVP.fchk density", compare(&wfn, &dir.join("H2O-ORCA-CAS44-def2SVP-density.cube"), density(&no)));
 }
+
+/// PySCF CASSCF files written by APOST-3D's `utils/apost3d.py` (the 1-RDM in
+/// "Total SCF Density"): the viewer's natural orbitals (overlap-free, from
+/// the file's MOs and density block) against PySCF's natural occupations
+/// and its cube files of two active natural orbitals and of the density.
+/// Water CAS(4,4)/aug-cc-pVTZ (near linear dependence) is in `validation/`;
+/// the p-benzyne CAS(2,2) file of the manuscript, when its case-study folder
+/// is here (`fixtures/case-studies/p-benzyne/pyscf-check/`).
+#[test]
+fn apost3d_py_natural_orbitals_match_pyscf() {
+    let mut cases = Vec::new();
+    if let Some(dir) = data("pyscf/apost3d-py") {
+        cases.push((dir, "H2O-CAS44-aug", 3usize));
+    }
+    let benzyne = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/case-studies/p-benzyne/pyscf-check");
+    if benzyne.is_dir() {
+        cases.push((benzyne, "pB-CAS22", 19));
+    }
+    for (dir, job, first) in cases {
+        let path = dir.join(format!("{job}.fchk"));
+        let wfn = parse_fchk_wavefunction(&path).unwrap();
+        let matrix = read_fchk_density(&path, "SCF").unwrap();
+        let mut no = natural_orbitals(&wfn.alpha, &matrix.total).unwrap();
+        let pyscf: Vec<f64> = std::fs::read_to_string(dir.join(format!("{job}-occupations.txt"))).unwrap().lines().map(|l| l.trim().parse().unwrap()).collect();
+        let occupation_error = no.occupations.iter().zip(&pyscf).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max);
+        eprintln!("{job}: natural occupations vs PySCF, largest difference {occupation_error:.1e}");
+        assert!(occupation_error < 1e-6, "{job}: {occupation_error:e}");
+        // The two active natural orbitals PySCF wrote (cube names HONO, LUNO:
+        // for water the two most occupied active ones).
+        let natural = Wavefunction { basis: wfn.basis.clone(), alpha: no.clone(), beta: None };
+        check_orbital(&format!("{job} natural orbital {}", first + 1), &natural, &dir.join(format!("{job}-HONO.cube")), false, first);
+        check_orbital(&format!("{job} natural orbital {}", first + 2), &natural, &dir.join(format!("{job}-LUNO.cube")), false, first + 1);
+        no.occupations.iter_mut().for_each(|n| if n.abs() < 1e-12 { *n = 0.0 });
+        check(&format!("{job} density"), compare(&wfn, &dir.join(format!("{job}-density.cube")), density(&no)));
+    }
+}

@@ -15,6 +15,7 @@ was found.
 | [`gaussian/`](gaussian/) | Gaussian 16 (cubes from Chemcraft) | `.fchk` | s-p, Cartesian d, pure d/f/g, an ECP, an unrestricted triplet |
 | [`gaussian/cubegen/`](gaussian/cubegen/) | Gaussian 16 (its own cubegen) | `.fchk` | Cartesian d and f, diffuse functions, core orbitals, a restricted open-shell triplet, an MP2 density |
 | [`pyscf/`](pyscf/) | PySCF 2.14 | `.molden` | s-p, Cartesian d, pure through g, an unrestricted triplet |
+| [`pyscf/apost3d-py/`](pyscf/apost3d-py/) | PySCF 2.14, written by APOST-3D's apost3d.py | `.fchk` | CASSCF natural orbitals and density from the 1-RDM, diffuse functions (near linear dependence) |
 | [`qchem/`](qchem/) | Q-Chem 6.3 | `.fchk` | pure d/f/g, Cartesian d, an unrestricted triplet |
 | [`orca/`](orca/) | ORCA 6.1.1 | `.molden` | s-p-d, f, g, an unrestricted triplet, an ECP, CASSCF natural orbitals and density |
 | [`orca/orca2fchk/`](orca/orca2fchk/) | ORCA 6.1.1, converted by APOST-3D's orca2fchk.py | `.fchk` | the same calculations as `orca/`, by the route ORCA users take to APOST-3D |
