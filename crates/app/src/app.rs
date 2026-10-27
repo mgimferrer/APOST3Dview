@@ -359,6 +359,13 @@ impl App {
         self.camera.distance *= factor;
     }
 
+    /// Moves what the view looks at by `right` and `up` angstrom along the
+    /// screen, as panning would, so the molecule moves the other way — for
+    /// pictures with a window beside the molecule.
+    pub fn pan_view(&mut self, right: f32, up: f32) {
+        self.camera.pan(right, up);
+    }
+
     /// Names of the open structures, in list order — for tests.
     pub fn structure_labels(&self) -> Vec<String> {
         self.structures.iter().map(|s| s.label.clone()).collect()

@@ -609,13 +609,16 @@ fn ferrocene_iqa() {
     // Fe as focus, between atoms: the classical (electrostatic) and the
     // exchange-correlation part of each Fe-C and Fe-H interaction, on one
     // fixed range (the largest, xc Fe-C), so the two compare.
-    let fixed = 0.095;
+    // -60 kcal/mol, a round end just past the largest (xc Fe-C, -57.0).
+    let fixed = 60.0 / 627.509_474_063_1;
     let ranges = format!(
         "[color_ranges.\"enpart.classical_interaction.atoms\"]\nscale = \"diverging\"\nmax_abs = {fixed}\nhalf = \"negative\"\n\
          [color_ranges.\"enpart.xc.atoms\"]\nscale = \"diverging\"\nmax_abs = {fixed}\nhalf = \"negative\"\n"
     );
     let views = [
-        ("ferrocene-iqa-fragments", "enpart.total.fragments", 1, "", side, 1.6),
+        // On a logarithmic scale, so the weak Cp-Cp repulsion shows next to
+        // the strong Fe-Cp attraction.
+        ("ferrocene-iqa-fragments", "enpart.total.fragments", 1, "log_scale = true\n", side, 1.6),
         ("ferrocene-iqa-classical", "enpart.classical_interaction.atoms", 0, "names = false\n", above, 1.0),
         ("ferrocene-iqa-xc", "enpart.xc.atoms", 0, "names = false\n", above, 1.0),
     ];
@@ -974,7 +977,9 @@ fn nitroprusside_figure() {
         click(&mut harness, "Molecule");
     }
     harness.state_mut().set_view_orientation(view);
-    harness.state_mut().zoom_view(1.15);
+    harness.state_mut().zoom_view(1.2);
+    // The molecule left of the APOST-3D window, not under it.
+    harness.state_mut().pan_view(2.6, 0.0);
     assert!(harness.state_mut().show_on_molecule("bond_orders.fragments.matrix"));
     harness.state_mut().clear_toasts();
     harness.run_steps(8);
