@@ -9,7 +9,7 @@ use egui_kittest::kittest::{By, Queryable};
 
 use common::{app_with, example, toasts};
 
-const JOBS: [&str; 8] = ["FeCN5NO3--UBLYP", "H2O-Dimer-B3LYP", "C2H6-OSLO-2CH3", "CH3F-GEOS", "H2O-CAS44", "FeCp2-EOS-OSLO", "FeCp2-IQA", "FeCO6-EOS"];
+const JOBS: [&str; 8] = ["FeCN5NO3--UBLYP", "H2O-Dimer-B3LYP", "C2H6-OSLO-2CH3", "CH3F-GEOS", "H2O-CAS44", "FeCp2-EOS-OSLO", "FeCp2-IQA-ALLPAIRS", "FeCO6-EOS"];
 
 fn open(job: &str) -> egui_kittest::Harness<'static, apost3dview::App> {
     let mut harness = app_with(vec![example(job).join(format!("{job}.apost.json"))]);
@@ -159,7 +159,7 @@ fn ferrocene_efos_and_oslos() {
 
 #[test]
 fn ferrocene_energy_decomposition() {
-    let mut harness = open("FeCp2-IQA");
+    let mut harness = open("FeCp2-IQA-ALLPAIRS");
     choose(&mut harness, "Nothing", "Inter-fragment interaction energy (TFVC)");
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-fragment interaction energy with 1 Fe (TFVC), kcal/mol"));
     // Fe-Cp, -0.6079 au, with one decimal in kcal/mol (strongest pairs).
@@ -179,4 +179,22 @@ fn carbonyl_efos() {
     harness.get_by_label("Generate 1 orbital(s)").click_accesskit();
     harness.run_steps(4);
     assert_eq!(harness.state().surface_labels(), vec![("EFO 47 \u{3b1} \u{b7} 2 CO".to_string(), true)]);
+}
+
+/// The sessions of the manuscript's Figures 3 and 4 open from the example
+/// folders, with every file found and unchanged.
+#[test]
+fn figure_sessions_open_from_the_examples() {
+    for (folder, session) in [
+        ("FeCO6-EOS", "carbonyl-efos"),
+        ("FeCp2-IQA-ALLPAIRS", "ferrocene-iqa-fragments"),
+        ("FeCp2-IQA-ALLPAIRS", "ferrocene-iqa-classical"),
+        ("FeCp2-IQA-ALLPAIRS", "ferrocene-iqa-xc"),
+    ] {
+        let mut harness = common::app_with(vec![common::example(folder).join(format!("{session}.a3dview"))]);
+        harness.run_steps(8);
+        let toasts = harness.state().toast_texts();
+        assert!(toasts.iter().all(|t| !t.contains("but") && !t.contains("differ") && !t.contains("not found")), "{session}: {toasts:?}");
+        assert!(!harness.state().structure_labels().is_empty(), "{session} opened nothing");
+    }
 }

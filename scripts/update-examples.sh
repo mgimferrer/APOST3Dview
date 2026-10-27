@@ -14,7 +14,7 @@
 # orbital files from tests/reference-orbitals/), with the input from
 # fixtures/apost3d/.
 #
-# The three case-study examples (FeCp2-EOS-OSLO, FeCp2-IQA, FeCO6-EOS) come
+# The three case-study examples (FeCp2-EOS-OSLO, FeCp2-IQA-ALLPAIRS, FeCO6-EOS) come
 # from fixtures/case-studies/ instead, see the end of this script.
 #
 # Usage: scripts/update-examples.sh
@@ -62,10 +62,18 @@ echo "From APOST-3D $(cat "$reference/APOST3D-COMMIT" 2>/dev/null || echo '(comm
 # change, they are run again on the cluster first.
 cases="$repo/fixtures/case-studies"
 if [ ! -d "$cases" ]; then
-    echo "No fixtures/case-studies: FeCp2-EOS-OSLO, FeCp2-IQA and FeCO6-EOS left as they are."
+    echo "No fixtures/case-studies: FeCp2-EOS-OSLO, FeCp2-IQA-ALLPAIRS and FeCO6-EOS left as they are."
     exit 0
 fi
-for entry in FeCp2/FeCp2-EOS-OSLO FeCp2/FeCp2-IQA FeCO6/FeCO6-EOS; do
+# The IQA example is the manuscript's run with every atom pair integrated
+# (THREBOD -1, revision-1 on the cluster); its .fchk is FeCp2-IQA.fchk under
+# the job's name.
+iqa="$cases/revision-1/results/ferrocene-iqa"
+if [ -f "$iqa/FeCp2-IQA-ALLPAIRS.apost.json" ] && [ ! -f "$iqa/FeCp2-IQA-ALLPAIRS.fchk" ]; then
+    cp "$cases/FeCp2/FeCp2-IQA.fchk" "$iqa/FeCp2-IQA-ALLPAIRS.fchk"
+fi
+rm -rf "$repo/examples/FeCp2-IQA"
+for entry in FeCp2/FeCp2-EOS-OSLO revision-1/results/ferrocene-iqa/FeCp2-IQA-ALLPAIRS FeCO6/FeCO6-EOS; do
     job=$(basename "$entry")
     src="$cases/$(dirname "$entry")"
     dest="$repo/examples/$job"

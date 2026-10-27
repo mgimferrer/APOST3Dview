@@ -18,7 +18,7 @@ opens with its results.
 | `CH3F-GEOS` | Fluoromethane, BP86/def2-SVP, TFVC atoms, F and CH3 | GEOS oxidation states and effective fragment orbitals |
 | `H2O-CAS44` | Water, CASSCF(4,4)/STO-3G from PySCF, TFVC atoms | Correlated density, natural orbitals, local spin |
 | `FeCp2-EOS-OSLO` | Ferrocene, B3LYP/def2-TZVPP, TFVC atoms, Fe and two Cp | EOS and OSLO: the Fe d and Cp pi effective fragment orbitals, OSLOs with their FOLI |
-| `FeCp2-IQA` | Ferrocene, as above | Energy decomposition (IQA) between Fe and the rings, and atom by atom |
+| `FeCp2-IQA-ALLPAIRS` | Ferrocene, as above, every atom pair integrated numerically | Energy decomposition (IQA) between Fe and the rings, and atom by atom |
 | `FeCO6-EOS` | [Fe(CO)6]²⁺, B3LYP/def2-TZVP, TFVC atoms, Fe and six CO; free CO (`CO.fchk`) | The sigma, pi and pi* effective fragment orbitals of a carbonyl, next to free CO's own MOs |
 
 In each folder:
@@ -31,6 +31,7 @@ In each folder:
 | `<job>.apost.json` | the results file APOST3Dview reads |
 | `<job>-*.fchk` | orbital files written by EOS, GEOS or OSLO, where there are any |
 | `<job>.dm1`, `<job>.dm2` | the density matrices of a correlated wavefunction (only needed to run APOST-3D again) |
+| `*.a3dview` | sessions of figures made from the folder (in `FeCO6-EOS` and `FeCp2-IQA-ALLPAIRS`): open one in APOST3Dview to see the figure, ready to change or export |
 
 ## About these files
 
@@ -41,7 +42,7 @@ are the systems of published figures (APOST-3D's paper, J. Chem. Phys. 2024,
 160, 172502, Figs 3-4 and Tables I-III; Theor. Chem. Acc. 2026, 145, 74,
 Fig 1), run again with the current APOST-3D: the effective fragment orbital
 occupations, the FOLI values, the reliability indices and the Fe-Cp and Fe-C
-interaction energies are those published. The FeCN5NO3 folder doesn't include its EFO file, so its
+interaction energies are those published; the Cp-Cp interaction differs from the published one in its exchange-correlation part. The FeCN5NO3 folder doesn't include its EFO file, so its
 EFOs are listed but can't be drawn. The examples are refreshed whenever
 APOST-3D's results format changes (with `scripts/update-examples.sh` in the
 source repository), so they always open in the version of APOST3Dview they

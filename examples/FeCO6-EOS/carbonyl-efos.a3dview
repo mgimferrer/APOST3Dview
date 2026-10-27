@@ -1,0 +1,526 @@
+# APOST3Dview session: open it with APOST3Dview (Open, drag and drop, or the command line).
+
+format = "apost3dview-session"
+version = 1
+written_by = "APOST3Dview 0.9.0"
+active_structure = 0
+
+[view]
+camera_target = [
+    -0.00000000000000004519267,
+    0.00000000000000011750095,
+    0.0,
+]
+camera_distance = 13.747463
+camera_orientation = [
+    -0.18217608,
+    0.6456742,
+    0.7136996,
+    -0.20136936,
+]
+spin_direction = [
+    1.0,
+    0.0,
+]
+spin_speed = 0.5
+keep_view = false
+projection = "orthographic"
+
+[appearance]
+ambient_occlusion = true
+depth_of_field = false
+atom_labels = "none"
+atom_label_size = 1.0
+atom_label_color = [
+    0,
+    0,
+    0,
+    255,
+]
+distance_unit = "angstrom"
+measurement_font_size = 30.0
+measurement_decimals = 2
+measurement_bold = true
+measurement_text_color = [
+    20,
+    20,
+    20,
+    255,
+]
+measurement_line_color = [
+    0.05,
+    0.05,
+    0.05,
+]
+
+[appearance.material]
+ambient = 0.3
+roughness = 0.32
+reflectance = 0.045
+light_intensity = 3.0
+light_yaw = -0.5
+light_pitch = 0.2
+background = [
+    1.0,
+    1.0,
+    1.0,
+]
+atom_scale = 0.24
+bond_radius = 0.16
+exposure = 1.0
+
+[appearance.ao_settings]
+radius = 1.5
+strength = 1.0
+bias = 0.015
+contrast_power = 2.0
+outline_strength = 2.5
+
+[appearance.dof_settings]
+focus_range = 0.15
+strength = 0.5
+
+[appearance.surface_material]
+material = [
+    0.35,
+    0.7,
+    0.045,
+    3.0,
+]
+fresnel = [
+    2.2,
+    0.85,
+    0.0,
+    0.0,
+]
+
+[[structures]]
+file = "FeCO6-EOS.fchk"
+atomic_numbers = [
+    26,
+    6,
+    6,
+    6,
+    6,
+    6,
+    6,
+    8,
+    8,
+    8,
+    8,
+    8,
+    8,
+]
+results = "FeCO6-EOS.apost.json"
+selected_surface = 4
+hidden_atoms = []
+added_bonds = []
+hidden_bonds = []
+dashed_bonds = []
+measurements = []
+
+[structures.file_fingerprint]
+size = 7243121
+sha256 = "25d63a0f9ea18f7cfd9db7afc4c02f6478a5d81e3cfadb8c38a514bd8d23aab4"
+
+[structures.results_fingerprint]
+size = 54740
+sha256 = "8bc0c891c02d8bed1ff08977acf5f2cbe02d3f9fdde7e493bf315c6327ed3c09"
+
+[structures.results_view]
+visible = true
+focus = 0
+labels = true
+label_size = 34.0
+bond_thickness = false
+log_scale = false
+energy_unit = "kcal_per_mol"
+names = true
+diagonal = false
+
+[structures.results_view.shown]
+show = "nothing"
+
+[[structures.surfaces]]
+label = "EFO 47 α · 2 CO"
+visible = false
+isovalue = 0.05
+refinement = 1
+both_signs = true
+positive_color = [
+    20,
+    95,
+    170,
+    255,
+]
+negative_color = [
+    175,
+    25,
+    60,
+    255,
+]
+opacity = 1.0
+by_fragment = false
+kind = "orbital"
+spin = "alpha"
+orbital = 47
+grid_spacing_bohr = 0.28
+box_padding_bohr = 4.0
+orbital_set = "eos"
+fragment_weighted = true
+
+[[structures.surfaces]]
+label = "EFO 32 α · 2 CO"
+visible = false
+isovalue = 0.05
+refinement = 1
+both_signs = true
+positive_color = [
+    20,
+    95,
+    170,
+    255,
+]
+negative_color = [
+    175,
+    25,
+    60,
+    255,
+]
+opacity = 1.0
+by_fragment = false
+kind = "orbital"
+spin = "alpha"
+orbital = 32
+grid_spacing_bohr = 0.28
+box_padding_bohr = 4.0
+orbital_set = "eos"
+fragment_weighted = true
+
+[[structures.surfaces]]
+label = "EFO 33 α · 2 CO"
+visible = false
+isovalue = 0.05
+refinement = 1
+both_signs = true
+positive_color = [
+    20,
+    95,
+    170,
+    255,
+]
+negative_color = [
+    175,
+    25,
+    60,
+    255,
+]
+opacity = 1.0
+by_fragment = false
+kind = "orbital"
+spin = "alpha"
+orbital = 33
+grid_spacing_bohr = 0.28
+box_padding_bohr = 4.0
+orbital_set = "eos"
+fragment_weighted = true
+
+[[structures.surfaces]]
+label = "EFO 65 α · 2 CO"
+visible = false
+isovalue = 0.05
+refinement = 1
+both_signs = true
+positive_color = [
+    20,
+    95,
+    170,
+    255,
+]
+negative_color = [
+    175,
+    25,
+    60,
+    255,
+]
+opacity = 1.0
+by_fragment = false
+kind = "orbital"
+spin = "alpha"
+orbital = 65
+grid_spacing_bohr = 0.28
+box_padding_bohr = 4.0
+orbital_set = "eos"
+fragment_weighted = true
+
+[[structures.surfaces]]
+label = "EFO 66 α · 2 CO"
+visible = true
+isovalue = 0.05
+refinement = 1
+both_signs = true
+positive_color = [
+    20,
+    95,
+    170,
+    255,
+]
+negative_color = [
+    175,
+    25,
+    60,
+    255,
+]
+opacity = 1.0
+by_fragment = false
+kind = "orbital"
+spin = "alpha"
+orbital = 66
+grid_spacing_bohr = 0.28
+box_padding_bohr = 4.0
+orbital_set = "eos"
+fragment_weighted = true
+
+[structures.view]
+target = [
+    -0.00000000000000004519267,
+    0.00000000000000011750095,
+    0.0,
+]
+distance = 13.747463
+orientation = [
+    -0.16633186,
+    -0.2910066,
+    -0.051452473,
+    0.94074523,
+]
+
+[[structures]]
+file = "CO.fchk"
+atomic_numbers = [
+    6,
+    8,
+]
+selected_surface = 4
+hidden_atoms = []
+added_bonds = []
+hidden_bonds = []
+dashed_bonds = []
+measurements = []
+
+[structures.file_fingerprint]
+size = 243394
+sha256 = "6fe6b441e8828d391e7366d56643012ba7b7e3c1db1a978449be378f8a6e682a"
+
+[[structures.surfaces]]
+label = "HOMO"
+visible = false
+isovalue = 0.05
+refinement = 1
+both_signs = true
+positive_color = [
+    20,
+    95,
+    170,
+    255,
+]
+negative_color = [
+    175,
+    25,
+    60,
+    255,
+]
+opacity = 1.0
+by_fragment = false
+kind = "orbital"
+spin = "alpha"
+orbital = 7
+grid_spacing_bohr = 0.28
+box_padding_bohr = 4.0
+
+[[structures.surfaces]]
+label = "MO 5"
+visible = false
+isovalue = 0.05
+refinement = 1
+both_signs = true
+positive_color = [
+    175,
+    25,
+    60,
+    255,
+]
+negative_color = [
+    20,
+    95,
+    170,
+    255,
+]
+opacity = 1.0
+by_fragment = false
+kind = "orbital"
+spin = "alpha"
+orbital = 5
+grid_spacing_bohr = 0.28
+box_padding_bohr = 4.0
+
+[[structures.surfaces]]
+label = "MO 6"
+visible = false
+isovalue = 0.05
+refinement = 1
+both_signs = true
+positive_color = [
+    20,
+    95,
+    170,
+    255,
+]
+negative_color = [
+    175,
+    25,
+    60,
+    255,
+]
+opacity = 1.0
+by_fragment = false
+kind = "orbital"
+spin = "alpha"
+orbital = 6
+grid_spacing_bohr = 0.28
+box_padding_bohr = 4.0
+
+[[structures.surfaces]]
+label = "LUMO"
+visible = false
+isovalue = 0.05
+refinement = 1
+both_signs = true
+positive_color = [
+    20,
+    95,
+    170,
+    255,
+]
+negative_color = [
+    175,
+    25,
+    60,
+    255,
+]
+opacity = 1.0
+by_fragment = false
+kind = "orbital"
+spin = "alpha"
+orbital = 8
+grid_spacing_bohr = 0.28
+box_padding_bohr = 4.0
+
+[[structures.surfaces]]
+label = "MO 9"
+visible = true
+isovalue = 0.05
+refinement = 1
+both_signs = true
+positive_color = [
+    20,
+    95,
+    170,
+    255,
+]
+negative_color = [
+    175,
+    25,
+    60,
+    255,
+]
+opacity = 1.0
+by_fragment = false
+kind = "orbital"
+spin = "alpha"
+orbital = 9
+grid_spacing_bohr = 0.28
+box_padding_bohr = 4.0
+
+[structures.view]
+target = [
+    0.0000000000000009138507,
+    0.00000000000000066021316,
+    -2.584148,
+]
+distance = 13.747463
+orientation = [
+    -0.18217608,
+    0.6456742,
+    0.7136996,
+    -0.20136936,
+]
+
+[figure.settings]
+mode = "panels"
+captions = true
+caption_style = "full"
+font_size_pt = 11.0
+letters = false
+fixed_layout = true
+rows = 2
+columns = 5
+panel_shape = "square"
+gap_percent = 2.0
+background = "white"
+sizing = "dpi"
+dpi = 600
+figure_width_in = 6.75
+panel_width_px = 600
+single_caption = false
+single_caption_text = ""
+
+[[figure.panels]]
+structure = 1
+surface = "EFO 47 α · 2 CO"
+caption = "σ 0.799"
+
+[[figure.panels]]
+structure = 1
+surface = "EFO 32 α · 2 CO"
+caption = "π 0.994"
+
+[[figure.panels]]
+structure = 1
+surface = "EFO 33 α · 2 CO"
+caption = "π 0.994"
+
+[[figure.panels]]
+structure = 1
+surface = "EFO 65 α · 2 CO"
+caption = "π* 0.065"
+
+[[figure.panels]]
+structure = 1
+surface = "EFO 66 α · 2 CO"
+caption = "π* 0.065"
+
+[[figure.panels]]
+structure = 2
+surface = "HOMO"
+caption = "CO σ (HOMO)"
+
+[[figure.panels]]
+structure = 2
+surface = "MO 5"
+caption = "CO π"
+
+[[figure.panels]]
+structure = 2
+surface = "MO 6"
+caption = "CO π"
+
+[[figure.panels]]
+structure = 2
+surface = "LUMO"
+caption = "CO π*"
+
+[[figure.panels]]
+structure = 2
+surface = "MO 9"
+caption = "CO π*"

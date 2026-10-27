@@ -127,8 +127,8 @@
   Fragment  6 :   6  12
   Fragment  7 :   7  13
 
-  TIMING CPU  :: Initialization                                    0.63 s
-  TIMING WALL :: Initialization                                    0.69 s
+  TIMING CPU  :: Initialization                                    0.64 s
+  TIMING WALL :: Initialization                                    0.70 s
 
   ----------------------------------------
     SETTING ATOMIC GRIDS FOR INTEGRATION
@@ -166,8 +166,8 @@
 
   Sum of atomic overlaps, largest error   : 7.73E-03 (from the analytic overlap S)
 
-  TIMING CPU  :: Atomic definition                                15.08 s
-  TIMING WALL :: Atomic definition                                 4.19 s
+  TIMING CPU  :: Atomic definition                                14.64 s
+  TIMING WALL :: Atomic definition                                 3.89 s
 
   -----------------------------
     DOING POPULATION ANALYSIS
@@ -682,9 +682,12 @@
   Total             2.00
   Overall reliability index R (%)         :        100.000
 
-  TIMING CPU  :: EFFAO computation                                95.06 s
-  TIMING WALL :: EFFAO computation                                39.41 s
-  TIMING CPU  :: EOS analysis                                      0.17 s
-  TIMING WALL :: EOS analysis                                      0.22 s
+  EFO file (.fchk)                        : FeCO6-EOS-EOS-EFOs.fchk
+  Unweighted EFO file (.fchk)             : FeCO6-EOS-EOS-EFOs-unweighted.fchk
+
+  TIMING CPU  :: EFFAO computation                                75.76 s
+  TIMING WALL :: EFFAO computation                                31.78 s
+  TIMING CPU  :: EOS analysis                                      0.29 s
+  TIMING WALL :: EOS analysis                                      0.45 s
 
   ...Normal Termination of APOST-3D...

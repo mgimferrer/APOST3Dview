@@ -1,0 +1,238 @@
+# APOST3Dview session: open it with APOST3Dview (Open, drag and drop, or the command line).
+
+format = "apost3dview-session"
+version = 1
+written_by = "APOST3Dview 0.9.0"
+active_structure = 0
+
+[view]
+camera_target = [
+    0.0,
+    0.0,
+    0.00000010217939,
+]
+camera_distance = 13.153335
+camera_orientation = [
+    -0.10239738,
+    0.78036165,
+    0.23257947,
+    0.57136434,
+]
+spin_direction = [
+    1.0,
+    0.0,
+]
+spin_speed = 0.5
+keep_view = false
+projection = "orthographic"
+
+[appearance]
+ambient_occlusion = true
+depth_of_field = false
+atom_labels = "none"
+atom_label_size = 1.0
+atom_label_color = [
+    0,
+    0,
+    0,
+    255,
+]
+distance_unit = "angstrom"
+measurement_font_size = 30.0
+measurement_decimals = 2
+measurement_bold = true
+measurement_text_color = [
+    20,
+    20,
+    20,
+    255,
+]
+measurement_line_color = [
+    0.05,
+    0.05,
+    0.05,
+]
+
+[appearance.material]
+ambient = 0.3
+roughness = 0.32
+reflectance = 0.045
+light_intensity = 3.0
+light_yaw = -0.5
+light_pitch = 0.2
+background = [
+    1.0,
+    1.0,
+    1.0,
+]
+atom_scale = 0.24
+bond_radius = 0.16
+exposure = 1.0
+
+[appearance.ao_settings]
+radius = 1.5
+strength = 1.0
+bias = 0.015
+contrast_power = 2.0
+outline_strength = 2.5
+
+[appearance.dof_settings]
+focus_range = 0.15
+strength = 0.5
+
+[appearance.surface_material]
+material = [
+    0.35,
+    0.7,
+    0.045,
+    3.0,
+]
+fresnel = [
+    2.2,
+    0.85,
+    0.0,
+    0.0,
+]
+
+[color_ranges."enpart.classical_interaction.atoms"]
+scale = "diverging"
+max_abs = 0.09561608625843095
+log = false
+half = "negative"
+
+[color_ranges."enpart.xc.atoms"]
+scale = "diverging"
+max_abs = 0.09561608625843093
+log = false
+half = "negative"
+
+[[structures]]
+file = "FeCp2-IQA-ALLPAIRS.fchk"
+atomic_numbers = [
+    26,
+    6,
+    6,
+    1,
+    6,
+    1,
+    6,
+    1,
+    6,
+    1,
+    1,
+    6,
+    6,
+    1,
+    6,
+    1,
+    6,
+    1,
+    6,
+    1,
+    1,
+]
+results = "FeCp2-IQA-ALLPAIRS.apost.json"
+hidden_atoms = [
+    4,
+    6,
+    8,
+    10,
+    11,
+    14,
+    16,
+    18,
+    20,
+    21,
+]
+added_bonds = []
+hidden_bonds = [
+    [
+    1,
+    2,
+],
+    [
+    1,
+    3,
+],
+    [
+    1,
+    5,
+],
+    [
+    1,
+    7,
+],
+    [
+    1,
+    9,
+],
+    [
+    1,
+    12,
+],
+    [
+    1,
+    13,
+],
+    [
+    1,
+    15,
+],
+    [
+    1,
+    17,
+],
+    [
+    1,
+    19,
+],
+]
+dashed_bonds = []
+measurements = []
+surfaces = []
+
+[structures.file_fingerprint]
+size = 11365129
+sha256 = "341b0e561c2bdcdac50adfc1dba42c14d25ebca7bdb4541db57c0dfbcc2556a9"
+
+[structures.results_fingerprint]
+size = 160590
+sha256 = "325efcce610f744cd6d5e5da05a4f85733b5715496c7213d0222a4b32c2612a9"
+
+[structures.results_view]
+visible = true
+focus = 0
+labels = true
+label_size = 40.0
+legend_size = 1.7
+bond_thickness = false
+log_scale = false
+energy_unit = "kcal_per_mol"
+names = false
+diagonal = false
+
+[structures.results_view.shown]
+show = "quantity"
+id = "enpart.classical_interaction.atoms"
+
+[figure]
+panels = []
+
+[figure.settings]
+mode = "single"
+captions = true
+caption_style = "full"
+font_size_pt = 8.0
+letters = false
+fixed_layout = false
+rows = 3
+columns = 3
+panel_shape = "square"
+gap_percent = 2.0
+background = "white"
+sizing = "dpi"
+dpi = 600
+figure_width_in = 6.75
+panel_width_px = 600
+single_caption = false
+single_caption_text = ""
