@@ -25,7 +25,7 @@ use glam::{Quat, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
 use crate::app::App;
-use crate::isosurfaces::{Surface, SurfaceSettings, SurfaceSource};
+use crate::isosurfaces::{OrbitalColors, Surface, SurfaceSettings, SurfaceSource};
 use crate::orbitals::{density_surface, orbital_surfaces, OrbitalChoice, OrbitalNames, SetContext};
 use crate::results_view::ResultsView;
 use crate::state::{AtomLabelMode, Measurement};
@@ -150,6 +150,11 @@ struct AppearanceState {
     ao_settings: AoSettings,
     dof_settings: DofSettings,
     surface_material: IsosurfaceMaterial,
+    /// Appearance > Orbital colors, for surfaces drawn after reopening
+    /// (each saved surface keeps its own colors). Absent in sessions saved
+    /// before 2026-10-27: the default pair.
+    #[serde(default)]
+    orbital_colors: OrbitalColors,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -519,6 +524,7 @@ impl App {
                 ao_settings: self.ao_settings,
                 dof_settings: self.dof_settings,
                 surface_material: self.isosurface_material,
+                orbital_colors: self.orbital_colors,
             },
             color_ranges: self.color_ranges.clone(),
             structures,
@@ -700,6 +706,7 @@ impl App {
         self.ao_settings = a.ao_settings;
         self.dof_settings = a.dof_settings;
         self.isosurface_material = a.surface_material;
+        self.set_orbital_colors(a.orbital_colors);
     }
 
     /// Puts a reopened structure back as the session recorded it.
@@ -785,7 +792,7 @@ impl App {
                     let generated = match (&structure.wavefunction, natural) {
                         (None, _) => Err("no wavefunction".to_string()),
                         (Some(_), Some(Err(kind))) => Err(format!("the file has no {kind} density matrix")),
-                        (Some(wfn), natural) => density_surface(wfn, *spin_density, *grid_spacing_bohr, *box_padding_bohr, natural.and_then(Result::ok)),
+                        (Some(wfn), natural) => density_surface(wfn, *spin_density, *grid_spacing_bohr, *box_padding_bohr, natural.and_then(Result::ok), self.orbital_colors),
                     };
                     match generated {
                         Ok(mut surface) => {

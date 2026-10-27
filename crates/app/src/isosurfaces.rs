@@ -12,6 +12,7 @@ use egui::Color32;
 use crate::app::App;
 use crate::orbitals::OrbitalChoice;
 use glam::Vec3;
+use serde::{Deserialize, Serialize};
 use crate::util::color32_to_rgb;
 
 /// Isovalue is a fixed constant rather than derived from each grid's own
@@ -54,13 +55,70 @@ pub(crate) struct SurfaceSettings {
     pub(crate) by_fragment: bool,
 }
 
-/// Deep azure and crimson, chosen from comparison renders (2026-10-22):
-/// still blue and red, but deeper and slightly shifted in hue so a lobe on
-/// an N (CPK #3050F8) or O (#FF0D0D) atom doesn't merge with it (CIEDE2000
-/// 12.8 from N and 21.8 from O, was 3.4 and 7.8). Brighter hue shifts turn
-/// cyan and pink after tone mapping.
-const POSITIVE_COLOR: Color32 = Color32::from_rgb(20, 95, 170);
-const NEGATIVE_COLOR: Color32 = Color32::from_rgb(175, 25, 60);
+/// Appearance > Orbital colors: the pair new orbitals, cubes and the spin
+/// density are drawn in (positive, negative). Each pair was measured as the
+/// renderer draws it, after lighting and tone mapping (2026-10-27): the
+/// two lobes stay apart, also under simulated protanopia, deuteranopia and
+/// tritanopia (Machado et al. 2009), and each lobe stays apart from the
+/// CPK colors of H, C, N, O, F, S, Cl, Fe and Br (CIEDE2000, smaller of
+/// the ambient-occlusion on and off pictures).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum OrbitalColors {
+    /// Deep azure and crimson, chosen from comparison renders (2026-10-22):
+    /// still blue and red, but deeper and slightly shifted in hue so a lobe
+    /// on an N (CPK #3050F8) or O (#FF0D0D) atom doesn't merge with it
+    /// (CIEDE2000 12.8 from N and 21.8 from O as typed, was 3.4 and 7.8).
+    /// Brighter hue shifts turn cyan and pink after tone mapping. Rendered:
+    /// 9.7 from N, 7.2 from Br (the trade-off accepted then); lobes 43
+    /// apart, 38 or more under the simulations.
+    #[default]
+    BlueRed,
+    /// Okabe-Ito blue (a palette made for color-vision deficiency) with an
+    /// amber: Okabe-Ito's own orange turns gold after tone mapping (11.6
+    /// from S) and its vermillion lands on Fe (3.6); any orange sits between
+    /// Fe and S, and this amber is near the middle. Rendered: 17.3 from N
+    /// and S, 19.3 from Fe; lobes 53 apart, 48 or more under the simulations.
+    BlueAmber,
+    /// Teal with the same amber: farthest from N and O (35, 37). Rendered:
+    /// 17.3 from S, 19.3 from Fe; lobes 42 apart, 34 or more under the
+    /// simulations.
+    TealAmber,
+}
+
+impl OrbitalColors {
+    pub(crate) const ALL: [OrbitalColors; 3] = [OrbitalColors::BlueRed, OrbitalColors::BlueAmber, OrbitalColors::TealAmber];
+
+    /// (positive, negative).
+    pub(crate) fn colors(self) -> (Color32, Color32) {
+        match self {
+            OrbitalColors::BlueRed => (Color32::from_rgb(20, 95, 170), Color32::from_rgb(175, 25, 60)),
+            OrbitalColors::BlueAmber => (Color32::from_rgb(0, 114, 178), Color32::from_rgb(220, 140, 30)),
+            OrbitalColors::TealAmber => (Color32::from_rgb(0, 120, 120), Color32::from_rgb(220, 140, 30)),
+        }
+    }
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            OrbitalColors::BlueRed => "Blue and red",
+            OrbitalColors::BlueAmber => "Blue and amber",
+            OrbitalColors::TealAmber => "Teal and amber",
+        }
+    }
+
+    pub(crate) fn description(self) -> &'static str {
+        match self {
+            OrbitalColors::BlueRed => "Deep azure and crimson, the default",
+            OrbitalColors::BlueAmber => "Okabe-Ito blue, from a palette made for color-vision deficiency, with amber",
+            OrbitalColors::TealAmber => "Teal and amber, the farthest from the colors of N and O atoms",
+        }
+    }
+
+    /// The default settings of a new orbital or cube in this pair.
+    pub(crate) fn surface_settings(self) -> SurfaceSettings {
+        SurfaceSettings::default().in_colors(self)
+    }
+}
 
 impl Default for SurfaceSettings {
     fn default() -> Self {
@@ -68,11 +126,19 @@ impl Default for SurfaceSettings {
             isovalue: DEFAULT_ISOSURFACE_ISOVALUE,
             refinement: 1,
             both_signs: true,
-            positive_color: POSITIVE_COLOR,
-            negative_color: NEGATIVE_COLOR,
+            positive_color: OrbitalColors::BlueRed.colors().0,
+            negative_color: OrbitalColors::BlueRed.colors().1,
             opacity: DEFAULT_ISOSURFACE_OPACITY,
             by_fragment: false,
         }
+    }
+}
+
+impl SurfaceSettings {
+    /// These settings with `pair`'s positive and negative colors.
+    pub(crate) fn in_colors(self, pair: OrbitalColors) -> Self {
+        let (positive_color, negative_color) = pair.colors();
+        Self { positive_color, negative_color, ..self }
     }
 }
 
@@ -113,10 +179,11 @@ pub(crate) enum SurfaceSource {
 /// triplet, BiCl3): total at 0.1 e/bohr^3, light blue, translucent
 /// (`TRANSLUCENT_DENSITY_OPACITY`, so the molecule shows inside; lower
 /// isovalues swallow the molecule); spin at +/-0.01 with both signs (alpha
-/// excess positive, beta excess negative), opaque. Not the last-used
-/// orbital settings, whose isovalues mean nothing for a density.
-pub(crate) fn density_settings(spin: bool) -> SurfaceSettings {
-    let defaults = SurfaceSettings::default();
+/// excess positive, beta excess negative, in the orbital colors `pair`),
+/// opaque. Not the last-used orbital settings, whose isovalues mean nothing
+/// for a density.
+pub(crate) fn density_settings(spin: bool, pair: OrbitalColors) -> SurfaceSettings {
+    let defaults = pair.surface_settings();
     if spin {
         SurfaceSettings { isovalue: 0.01, both_signs: true, ..defaults }
     } else {
@@ -191,9 +258,15 @@ impl Surface {
         if self.settings.both_signs { format!("\u{b1}{value}") } else { value.to_string() }
     }
 
-    /// What the Default button goes back to.
-    pub(crate) fn default_settings(&self) -> SurfaceSettings {
-        self.density().map_or_else(SurfaceSettings::default, density_settings)
+    /// What the Default button goes back to, in the orbital colors `pair`.
+    pub(crate) fn default_settings(&self, pair: OrbitalColors) -> SurfaceSettings {
+        self.density().map_or_else(|| pair.surface_settings(), |spin| density_settings(spin, pair))
+    }
+
+    /// Drawn in the orbital colors (Appearance > Orbital colors): every
+    /// surface but a total density, which has its own light blue.
+    pub(crate) fn takes_orbital_colors(&self) -> bool {
+        self.density() != Some(false)
     }
 
     /// What the Translucent checkbox sets.
@@ -294,6 +367,42 @@ fn push_tinted_vertices(vertices: &mut Vec<IsosurfaceVertex>, mesh: &IsosurfaceM
 }
 
 impl App {
+    /// Appearance > Orbital colors: orbitals, cubes and spin densities
+    /// opened or generated from now on are drawn in `pair` (also after "Use
+    /// for new surfaces", whose other settings are kept). Surfaces already
+    /// drawn keep their colors until "Apply to drawn surfaces"
+    /// (`apply_orbital_colors`).
+    pub(crate) fn set_orbital_colors(&mut self, pair: OrbitalColors) {
+        self.orbital_colors = pair;
+        self.surface_defaults = self.surface_defaults.in_colors(pair);
+    }
+
+    /// "Apply to drawn surfaces": every surface of every structure, except
+    /// total densities, in the current orbital colors. Returns how many
+    /// changed.
+    pub(crate) fn apply_orbital_colors(&mut self) -> usize {
+        let pair = self.orbital_colors;
+        let mut changed = 0;
+        for surface in self.structures.iter_mut().flat_map(|s| s.surfaces.iter_mut()) {
+            let recolored = surface.settings.in_colors(pair);
+            if surface.takes_orbital_colors() && surface.settings != recolored {
+                surface.settings = recolored;
+                changed += 1;
+            }
+        }
+        if changed > 0 {
+            self.rebuild_isosurface();
+        }
+        changed
+    }
+
+    /// Whether any open structure has a surface "Apply to drawn surfaces"
+    /// would recolor.
+    pub(crate) fn has_surfaces_in_other_colors(&self) -> bool {
+        let pair = self.orbital_colors;
+        self.structures.iter().flat_map(|s| s.surfaces.iter()).any(|s| s.takes_orbital_colors() && s.settings != s.settings.in_colors(pair))
+    }
+
     /// Adds surfaces to a structure and, when `show` is set, shows the
     /// first of them alone — what opening a `.cube` or generating orbitals
     /// leads to (several cubes opened at once show the first). A surface
@@ -371,5 +480,24 @@ impl App {
             resources.update_isosurface(&self.render_state.device, &vertices);
             resources.update_isosurface_material(&self.render_state.queue, &material);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The default pair is the one every surface was drawn in before the
+    /// choice existed (2026-10-22), so pictures made before stay the same.
+    #[test]
+    fn the_default_orbital_colors_are_unchanged() {
+        assert_eq!(OrbitalColors::default(), OrbitalColors::BlueRed);
+        assert_eq!(OrbitalColors::BlueRed.colors(), (Color32::from_rgb(20, 95, 170), Color32::from_rgb(175, 25, 60)));
+        assert_eq!(OrbitalColors::default().surface_settings(), SurfaceSettings::default());
+        assert_eq!(density_settings(true, OrbitalColors::default()).positive_color, Color32::from_rgb(20, 95, 170));
+        // The total density keeps its light blue in every pair.
+        for pair in OrbitalColors::ALL {
+            assert_eq!(density_settings(false, pair).positive_color, Color32::from_rgb(120, 160, 210));
+        }
     }
 }

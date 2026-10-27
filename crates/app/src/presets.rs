@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use apost3dview_render::{AoSettings, DofSettings, IsosurfaceMaterial, Material};
 
 use crate::app::App;
+use crate::isosurfaces::OrbitalColors;
 
 /// A saved "look": everything the Default/Publication buttons set
 /// together, bundled so a user's own preferred combination can be named
@@ -18,6 +19,10 @@ pub(crate) struct StylePreset {
     pub(crate) ao_settings: AoSettings,
     pub(crate) dof_settings: DofSettings,
     pub(crate) isosurface_material: IsosurfaceMaterial,
+    /// Appearance > Orbital colors. Presets saved before 2026-10-27 have
+    /// none and leave the current choice as it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) orbital_colors: Option<OrbitalColors>,
 }
 
 /// Where saved Custom style presets live: a `presets` folder in the
@@ -77,6 +82,9 @@ impl App {
         self.ao_settings = preset.ao_settings;
         self.dof_settings = preset.dof_settings;
         self.isosurface_material = preset.isosurface_material;
+        if let Some(pair) = preset.orbital_colors {
+            self.set_orbital_colors(pair);
+        }
         self.rebuild_isosurface();
     }
 
@@ -84,7 +92,13 @@ impl App {
     /// settings as a new named Custom preset, overwriting one of the same
     /// name if it already exists.
     pub(crate) fn save_style_preset(&mut self, name: &str) {
-        let preset = StylePreset { material: self.material, ao_settings: self.ao_settings, dof_settings: self.dof_settings, isosurface_material: self.isosurface_material };
+        let preset = StylePreset {
+            material: self.material,
+            ao_settings: self.ao_settings,
+            dof_settings: self.dof_settings,
+            isosurface_material: self.isosurface_material,
+            orbital_colors: Some(self.orbital_colors),
+        };
         let contents = match toml::to_string_pretty(&preset) {
             Ok(contents) => contents,
             Err(err) => {
@@ -133,5 +147,29 @@ impl App {
         if let Err(err) = std::fs::create_dir_all(&dir).and_then(|()| std::process::Command::new(opener).arg(&dir).spawn().map(drop)) {
             self.show_warning(format!("Could not open {}: {err}", dir.display()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn orbital_colors_are_optional_in_a_preset() {
+        let preset = StylePreset {
+            material: Material::default(),
+            ao_settings: AoSettings::default(),
+            dof_settings: DofSettings::default(),
+            isosurface_material: IsosurfaceMaterial::default(),
+            orbital_colors: Some(OrbitalColors::TealAmber),
+        };
+        let text = toml::to_string_pretty(&preset).unwrap();
+        assert!(text.contains("orbital_colors = \"teal-amber\""), "{text}");
+        let back: StylePreset = toml::from_str(&text).unwrap();
+        assert_eq!(back.orbital_colors, Some(OrbitalColors::TealAmber));
+        // A preset saved before the choice existed leaves it as it is.
+        let older: String = text.lines().filter(|l| !l.starts_with("orbital_colors")).collect::<Vec<_>>().join("\n");
+        let back: StylePreset = toml::from_str(&older).unwrap();
+        assert_eq!(back.orbital_colors, None);
     }
 }

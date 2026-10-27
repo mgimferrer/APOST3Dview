@@ -8,7 +8,7 @@ use egui::{RichText, Slider};
 use crate::app::App;
 use crate::windows::ToolWindow;
 use crate::orbital_sets::show_set_checklist;
-use crate::isosurfaces::{SurfaceSettings, SurfaceSource};
+use crate::isosurfaces::SurfaceSource;
 use crate::orbitals::{fitted_only, fragment_weighting, show_mo_checklist, OrbitalAccuracyPreset};
 use crate::state::LoadedStructure;
 
@@ -509,7 +509,7 @@ impl App {
         };
         let surface_count = structure.surfaces.len();
         let surface = &mut structure.surfaces[index];
-        let own_defaults = surface.default_settings();
+        let own_defaults = surface.default_settings(self.orbital_colors);
         let translucent_opacity = surface.translucent_opacity();
         let is_density = surface.density().is_some();
 
@@ -581,11 +581,12 @@ impl App {
         if use_for_new {
             self.surface_defaults = settings;
         }
-        if self.surface_defaults != SurfaceSettings::default() {
+        let new_surface_defaults = self.orbital_colors.surface_settings();
+        if self.surface_defaults != new_surface_defaults {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(format!("New orbitals and cubes start at isovalue {}.", self.surface_defaults.isovalue)).small().weak());
                 if ui.small_button("Reset").on_hover_text("Back to the default settings for new surfaces").clicked() {
-                    self.surface_defaults = SurfaceSettings::default();
+                    self.surface_defaults = new_surface_defaults;
                 }
             });
         }

@@ -11,7 +11,7 @@ use glam::Vec2;
 
 use crate::export::RenderExportState;
 use crate::files::FileKind;
-use crate::isosurfaces::SurfaceSettings;
+use crate::isosurfaces::{OrbitalColors, SurfaceSettings};
 use crate::orbitals::OrbitalGenerationState;
 use crate::presets::list_style_presets;
 use crate::state::{AtomLabelMode, AtomLabelStyle, LoadedStructure, MeasurementStyle};
@@ -146,10 +146,13 @@ pub struct App {
     /// both are on — see `ViewportResources::run_live_dof_pass`).
     pub(crate) dof_enabled: bool,
     pub(crate) dof_settings: DofSettings,
-    /// How newly opened or generated surfaces are drawn: the settings of
-    /// the surface last edited, so a batch of orbitals comes out like the
-    /// one just tuned.
+    /// How newly opened or generated orbitals and cubes are drawn: the
+    /// default settings in `orbital_colors`, or a surface's own after "Use
+    /// for new surfaces".
     pub(crate) surface_defaults: SurfaceSettings,
+    /// Appearance > Orbital colors: the pair new orbitals, cubes and spin
+    /// densities are drawn in (see `set_orbital_colors`).
+    pub(crate) orbital_colors: OrbitalColors,
 
     /// Names of every saved Custom style preset on disk (see
     /// `presets_dir`), cached so the Appearance window doesn't re-read the
@@ -259,6 +262,7 @@ impl App {
             dof_enabled: true,
             dof_settings: DofSettings::default(),
             surface_defaults: SurfaceSettings::default(),
+            orbital_colors: OrbitalColors::default(),
             style_presets: list_style_presets(),
             new_preset_name: String::new(),
             toasts: Vec::new(),
@@ -375,6 +379,16 @@ impl App {
     /// tests.
     pub fn surface_labels(&self) -> Vec<(String, bool)> {
         self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.surfaces.iter().map(|x| (x.label.clone(), x.visible)).collect()).unwrap_or_default()
+    }
+
+    /// The active structure's surfaces' positive and negative colors, in
+    /// list order — for tests.
+    pub fn surface_colors(&self) -> Vec<([u8; 3], [u8; 3])> {
+        let rgb = |c: egui::Color32| [c.r(), c.g(), c.b()];
+        self.active_structure
+            .and_then(|i| self.structures.get(i))
+            .map(|s| s.surfaces.iter().map(|x| (rgb(x.settings.positive_color), rgb(x.settings.negative_color))).collect())
+            .unwrap_or_default()
     }
 
     /// The active structure's surfaces' opacities (1 = opaque), in list

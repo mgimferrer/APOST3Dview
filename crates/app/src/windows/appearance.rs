@@ -7,6 +7,8 @@ use apost3dview_render::{AoSettings, DofSettings, IsosurfaceMaterial, Material};
 use egui::{Color32, RichText, Slider};
 
 use crate::app::App;
+use crate::isosurfaces::OrbitalColors;
+use crate::util::swatch;
 use crate::windows::ToolWindow;
 
 impl App {
@@ -44,12 +46,48 @@ impl App {
                         .on_hover_text("No perspective, as in most figures of papers: equal bonds look equal anywhere in the picture.");
                     ui.selectable_value(&mut self.camera.orthographic, false, "Perspective").on_hover_text("Nearer parts look larger, as through a camera.");
                 });
+                self.show_orbital_colors(ui);
 
                 ui.add_space(6.0);
                 egui::CollapsingHeader::new("Advanced").id_salt("appearance_advanced").show(ui, |ui| self.show_advanced_appearance(ui));
             });
         self.record_column_window(ctx, ToolWindow::Appearance, response.map(|r| r.response));
         self.show_appearance = open;
+    }
+
+    /// Orbital colors: the pair new orbital lobes and spin densities are
+    /// drawn in, and a button to recolor the ones already drawn.
+    fn show_orbital_colors(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Orbital colors:");
+            let mut pair = self.orbital_colors;
+            egui::ComboBox::from_id_salt("orbital_colors")
+                .selected_text(pair.name())
+                .show_ui(ui, |ui| {
+                    for option in OrbitalColors::ALL {
+                        ui.selectable_value(&mut pair, option, option.name()).on_hover_text(option.description());
+                    }
+                })
+                .response
+                .on_hover_text(
+                    "The positive and negative lobes of orbitals, cubes and spin densities drawn from now on. Every pair stays apart from the atom colors and under simulated color-vision deficiency.",
+                );
+            let (positive, negative) = pair.colors();
+            swatch(ui, positive, 12.0);
+            swatch(ui, negative, 12.0);
+            if pair != self.orbital_colors {
+                self.set_orbital_colors(pair);
+            }
+        });
+        if ui
+            .add_enabled(self.has_surfaces_in_other_colors(), egui::Button::new("Apply to drawn surfaces"))
+            .on_hover_text("Draw the orbitals, cubes and spin densities already open in these colors (the total density keeps its own)")
+            .on_disabled_hover_text("Every surface drawn is already in these colors")
+            .clicked()
+        {
+            let count = self.apply_orbital_colors();
+            self.show_status(format!("{count} surface{} recolored", if count == 1 { "" } else { "s" }));
+        }
     }
 
     /// Default, Publication, and the user's own saved looks.

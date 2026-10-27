@@ -459,11 +459,15 @@ fn making_an_input() {
 fn appearance_and_export() {
     let mut guide = open(vec![validation("gaussian/BiCl3-def2TZVPP.fchk")]);
     click(&mut guide, "Appearance");
-    for label in ["Default", "Publication", "Save this look", "Open presets folder", "Ambient occlusion", "Depth of field", "Orthographic", "Perspective", "Advanced"] {
+    for label in ["Default", "Publication", "Save this look", "Open presets folder", "Ambient occlusion", "Depth of field", "Orthographic", "Perspective", "Orbital colors:", "Apply to drawn surfaces", "Advanced"] {
         sees(&guide, label);
     }
     settle(&mut guide);
     snap_tool_window(&mut guide, "appearance-window", "Appearance");
+    // The pairs the chapter names, in the Orbital colors menu.
+    choose(&mut guide, "Blue and red", "Blue and amber");
+    choose(&mut guide, "Blue and amber", "Teal and amber");
+    choose(&mut guide, "Teal and amber", "Blue and red");
     click(&mut guide, "Export");
     for label in ["Also save the session", "Image:", "Single image", "Panels", "DPI", "Custom (pixels)", "Single column (3.25 in)", "Double column (6.75 in)", "Transparent background", "Caption", "Render and save PNG...", "Render and save GIF..."] {
         sees(&guide, label);

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashSet};
 use apost3dview_core::{generate_density_grid, generate_mo_grids, generate_weighted_mo_grids, ApostResults, AtomCells, MolecularOrbitals, Molecule, Wavefunction};
 
 use crate::app::App;
-use crate::isosurfaces::{density_settings, Surface, SurfaceSettings, SurfaceSource};
+use crate::isosurfaces::{density_settings, OrbitalColors, Surface, SurfaceSettings, SurfaceSource};
 use crate::natural::{Densities, NaturalOrbitals};
 use crate::names::fragment_formula_by_id;
 use crate::orbital_sets::{approximate_note, fragment_tint, LoadedOrbitalSet};
@@ -142,7 +142,7 @@ fn orbital_label(wfn: &Wavefunction, choice: OrbitalChoice) -> String {
 /// `density_settings`: from the occupied orbitals ("Total density",
 /// "Spin density"), or from the natural orbitals of a correlated density
 /// matrix of the file ("Total density (MP2)").
-pub(crate) fn density_surface(wfn: &Wavefunction, spin: bool, spacing_bohr: f64, padding_bohr: f64, natural: Option<&NaturalOrbitals>) -> Result<Surface, String> {
+pub(crate) fn density_surface(wfn: &Wavefunction, spin: bool, spacing_bohr: f64, padding_bohr: f64, natural: Option<&NaturalOrbitals>, colors: OrbitalColors) -> Result<Surface, String> {
     let terms = match natural {
         Some(set) => set.density_weights(spin).ok_or_else(|| format!("the {} density has no spin part", set.name))?,
         None if spin => wfn.spin_density_weights().ok_or("a closed shell has no spin density")?,
@@ -155,7 +155,7 @@ pub(crate) fn density_surface(wfn: &Wavefunction, spin: bool, spacing_bohr: f64,
         None => base.to_string(),
     };
     let source = SurfaceSource::Density { spin, spacing_bohr, padding_bohr, natural: natural.map(|set| set.kind.clone()) };
-    Ok(Surface::new(label, grid, density_settings(spin), source))
+    Ok(Surface::new(label, grid, density_settings(spin, colors), source))
 }
 
 /// Whether the structure's densities include a spin density: from the
@@ -322,7 +322,7 @@ impl App {
             }
         }
         for &spin in &densities {
-            match density_surface(wfn, spin, spacing, padding, natural) {
+            match density_surface(wfn, spin, spacing, padding, natural, self.orbital_colors) {
                 Ok(s) => surfaces.push(s),
                 Err(err) => {
                     self.show_warning(format!("The density could not be generated: {err}"));
