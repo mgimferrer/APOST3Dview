@@ -1053,6 +1053,33 @@ fn rendering_options() {
     }
 }
 
+/// SI: the molecule styles on one scene, the rendering-options view (c),
+/// Be(cAAC)2 with its HONO: ball and stick, sticks, thin sticks and
+/// space-filling (Molecule window > Style, `79793de`).
+#[test]
+fn molecule_styles() {
+    let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    let results = dir.join("Be-cAAC-Dip/Be-cAAC-Dip-EOS.apost.json");
+    let atoms = Atoms::of(&read_results(&results));
+    let hydrogens = format!("[[structures]]\nhidden_atoms = {}\n", toml_array(&atoms.hydrogens()));
+    let orbital = "[[structures.surfaces]]\nisovalue = 0.05\nvisible = true\n[[structures.surfaces]]\nvisible = false\n";
+    let look = "[appearance]\nambient_occlusion = true\ndepth_of_field = false\n[view]\nprojection = \"orthographic\"\n[appearance.material]\natom_scale = 0.17\nbond_radius = 0.12\n";
+    for (name, style, zoom) in [
+        ("style-a-ball-and-stick", "", 0.62),
+        ("style-b-sticks", "[appearance.molecule_style]\nstyle = \"sticks\"\n", 0.62),
+        ("style-c-thin-sticks", "[appearance.molecule_style]\nstyle = \"thin-sticks\"\n", 0.62),
+        // Farther out: the van der Waals spheres reach past the frame otherwise.
+        ("style-d-space-filling", "[appearance.molecule_style]\nstyle = \"space-filling\"\n", 0.85),
+    ] {
+        let setup = |harness: &mut egui_kittest::Harness<'static, apost3dview::App>| frontier_natural_orbitals(harness);
+        let patch = format!("{look}{style}{hydrogens}{orbital}");
+        let session = out.join(format!("{name}.a3dview"));
+        let mut harness = build(vec![results.clone()], setup, &session, &patch, carbene_view(&atoms), zoom);
+        save_png(&mut harness, &out.join(format!("{name}.png")), 1200, 1000);
+        harness.state().save_session_to(&session).unwrap();
+    }
+}
+
 /// Pictures for the table-of-contents graphic: nitroprusside with its
 /// NO-Fe-CN axis horizontal (NO to the right), oxidation states on the
 /// envelopes; and the two aligned HONOs of the Be and Mg complexes alone.
