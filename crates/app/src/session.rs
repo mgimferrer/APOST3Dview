@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use apost3dview_core::{parse_cube, Bond, LengthUnit, MeasurementKind};
-use apost3dview_render::{AoSettings, BondVisualStyle, ColorScale, DofSettings, IsosurfaceMaterial, Material};
+use apost3dview_render::{AoSettings, BondVisualStyle, ColorScale, DofSettings, IsosurfaceMaterial, Material, MoleculeStyleSettings};
 use egui::Color32;
 use glam::{Quat, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
@@ -155,6 +155,10 @@ struct AppearanceState {
     /// before 2026-10-27: the default pair.
     #[serde(default)]
     orbital_colors: OrbitalColors,
+    /// Molecule window > Style and its sizes. Absent in sessions saved
+    /// before 2026-10-28: ball and stick.
+    #[serde(default)]
+    molecule_style: MoleculeStyleSettings,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -525,6 +529,7 @@ impl App {
                 dof_settings: self.dof_settings,
                 surface_material: self.isosurface_material,
                 orbital_colors: self.orbital_colors,
+                molecule_style: self.molecule_style,
             },
             color_ranges: self.color_ranges.clone(),
             structures,
@@ -707,6 +712,7 @@ impl App {
         self.dof_settings = a.dof_settings;
         self.isosurface_material = a.surface_material;
         self.set_orbital_colors(a.orbital_colors);
+        self.molecule_style = a.molecule_style;
     }
 
     /// Puts a reopened structure back as the session recorded it.

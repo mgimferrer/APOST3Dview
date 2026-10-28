@@ -10,6 +10,7 @@ use crate::camera::OrbitCamera;
 use crate::consts::{DEPTH_FORMAT, MSAA_SAMPLES};
 use crate::dof::{DofBlurUniforms, DofCompositeUniforms, DofSettings};
 use crate::glyphs::GlyphAtlas;
+use crate::style::DrawnSizes;
 use crate::instances::{
     build_atom_highlight_instances, build_atom_instances, build_bond_highlight_instances, build_bond_instances,
     build_measurement_instances, AtomInstance, BondInstance, BondVisualStyle,
@@ -872,8 +873,9 @@ impl ViewportResources {
     /// Initial upload when a molecule is opened — everything visible, no
     /// selection, all bonds solid, no measurements.
     pub fn load_molecule(&mut self, device: &wgpu::Device, molecule: &Molecule) {
-        self.update_geometry(device, molecule, &HashSet::new(), &HashSet::new(), &[], None, None);
-        self.update_highlights(device, molecule, &[], &[]);
+        let sizes = DrawnSizes::ball_and_stick(molecule, 1.0, 1.0);
+        self.update_geometry(device, molecule, &HashSet::new(), &HashSet::new(), &[], None, None, &sizes);
+        self.update_highlights(device, molecule, &[], &[], &sizes);
         self.update_measurements(device, molecule, &[], [0.0, 0.0, 0.0]);
     }
 
@@ -892,9 +894,14 @@ impl ViewportResources {
         bond_styles: &[BondVisualStyle],
         atom_colors: Option<&[[f32; 3]]>,
         bond_scales: Option<&[f32]>,
+        sizes: &DrawnSizes,
     ) {
-        let atom_data = build_atom_instances(molecule, hidden_atoms, atom_colors);
-        let bond_data = build_bond_instances(molecule, hidden_atoms, hidden_bonds, bond_styles, atom_colors, bond_scales);
+        let atom_data = build_atom_instances(molecule, hidden_atoms, atom_colors, &sizes.base);
+        let bond_data = if sizes.bond_radius.is_some() {
+            build_bond_instances(molecule, hidden_atoms, hidden_bonds, bond_styles, atom_colors, bond_scales)
+        } else {
+            Vec::new()
+        };
 
         let atom_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("atom_instance_buffer"),
@@ -918,9 +925,10 @@ impl ViewportResources {
         molecule: &Molecule,
         selected_atoms: &[usize],
         selected_bonds: &[usize],
+        sizes: &DrawnSizes,
     ) {
-        let atom_data = build_atom_highlight_instances(molecule, selected_atoms);
-        let bond_data = build_bond_highlight_instances(molecule, selected_bonds);
+        let atom_data = build_atom_highlight_instances(molecule, selected_atoms, sizes);
+        let bond_data = if sizes.bond_radius.is_some() { build_bond_highlight_instances(molecule, selected_bonds) } else { Vec::new() };
 
         let atom_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("atom_highlight_instance_buffer"),

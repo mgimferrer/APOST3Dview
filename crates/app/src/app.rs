@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use apost3dview_core::{CoordinateFormat, LengthUnit};
-use apost3dview_render::{AoSettings, DofSettings, GlyphAtlas, IsosurfaceMaterial, Material, OrbitCamera, ViewportResources};
+use apost3dview_render::{AoSettings, DofSettings, DrawnSizes, GlyphAtlas, IsosurfaceMaterial, Material, MoleculeStyleSettings, OrbitCamera, ViewportResources};
 use egui::{Color32, RichText};
 use glam::Vec2;
 
@@ -153,6 +153,11 @@ pub struct App {
     /// Appearance > Orbital colors: the pair new orbitals, cubes and spin
     /// densities are drawn in (see `set_orbital_colors`).
     pub(crate) orbital_colors: OrbitalColors,
+    /// Molecule window > Style: ball and stick, sticks, thin sticks or
+    /// space-filling, with the sizes of the last three (ball and stick's
+    /// are `material.atom_scale`/`bond_radius`). One style for everything
+    /// shown; not touched by the Default and Publication looks.
+    pub(crate) molecule_style: MoleculeStyleSettings,
 
     /// Names of every saved Custom style preset on disk (see
     /// `presets_dir`), cached so the Appearance window doesn't re-read the
@@ -228,6 +233,7 @@ impl App {
             auto_spin_speed: DEFAULT_AUTO_SPIN_SPEED,
             spin_direction: Vec2::X,
             material: Material::default(),
+            molecule_style: MoleculeStyleSettings::default(),
             structures: Vec::new(),
             active_structure: None,
             logo_texture,
@@ -280,10 +286,45 @@ impl App {
         }
     }
 
+    /// Atom and bond sizes of `structure` as drawn in the chosen style
+    /// (bond thickness from bond orders included).
+    pub(crate) fn drawn_sizes(&self, structure: &LoadedStructure) -> DrawnSizes {
+        let bond_scales = self.bond_scales(structure);
+        self.drawn_sizes_with(structure, bond_scales.as_deref())
+    }
+
+    fn drawn_sizes_with(&self, structure: &LoadedStructure, bond_scales: Option<&[f32]>) -> DrawnSizes {
+        DrawnSizes::new(
+            &structure.molecule,
+            &self.molecule_style,
+            self.material.atom_scale,
+            self.material.bond_radius,
+            &structure.hidden_atoms,
+            &structure.hidden_bonds,
+            bond_scales,
+        )
+    }
+
+    /// The material the renderer gets: the Appearance window's, with the
+    /// atom and bond sizes of the chosen style and the ambient-occlusion
+    /// dampening (`ao_render_material`).
+    pub(crate) fn render_material(&self) -> Material {
+        let (atom_scale, bond_radius) = self.molecule_style.gpu_sizes(self.material.atom_scale, self.material.bond_radius);
+        Material { atom_scale, bond_radius, ..self.ao_render_material() }
+    }
+
+    /// Redraws atoms, bonds and the selection after the style or its sizes
+    /// changed.
+    pub(crate) fn molecule_style_changed(&self) {
+        self.rebuild_geometry();
+        self.rebuild_highlights();
+    }
+
     pub(crate) fn rebuild_geometry(&self) {
         let Some(active) = self.active_structure else { return };
         let Some(structure) = self.structures.get(active) else { return };
         let bond_scales = self.bond_scales(structure);
+        let sizes = self.drawn_sizes_with(structure, bond_scales.as_deref());
         self.with_resources(|resources| {
             resources.update_geometry(
                 &self.render_state.device,
@@ -293,6 +334,7 @@ impl App {
                 &structure.bond_styles,
                 None,
                 bond_scales.as_deref(),
+                &sizes,
             );
         });
     }
@@ -306,7 +348,8 @@ impl App {
     pub(crate) fn rebuild_highlights(&self) {
         let Some(active) = self.active_structure else { return };
         let Some(structure) = self.structures.get(active) else { return };
-        self.with_resources(|resources| resources.update_highlights(&self.render_state.device, &structure.molecule, &structure.selected_atoms, &structure.selected_bonds));
+        let sizes = self.drawn_sizes(structure);
+        self.with_resources(|resources| resources.update_highlights(&self.render_state.device, &structure.molecule, &structure.selected_atoms, &structure.selected_bonds, &sizes));
     }
 
     pub(crate) fn rebuild_measurements(&self) {

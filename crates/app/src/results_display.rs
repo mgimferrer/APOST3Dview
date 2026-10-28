@@ -47,7 +47,7 @@ impl App {
             hidden.sort_unstable();
             let view = s.apost.as_ref().and_then(|a| a.view.clone());
             let draft = self.editing_input().then(|| s.input_draft.as_ref().map(|d| d.fragments.clone())).flatten();
-            format!("{:?}|{view:?}|{}|{hidden:?}|{:?}|{draft:?}", self.active_structure, self.material.atom_scale, self.color_ranges)
+            format!("{:?}|{view:?}|{}|{:?}|{hidden:?}|{:?}|{draft:?}", self.active_structure, self.material.atom_scale, self.molecule_style, self.color_ranges)
         });
         let signature = signature.unwrap_or_default();
         if signature == self.results_signature {
@@ -63,7 +63,6 @@ impl App {
     }
 
     pub(crate) fn rebuild_results_display(&mut self) {
-        let atom_scale = self.material.atom_scale;
         let mut vertices = Vec::new();
         let mut ranges = Vec::new();
         let mut halos = Vec::new();
@@ -80,13 +79,15 @@ impl App {
                 if n > 0 && !rest.is_empty() {
                     groups.push(rest);
                 }
-                let meshes = crate::results_view::atom_group_envelopes(&groups, &structure.molecule, atom_scale, &structure.hidden_atoms);
+                let sizes = self.drawn_sizes(structure);
+                let meshes = crate::results_view::atom_group_envelopes(&groups, &structure.molecule, &sizes, &structure.hidden_atoms);
                 let gray = crate::results::UNASSIGNED_COLOR.map(|c| c as f32 / 255.0);
                 let scene = ResultsScene { envelopes: (0..meshes.len()).map(|f| (f, if f < n { crate::results_view::fragment_rgb(f) } else { gray })).collect(), ..Default::default() };
                 (vertices, ranges) = envelope_vertices(&scene, &meshes);
             }
         } else if let Some(active) = self.active_structure {
             let scene = self.structures.get(active).and_then(|s| self.results_scene(s));
+            let sizes = self.drawn_sizes(&self.structures[active]);
             let structure = &mut self.structures[active];
             if let (Some(scene), Some(attachment)) = (scene, structure.apost.as_mut())
                 && let Ok(results) = &attachment.results
@@ -94,15 +95,16 @@ impl App {
                 if !scene.envelopes.is_empty() {
                     let mut hidden: Vec<usize> = structure.hidden_atoms.iter().copied().collect();
                     hidden.sort_unstable();
-                    let key = (atom_scale.to_bits(), hidden);
+                    let radii = (0..structure.molecule.positions.len()).map(|a| sizes.radius_at_least_ball(a).to_bits()).collect();
+                    let key = (radii, hidden);
                     if attachment.envelope_cache.as_ref().map(|(k, _)| k) != Some(&key) {
-                        let meshes = fragment_envelopes(results, &structure.molecule, atom_scale, &structure.hidden_atoms);
+                        let meshes = fragment_envelopes(results, &structure.molecule, &sizes, &structure.hidden_atoms);
                         attachment.envelope_cache = Some((key, meshes));
                     }
                     let meshes = &attachment.envelope_cache.as_ref().unwrap().1;
                     (vertices, ranges) = envelope_vertices(&scene, meshes);
                 }
-                halos = halo_instances(&scene, &structure.molecule, atom_scale, &structure.hidden_atoms);
+                halos = halo_instances(&scene, &structure.molecule, &sizes, &structure.hidden_atoms);
 
             }
         }

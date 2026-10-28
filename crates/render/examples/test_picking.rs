@@ -2,7 +2,7 @@ use std::env;
 use std::path::PathBuf;
 
 use apost3dview_core::Molecule;
-use apost3dview_render::{pick_atom, pick_bond, ray_from_ndc, OrbitCamera};
+use apost3dview_render::{pick_atom, pick_bond, ray_from_ndc, DrawnSizes, OrbitCamera};
 
 fn main() {
     let path = env::args().nth(1).map(PathBuf::from).expect("usage: test_picking <path.fchk>");
@@ -27,7 +27,7 @@ fn main() {
         }
 
         let (origin, dir) = ray_from_ndc(&camera, aspect_ratio, ndc_x, ndc_y);
-        let hit = pick_atom(&molecule, origin, dir, 0.35, &hidden);
+        let hit = pick_atom(&molecule, origin, dir, &DrawnSizes::ball_and_stick(&molecule, 0.35, 0.15), &hidden);
         if hit == Some(index) {
             atom_pass += 1;
         } else {

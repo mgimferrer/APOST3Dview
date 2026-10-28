@@ -226,6 +226,33 @@ fn scenes() -> Vec<Scene> {
         })
         .collect();
     list.extend(copies);
+    // The other molecule styles (2026-10-28), orthographic: labels,
+    // measurements, a dashed bond and a selection; an orbital; joints as
+    // thick as bonds drawn by bond order, with value halos; the large
+    // molecule space-filling.
+    let styled = [
+        ("ortho-bicl3-labels", "sticks"),
+        ("ortho-h2o-homo-lumo-translucent", "thin-sticks"),
+        ("fe-bond-order-focus", "sticks"),
+        ("ortho-fe-atom-charges", "thin-sticks"),
+        ("ortho-bi-ao-dof", "space-filling"),
+    ];
+    let copies: Vec<Scene> = styled
+        .iter()
+        .map(|&(name, style)| {
+            let s = list.iter().find(|s| s.name == name).unwrap();
+            let projection = if name.starts_with("ortho-") { "" } else { "[view]\nprojection = \"orthographic\"\n" };
+            Scene {
+                name: Box::leak(format!("{style}-{}", name.trim_start_matches("ortho-")).into_boxed_str()),
+                files: s.files,
+                patch: format!("{projection}{}\n[appearance.molecule_style]\nstyle = \"{style}\"\n", s.patch),
+                select: s.select,
+                window: s.window,
+                zoom_out: s.zoom_out,
+            }
+        })
+        .collect();
+    list.extend(copies);
     list
 }
 

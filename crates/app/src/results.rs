@@ -41,9 +41,9 @@ pub(crate) fn fragment_color(position: usize) -> [u8; 3] {
     FRAGMENT_PALETTE[position % FRAGMENT_PALETTE.len()]
 }
 
-/// What fragment envelopes depend on: the atom size (its bits) and the
-/// hidden atoms, sorted.
-pub(crate) type EnvelopeKey = (u32, Vec<usize>);
+/// What fragment envelopes depend on: each atom's envelope radius (its
+/// bits; atom size and style) and the hidden atoms, sorted.
+pub(crate) type EnvelopeKey = (Vec<u32>, Vec<usize>);
 
 /// The APOST-3D results file found for (or opened with) a structure.
 pub(crate) struct ApostAttachment {

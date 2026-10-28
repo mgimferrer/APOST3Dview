@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 
 use apost3dview_core::{envelope_mesh, ApostResults, IndexEntry, IsosurfaceMesh, MatrixObject, Molecule, Quantity, QuantityKind};
-use apost3dview_render::{format_signed, AtomInstance, ColorScale, EnvelopeRange, Half, IsosurfaceVertex, Legend};
+use apost3dview_render::{format_signed, AtomInstance, ColorScale, DrawnSizes, EnvelopeRange, Half, IsosurfaceVertex, Legend};
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
@@ -513,26 +513,23 @@ pub(crate) fn fragment_rgb(position: usize) -> [f32; 3] {
     fragment_color(position).map(|v| v as f32 / 255.0)
 }
 
-/// The drawn radius of atom `i`, as the renderer draws it.
-pub(crate) fn drawn_radius(molecule: &Molecule, i: usize, atom_scale: f32) -> f32 {
-    crate::util::drawn_radius(molecule.atomic_numbers[i], atom_scale)
-}
-
 /// One envelope mesh per fragment, around its visible atoms. Kept until
-/// the atom size or the hidden atoms change.
-pub(crate) fn fragment_envelopes(results: &ApostResults, molecule: &Molecule, atom_scale: f32, hidden: &std::collections::HashSet<usize>) -> Vec<IsosurfaceMesh> {
+/// the atom sizes or the hidden atoms change.
+pub(crate) fn fragment_envelopes(results: &ApostResults, molecule: &Molecule, sizes: &DrawnSizes, hidden: &std::collections::HashSet<usize>) -> Vec<IsosurfaceMesh> {
     let groups: Vec<Vec<usize>> = results.fragments().iter().map(|f| f.atoms.iter().map(|a| a - 1).collect()).collect();
-    atom_group_envelopes(&groups, molecule, atom_scale, hidden)
+    atom_group_envelopes(&groups, molecule, sizes, hidden)
 }
 
-/// One envelope per group of atoms (0-based).
-pub(crate) fn atom_group_envelopes(groups: &[Vec<usize>], molecule: &Molecule, atom_scale: f32, hidden: &std::collections::HashSet<usize>) -> Vec<IsosurfaceMesh> {
+/// One envelope per group of atoms (0-based), around the atoms as drawn
+/// but never tighter than around ball-and-stick balls, so fragments look
+/// the same in the stick styles.
+pub(crate) fn atom_group_envelopes(groups: &[Vec<usize>], molecule: &Molecule, sizes: &DrawnSizes, hidden: &std::collections::HashSet<usize>) -> Vec<IsosurfaceMesh> {
     groups
         .iter()
         .map(|group| {
             let atoms: Vec<usize> = group.iter().copied().filter(|a| *a < molecule.positions.len() && !hidden.contains(a)).collect();
             let centers: Vec<Vec3> = atoms.iter().map(|&a| molecule.positions[a]).collect();
-            let radii: Vec<f32> = atoms.iter().map(|&a| drawn_radius(molecule, a, atom_scale) + ENVELOPE_MARGIN).collect();
+            let radii: Vec<f32> = atoms.iter().map(|&a| sizes.radius_at_least_ball(a) + ENVELOPE_MARGIN).collect();
             envelope_mesh(&centers, &radii)
         })
         .collect()
@@ -555,16 +552,17 @@ pub(crate) fn envelope_vertices(scene: &ResultsScene, meshes: &[IsosurfaceMesh])
     (vertices, ranges)
 }
 
-/// Halo instances for `scene` (visible atoms only).
-pub(crate) fn halo_instances(scene: &ResultsScene, molecule: &Molecule, atom_scale: f32, hidden: &std::collections::HashSet<usize>) -> Vec<AtomInstance> {
+/// Halo instances for `scene` (visible atoms only), around the atoms as
+/// drawn but never smaller than around ball-and-stick balls.
+pub(crate) fn halo_instances(scene: &ResultsScene, molecule: &Molecule, sizes: &DrawnSizes, hidden: &std::collections::HashSet<usize>) -> Vec<AtomInstance> {
     scene
         .halos
         .iter()
         .filter(|(a, _)| *a < molecule.positions.len() && !hidden.contains(a))
         .map(|&(a, color)| {
             // The shader multiplies by the atom scale: undo it for the margin.
-            let radius = drawn_radius(molecule, a, atom_scale) + HALO_MARGIN;
-            AtomInstance { center: molecule.positions[a].to_array(), vdw_radius: radius / atom_scale.max(1e-3), color, _padding: 0.0 }
+            let radius = sizes.radius_at_least_ball(a) + HALO_MARGIN;
+            AtomInstance { center: molecule.positions[a].to_array(), vdw_radius: radius / sizes.scale.max(1e-3), color, _padding: 0.0 }
         })
         .collect()
 }
@@ -589,11 +587,11 @@ pub(crate) fn bond_scales(results: &ApostResults, molecule: &Molecule) -> Option
 /// Where a value label goes. A fragment's label sits outside it, pushed
 /// away from the molecule's center (on the camera side for the central
 /// fragment); an atom's just in front of its halo.
-pub(crate) fn label_position(anchor: LabelAnchor, results: &ApostResults, molecule: &Molecule, atom_scale: f32, eye: Vec3) -> Option<Vec3> {
+pub(crate) fn label_position(anchor: LabelAnchor, results: &ApostResults, molecule: &Molecule, sizes: &DrawnSizes, eye: Vec3) -> Option<Vec3> {
     match anchor {
         LabelAnchor::Atom(a) => {
             let p = *molecule.positions.get(a)?;
-            Some(p + (eye - p).normalize_or_zero() * (drawn_radius(molecule, a, atom_scale) + HALO_MARGIN + 0.05))
+            Some(p + (eye - p).normalize_or_zero() * (sizes.radius_at_least_ball(a) + HALO_MARGIN + 0.05))
         }
         LabelAnchor::Fragment(f) => {
             let atoms: Vec<Vec3> = results.fragments().get(f)?.atoms.iter().filter_map(|a| molecule.positions.get(a - 1).copied()).collect();

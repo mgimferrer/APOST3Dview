@@ -4,6 +4,8 @@ use bytemuck::{Pod, Zeroable};
 
 use apost3dview_core::{element_data, Molecule};
 
+use crate::style::DrawnSizes;
+
 /// Selection-highlight overlay color — drawn translucent, on top of the
 /// normal opaque render, via a separate alpha-blended pass.
 pub const HIGHLIGHT_COLOR: [f32; 3] = [1.0, 0.84, 0.0];
@@ -55,16 +57,17 @@ fn atom_color(molecule: &Molecule, atom_colors: Option<&[[f32; 3]]>, index: usiz
         .unwrap_or_else(|| element_data(molecule.atomic_numbers[index]).cpk_color)
 }
 
-pub fn build_atom_instances(molecule: &Molecule, hidden_atoms: &HashSet<usize>, atom_colors: Option<&[[f32; 3]]>) -> Vec<AtomInstance> {
+/// `base_radii`: each atom's instance radius in the drawing style
+/// (`DrawnSizes::base`), which the GPU multiplies by the style's scale.
+pub fn build_atom_instances(molecule: &Molecule, hidden_atoms: &HashSet<usize>, atom_colors: Option<&[[f32; 3]]>, base_radii: &[f32]) -> Vec<AtomInstance> {
     molecule
-        .atomic_numbers
+        .positions
         .iter()
-        .zip(&molecule.positions)
         .enumerate()
         .filter(|(index, _)| !hidden_atoms.contains(index))
-        .map(|(index, (&z, &position))| AtomInstance {
+        .map(|(index, &position)| AtomInstance {
             center: position.to_array(),
-            vdw_radius: element_data(z).vdw_radius,
+            vdw_radius: base_radii[index],
             color: atom_color(molecule, atom_colors, index),
             _padding: 0.0,
         })
@@ -132,15 +135,18 @@ const HIGHLIGHT_ATOM_SCALE: f32 = 1.18;
 /// Same shape as the real atoms (scaled up a little), just the selected
 /// subset with a fixed highlight color — drawn as a second, translucent
 /// pass on top.
-pub fn build_atom_highlight_instances(molecule: &Molecule, selected_atoms: &[usize]) -> Vec<AtomInstance> {
+///
+/// Never smaller than a ball-and-stick ball, so a selected atom stands out
+/// on a thin stick too.
+pub fn build_atom_highlight_instances(molecule: &Molecule, selected_atoms: &[usize], sizes: &DrawnSizes) -> Vec<AtomInstance> {
     selected_atoms
         .iter()
         .filter_map(|&index| {
-            let z = *molecule.atomic_numbers.get(index)?;
             let position = *molecule.positions.get(index)?;
+            let base = *sizes.base.get(index)? * HIGHLIGHT_ATOM_SCALE;
             Some(AtomInstance {
                 center: position.to_array(),
-                vdw_radius: element_data(z).vdw_radius * HIGHLIGHT_ATOM_SCALE,
+                vdw_radius: base.max(sizes.ball[index] / sizes.scale.max(1e-3)),
                 color: HIGHLIGHT_COLOR,
                 _padding: 0.0,
             })

@@ -107,10 +107,8 @@ impl App {
         let project = |p: Vec3| project_to_screen(camera, aspect, viewport, p);
         // An atom counts as visible when a fair part of it can be seen
         // (a hydrogen in front of a carbon's center doesn't hide it).
-        let visible = |a: usize| {
-            atom_visible_fraction(molecule, eye, a, self.material.atom_scale, self.material.bond_radius, &structure.hidden_atoms, &structure.hidden_bonds)
-                >= MIN_VISIBLE_FRACTION
-        };
+        let sizes = self.drawn_sizes(structure);
+        let visible = |a: usize| atom_visible_fraction(molecule, eye, a, &sizes, &structure.hidden_atoms, &structure.hidden_bonds) >= MIN_VISIBLE_FRACTION;
         let (ink, background) = self.label_colors();
         let mut pending: Vec<Pending> = Vec::new();
 
@@ -127,8 +125,8 @@ impl App {
             let size = Vec2::new(width, height) / wpp;
             // Clear of the bond (or the vertex atom) by a few pixels.
             let clearance = match measurement.kind {
-                MeasurementKind::Angle(_, v, _) => crate::util::drawn_radius(molecule.atomic_numbers[v], self.material.atom_scale) / wpp,
-                _ => self.material.bond_radius / wpp,
+                MeasurementKind::Angle(_, v, _) => sizes.radius(v) / wpp,
+                _ => sizes.bond_radius.unwrap_or(0.0) / wpp,
             } + 4.0 * text_scale;
             let shift = measurement_shift(measurement.kind, molecule, &project, molecule_center, size, clearance) + measurement.label_offset * text_scale;
             pending.push(Pending {
@@ -162,7 +160,7 @@ impl App {
                     LabelAnchor::Atom(_) => true,
                     LabelAnchor::Fragment(_) => false,
                 };
-                let Some(position) = label_position(label.anchor, results, molecule, self.material.atom_scale, eye) else { continue };
+                let Some(position) = label_position(label.anchor, results, molecule, &sizes, eye) else { continue };
                 let wpp = world_per_px(position);
                 let px = text_scale * if on_atom { view.label_size * ATOM_VALUE_SIZE } else { view.label_size };
                 let focus = label.color == FOCUS_COLOR;
@@ -205,11 +203,14 @@ impl App {
         // at all).
         if self.atom_label_mode != AtomLabelMode::None && !values_on_atoms {
             let color = color32_to_rgb(self.atom_label_style.text_color);
-            for (index, (&z, &position)) in molecule.atomic_numbers.iter().zip(&molecule.positions).enumerate() {
+            for (index, &position) in molecule.positions.iter().enumerate() {
                 if structure.hidden_atoms.contains(&index) || !visible(index) {
                     continue;
                 }
-                let radius = crate::util::drawn_radius(z, self.material.atom_scale);
+                // Sized as on a ball-and-stick ball at least (a name on a
+                // thin stick would be unreadable), in front of the atom
+                // as drawn.
+                let radius = sizes.radius_at_least_ball(index);
                 let text = self.atom_name_text(molecule, index, false);
                 let mut scale = glyph_scale_for_world_size(radius * self.atom_label_style.relative_size);
                 // Shrunk a little to fit a small atom (a hydrogen with a
@@ -219,7 +220,7 @@ impl App {
                 if width > room {
                     scale *= (room / width).max(NAME_LEAST_SHRINK);
                 }
-                let anchor = position + (eye - position).normalize_or_zero() * (radius * 1.15 + 0.02);
+                let anchor = position + (eye - position).normalize_or_zero() * (sizes.radius(index) * 1.15 + 0.02);
                 pending.push(Pending {
                     anchor,
                     shift: Vec2::ZERO,

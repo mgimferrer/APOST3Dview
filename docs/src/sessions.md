@@ -1,6 +1,6 @@
 # Sessions
 
-A session (`.a3dview`) keeps everything you set up: the files open, the structure shown, hidden atoms and bonds, bonds created by hand and dashed bonds, measurements and where their labels are, the surfaces and how each is drawn, the APOST-3D values shown and their colors, the camera (and the view each structure was left with), the look of the scene, and the figure set up in **Export** (its panels, captions and layout). Opening it gives back the same picture.
+A session (`.a3dview`) keeps everything you set up: the files open, the structure shown, hidden atoms and bonds, bonds created by hand and dashed bonds, measurements and where their labels are, the surfaces and how each is drawn, the APOST-3D values shown and their colors, the camera (and the view each structure was left with), the style of the molecule (ball and stick, sticks, ...) and the look of the scene, and the figure set up in **Export** (its panels, captions and layout). Opening it gives back the same picture.
 
 - **Save** in the toolbar, then **Save session** (<kbd>Cmd</kbd>+<kbd>S</kbd>, or <kbd>Ctrl</kbd>+<kbd>S</kbd>), saves it; the first time it asks where. **Save session as...** saves it under another name. The window's title names the open session.
 - Open a session like any other file. It replaces everything open.

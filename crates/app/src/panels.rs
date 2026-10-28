@@ -644,7 +644,7 @@ impl App {
             self.ao_enabled,
             self.ao_settings,
             (self.dof_enabled, self.dof_settings),
-            self.material,
+            (self.material, self.molecule_style),
             self.isosurface_material,
             (self.atom_label_mode, self.atom_label_style.relative_size, self.atom_label_style.text_color),
             (self.measurement_style.font_size, self.measurement_style.decimal_places, self.measurement_style.bold, self.measurement_style.text_color, self.measurement_style.line_color),

@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use apost3dview_render::{AoSettings, DofSettings, IsosurfaceMaterial, Material};
+use apost3dview_render::{AoSettings, DofSettings, IsosurfaceMaterial, Material, MoleculeStyleSettings};
 
 use crate::app::App;
 use crate::isosurfaces::OrbitalColors;
@@ -23,6 +23,10 @@ pub(crate) struct StylePreset {
     /// none and leave the current choice as it is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) orbital_colors: Option<OrbitalColors>,
+    /// Molecule window > Style. Presets saved before 2026-10-28 have none
+    /// and leave the current style as it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) molecule_style: Option<MoleculeStyleSettings>,
 }
 
 /// Where saved Custom style presets live: a `presets` folder in the
@@ -85,6 +89,10 @@ impl App {
         if let Some(pair) = preset.orbital_colors {
             self.set_orbital_colors(pair);
         }
+        if let Some(style) = preset.molecule_style {
+            self.molecule_style = style;
+            self.molecule_style_changed();
+        }
         self.rebuild_isosurface();
     }
 
@@ -98,6 +106,7 @@ impl App {
             dof_settings: self.dof_settings,
             isosurface_material: self.isosurface_material,
             orbital_colors: Some(self.orbital_colors),
+            molecule_style: Some(self.molecule_style),
         };
         let contents = match toml::to_string_pretty(&preset) {
             Ok(contents) => contents,
@@ -162,6 +171,7 @@ mod tests {
             dof_settings: DofSettings::default(),
             isosurface_material: IsosurfaceMaterial::default(),
             orbital_colors: Some(OrbitalColors::TealAmber),
+            molecule_style: None,
         };
         let text = toml::to_string_pretty(&preset).unwrap();
         assert!(text.contains("orbital_colors = \"teal-amber\""), "{text}");
@@ -171,5 +181,26 @@ mod tests {
         let older: String = text.lines().filter(|l| !l.starts_with("orbital_colors")).collect::<Vec<_>>().join("\n");
         let back: StylePreset = toml::from_str(&older).unwrap();
         assert_eq!(back.orbital_colors, None);
+    }
+
+    #[test]
+    fn the_molecule_style_is_optional_in_a_preset() {
+        use apost3dview_render::MoleculeStyle;
+        let style = MoleculeStyleSettings { style: MoleculeStyle::Sticks, stick_radius: 0.2, ..Default::default() };
+        let preset = StylePreset {
+            material: Material::default(),
+            ao_settings: AoSettings::default(),
+            dof_settings: DofSettings::default(),
+            isosurface_material: IsosurfaceMaterial::default(),
+            orbital_colors: None,
+            molecule_style: Some(style),
+        };
+        let text = toml::to_string_pretty(&preset).unwrap();
+        assert!(text.contains("style = \"sticks\""), "{text}");
+        let back: StylePreset = toml::from_str(&text).unwrap();
+        assert_eq!(back.molecule_style, Some(style));
+        // Sizes missing from the file take their defaults.
+        let short: StylePreset = toml::from_str(&text.replace("stick_radius = 0.2", "")).unwrap();
+        assert_eq!(short.molecule_style.unwrap().stick_radius, apost3dview_render::style::STICK_RADIUS);
     }
 }

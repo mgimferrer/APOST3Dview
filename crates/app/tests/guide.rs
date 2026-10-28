@@ -268,6 +268,64 @@ fn looking_at_a_molecule() {
     snap_figure(&mut guide, "molecule-measurements", 1200, 750);
 }
 
+/// "Looking at a molecule", Styles: an Fe d EFO of ferrocene (the
+/// FeCp2-EOS-OSLO example) in the four styles, side by side, in the view of
+/// the paper's figure (Cp-Fe-Cp vertical, seen from a little above).
+#[test]
+fn molecule_styles() {
+    let job = "FeCp2-EOS-OSLO";
+    let mut guide = open_example(job);
+    click(&mut guide, "Surfaces");
+    choose(&mut guide, "SCF orbitals", "EOS EFOs");
+    guide.state_mut().select_set_orbitals(&[41], &[]);
+    guide.run_steps(2);
+    click(&mut guide, "Generate 1 orbital(s)");
+    assert_eq!(guide.state().surface_labels(), vec![("EFO 42 \u{3b1} \u{b7} 1 Fe".to_string(), true)]);
+
+    let text = std::fs::read_to_string(example(job).join(format!("{job}.apost.json"))).unwrap();
+    let results = apost3dview_core::parse_apost_results(&text).unwrap();
+    let molecule = results.molecule.as_ref().unwrap();
+    let at = |i: usize| glam::Vec3::from_array(molecule.coordinates_bohr[i].map(|c| c as f32));
+    let centroid = |f: usize| results.fragments()[f].atoms.iter().map(|&a| at(a - 1)).sum::<glam::Vec3>() / results.fragments()[f].atoms.len() as f32;
+    let up = centroid(1) - centroid(2);
+    let front = results.fragments()[2].atoms.iter().map(|&a| a - 1).find(|&a| molecule.symbols[a] == "C").unwrap();
+    let toward = at(front) - centroid(2);
+    guide.state_mut().set_view_orientation(orientation(up, toward.cross(up), 0.33, std::f32::consts::PI / 5.0));
+    // Room for the space-filling model.
+    guide.state_mut().zoom_view(0.75);
+    guide.run_steps(2);
+
+    if guide.query_by_label("Style:").is_none() {
+        click(&mut guide, "Molecule");
+    }
+    sees(&guide, "Style:");
+    let size = 360;
+    let mut panels = Vec::new();
+    for style in ["Ball and stick", "Sticks", "Thin sticks", "Space-filling"] {
+        click(&mut guide, style);
+        settle(&mut guide);
+        panels.push(guide.state_mut().render_image(size, size).expect("render"));
+    }
+    click(&mut guide, "Ball and stick");
+    let Some(dir) = images_dir() else { return };
+    let layout = apost3dview_render::FigureLayout {
+        columns: 4,
+        rows: 1,
+        panel_width: size,
+        panel_height: size,
+        gap: 12,
+        text_px: 26.0,
+        captions: true,
+        letters: false,
+        background: Some([255, 255, 255]),
+        ink: [0, 0, 0],
+    };
+    let captions: Vec<String> = ["Ball and stick", "Sticks", "Thin sticks", "Space-filling"].map(String::from).to_vec();
+    let refs: Vec<&[u8]> = panels.iter().map(Vec::as_slice).collect();
+    let figure = apost3dview_render::compose_figure(&layout, &refs, &captions, None);
+    save(&dir, "molecule-styles", &image::RgbaImage::from_raw(figure.width, figure.height, figure.pixels).unwrap());
+}
+
 /// "Orbitals and densities".
 #[test]
 fn orbitals_and_densities() {

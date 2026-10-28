@@ -156,18 +156,13 @@ impl App {
             let (origin, direction) = ray_from_ndc(&self.camera, aspect_ratio, ndc_x, ndc_y);
 
             let structure = &self.structures[active];
-            let atom_hit = pick_atom(&structure.molecule, origin, direction, self.material.atom_scale, &structure.hidden_atoms);
-            let bond_hit = if atom_hit.is_none() {
-                pick_bond(
-                    &structure.molecule,
-                    origin,
-                    direction,
-                    self.material.bond_radius,
-                    &structure.hidden_atoms,
-                    &structure.hidden_bonds,
-                )
-            } else {
-                None
+            let sizes = self.drawn_sizes(structure);
+            let atom_hit = pick_atom(&structure.molecule, origin, direction, &sizes, &structure.hidden_atoms);
+            let bond_hit = match sizes.bond_radius {
+                Some(bond_radius) if atom_hit.is_none() => {
+                    pick_bond(&structure.molecule, origin, direction, bond_radius, &structure.hidden_atoms, &structure.hidden_bonds)
+                }
+                _ => None,
             };
 
             if let Some(index) = atom_hit {
@@ -231,7 +226,7 @@ impl App {
         let pixels_per_point = ui.ctx().pixels_per_point();
         let callback = ViewportCallback {
             camera: self.camera,
-            material: self.ao_render_material(),
+            material: self.render_material(),
             aspect_ratio,
             label_instances,
             ambient_occlusion: self.ao_enabled.then_some(self.ao_settings),

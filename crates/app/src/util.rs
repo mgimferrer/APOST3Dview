@@ -71,11 +71,6 @@ pub(crate) fn capitalize(text: &str) -> String {
     chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
 }
 
-/// An atom's drawn radius: its van der Waals radius times the atom size.
-pub(crate) fn drawn_radius(atomic_number: u32, atom_scale: f32) -> f32 {
-    apost3dview_core::element_data(atomic_number).vdw_radius * atom_scale
-}
-
 /// The reverse: an sRGB color in [0, 1] as an egui color.
 pub(crate) fn rgb_to_color32(c: [f32; 3]) -> Color32 {
     Color32::from_rgb((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8)

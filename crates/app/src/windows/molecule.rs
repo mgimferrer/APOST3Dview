@@ -3,7 +3,7 @@
 //! current selection.
 
 use apost3dview_core::Bond;
-use apost3dview_render::BondVisualStyle;
+use apost3dview_render::{BondVisualStyle, MoleculeStyle};
 use egui::{RichText, Slider};
 
 use crate::app::App;
@@ -117,6 +117,38 @@ impl App {
         }
     }
 
+    /// Style (ball and stick, sticks, thin sticks, space-filling) and the
+    /// sizes of the chosen one. Ball and stick's are the material's, so
+    /// they work as before; the others are kept per style.
+    fn show_molecule_style(&mut self, ui: &mut egui::Ui) {
+        let before = self.molecule_style;
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Style:");
+            for style in MoleculeStyle::ALL {
+                let (name, description) = style_text(style);
+                ui.selectable_value(&mut self.molecule_style.style, style, name).on_hover_text(description);
+            }
+        });
+        match self.molecule_style.style {
+            MoleculeStyle::BallAndStick => {
+                ui.add(Slider::new(&mut self.material.atom_scale, 0.1..=1.5).text("atom size"));
+                ui.add(Slider::new(&mut self.material.bond_radius, 0.02..=0.5).text("bond radius"));
+            }
+            MoleculeStyle::Sticks => {
+                ui.add(Slider::new(&mut self.molecule_style.stick_radius, 0.05..=0.5).text("stick radius"));
+            }
+            MoleculeStyle::ThinSticks => {
+                ui.add(Slider::new(&mut self.molecule_style.thin_stick_radius, 0.01..=0.15).text("stick radius"));
+            }
+            MoleculeStyle::SpaceFilling => {
+                ui.add(Slider::new(&mut self.molecule_style.space_filling_scale, 0.5..=1.2).text("atom size")).on_hover_text("1 = the van der Waals radius");
+            }
+        }
+        if self.molecule_style != before {
+            self.molecule_style_changed();
+        }
+    }
+
     /// One-line pointers to what else this structure has, so a new user
     /// finds orbital generation and the APOST-3D results without knowing
     /// which window holds them.
@@ -144,8 +176,7 @@ impl App {
     }
 
     fn show_display_settings(&mut self, ui: &mut egui::Ui, active: usize) {
-        ui.add(Slider::new(&mut self.material.atom_scale, 0.1..=1.5).text("atom size"));
-        ui.add(Slider::new(&mut self.material.bond_radius, 0.02..=0.5).text("bond radius"));
+        self.show_molecule_style(ui);
         ui.horizontal(|ui| {
             ui.label("Labels:");
             ui.selectable_value(&mut self.atom_label_mode, AtomLabelMode::None, "None");
@@ -254,5 +285,15 @@ impl App {
             }
         }
         self.rebuild_geometry();
+    }
+}
+
+/// A style's name in the Molecule window and what it is for.
+fn style_text(style: MoleculeStyle) -> (&'static str, &'static str) {
+    match style {
+        MoleculeStyle::BallAndStick => ("Ball and stick", "Atoms as balls joined by bonds"),
+        MoleculeStyle::Sticks => ("Sticks", "Atoms as round joints as thick as the bonds, so orbitals and densities aren't covered by balls"),
+        MoleculeStyle::ThinSticks => ("Thin sticks", "Thin sticks: the molecule as a skeleton under large surfaces"),
+        MoleculeStyle::SpaceFilling => ("Space-filling", "Van der Waals spheres, without bonds: how the atoms fill space"),
     }
 }

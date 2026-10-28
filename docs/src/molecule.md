@@ -15,11 +15,25 @@ Every control is listed in [Mouse and keyboard](controls.md).
 
 The **Molecule** window sets how the structure shown is drawn:
 
-- **atom size** and **bond radius**: the sliders scale every atom and bond.
+- **Style:** how atoms and bonds are drawn, one style for everything shown (see [Styles](#styles) below). The sliders under it set the sizes of the chosen style: **atom size** and **bond radius** for **Ball and stick**, **stick radius** for **Sticks** and **Thin sticks**, **atom size** for **Space-filling**.
 - **Labels:** **None**, **Number** (1), **Element** (C) or **Both** (C1). With labels on, a **label size** slider and a color button appear.
 - **Hide hydrogens** hides every hydrogen atom; **Show all** shows every hidden atom and bond again, and makes all bonds solid.
 
 Bonds are found from the distances between atoms. A bond that is missing, or one that shouldn't be there, can be fixed by hand (below).
+
+### Styles
+
+<figure>
+<img src="images/molecule-styles.png" alt="An Fe d EFO of ferrocene drawn in the four styles">
+<figcaption>The same Fe d EFO of ferrocene (the FeCp2-EOS-OSLO example) in the four styles.</figcaption>
+</figure>
+
+- **Ball and stick** (the default): atoms as balls joined by bonds.
+- **Sticks**: every atom is a round joint as thick as its bonds, so orbitals and densities aren't covered by balls. The sticks are as thick as the bonds of **Ball and stick** to start with.
+- **Thin sticks**: the same, much thinner: the molecule as a skeleton under large surfaces, useful for big complexes.
+- **Space-filling**: atoms as van der Waals spheres (**atom size** 1), without bonds, to show how a molecule fills space, for example how bulky ligands shield a metal.
+
+The colors are the same in every style. In the two stick styles, an atom without a visible bond (an ion, or an atom whose bonds you hid) stays a ball, so it doesn't disappear, and a bond drawn thicker by its bond order (APOST-3D results) gets joints as thick. Fragment envelopes, atom halos, their values and atom labels keep the size they have in **Ball and stick**, so APOST-3D pictures read the same in every style. Each style keeps its own sizes: switching to another style and back gives the same picture. Sessions and your own looks remember the style; the **Default** and **Publication** looks don't change it.
 
 ## Selecting atoms and bonds
 

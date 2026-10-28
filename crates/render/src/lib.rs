@@ -16,6 +16,7 @@ pub mod material;
 pub mod mesh;
 pub mod picking;
 mod shaders;
+pub mod style;
 pub mod turntable;
 pub mod uniforms;
 pub mod viewport;
@@ -33,6 +34,7 @@ pub use isosurface_mesh::{push_isosurface_vertices, IsosurfaceMaterial, Isosurfa
 pub use label::{label_extent, layout_label, GlyphInstance, Halo};
 pub use material::Material;
 pub use picking::{atom_visible_fraction, is_atom_visible, pick_atom, pick_bond, ray_from_ndc};
+pub use style::{DrawnSizes, MoleculeStyle, MoleculeStyleSettings};
 pub use turntable::{render_turntable_gif, TurntableSettings};
 pub use uniforms::SceneUniforms;
 pub use viewport::{EnvelopeRange, ViewportCallback, ViewportResources};

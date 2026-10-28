@@ -196,7 +196,7 @@ impl App {
     /// figure of panels can draw it once below them instead).
     pub(crate) fn render_rgba_with(&self, active: usize, settings: &ExportSettings, legend: bool) -> Result<Vec<u8>, String> {
         let export_aspect = settings.width as f32 / settings.height.max(1) as f32;
-        let mut uniforms = SceneUniforms::new(&self.camera, export_aspect, &self.ao_render_material());
+        let mut uniforms = SceneUniforms::new(&self.camera, export_aspect, &self.render_material());
         let target_format = self.render_state.target_format;
         uniforms.set_srgb_target(target_format.is_srgb());
         let label_instances = self.build_export_label_instances(active, &self.camera, settings.width as f32, settings.height as f32);
@@ -296,7 +296,7 @@ impl App {
             direction: self.spin_direction,
             quality: GIF_QUALITY,
         };
-        let material = self.ao_render_material();
+        let material = self.render_material();
         let result = {
             let mut renderer = self.render_state.renderer.write();
             match renderer.callback_resources.get_mut::<ViewportResources>() {

@@ -4,6 +4,8 @@ The **Appearance** window sets the look of the whole scene, shared by every open
 
 <img class="window" src="images/appearance-window.png" alt="The Appearance window">
 
+How atoms and bonds are drawn (ball and stick, sticks, thin sticks or space-filling) is set in the **Molecule** window: see [Styles](molecule.md#styles).
+
 - **Look**: **Default**, or **Publication**, with the light coming from the viewer's direction and no shiny highlights, so every part of the molecule is lit the same way whatever its orientation.
 - **Background:** the background color (exported images can also have a transparent background, see [Figures and videos](figures.md)).
 - **Ambient occlusion**: soft contact shadows where atoms, bonds and surfaces meet, which give the picture depth. Exports compute it with many more samples than the live view.
@@ -14,7 +16,7 @@ The **Appearance** window sets the look of the whole scene, shared by every open
 
 ## Your own looks
 
-Once you like a look, type a name and click **Save this look**. It appears as a button of its own next to **Default** and **Publication**, in every later session; its **×** deletes it. Each look is a small text file in your settings folder; **Open presets folder** shows it, to back looks up or give them to someone else:
+Once you like a look, type a name and click **Save this look** (it also keeps the molecule's style and its sizes). It appears as a button of its own next to **Default** and **Publication**, in every later session; its **×** deletes it. Each look is a small text file in your settings folder; **Open presets folder** shows it, to back looks up or give them to someone else:
 
 | System | Folder |
 |---|---|
