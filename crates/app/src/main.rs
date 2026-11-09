@@ -19,7 +19,11 @@ fn main() -> eframe::Result<()> {
         .expect("bundled icon.png should be a valid image");
 
     // Files named on the command line open at startup.
-    let startup = apost3dview::StartupOptions { files: std::env::args_os().skip(1).map(std::path::PathBuf::from).collect(), ..Default::default() };
+    let startup = apost3dview::StartupOptions {
+        files: std::env::args_os().skip(1).map(std::path::PathBuf::from).collect(),
+        recent_file: apost3dview::default_recent_file(),
+        ..Default::default()
+    };
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]).with_icon(icon),

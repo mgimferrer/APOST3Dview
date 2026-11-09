@@ -146,11 +146,30 @@ impl App {
             };
             if let Some(index) = opened {
                 first_new_index.get_or_insert(index);
+                self.recent.add(&path);
+            } else if FileKind::of_path(&path) == Some(FileKind::Session) && !self.structures.is_empty() {
+                self.recent.add(&path);
             }
         }
         if let Some(index) = first_new_index {
             self.set_active(index);
         }
+    }
+
+    /// Open > Recent: opens `path` as if dropped onto the window, or says
+    /// it is no longer there and takes it off the list (also for tests).
+    pub fn open_recent(&mut self, path: &Path) {
+        if path.exists() {
+            self.open_paths(vec![path.to_path_buf()]);
+        } else {
+            self.show_warning(format!("{} is no longer there: removed from the recent files.", path.display()));
+            self.recent.remove(path);
+        }
+    }
+
+    /// The files of Open > Recent, newest first — for tests.
+    pub fn recent_files(&self) -> Vec<PathBuf> {
+        self.recent.paths.clone()
     }
 
     /// Opens one file as one structure, the way a session recorded it: a

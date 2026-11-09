@@ -43,11 +43,15 @@ pub struct StartupOptions {
     /// window — the command-line arguments.
     pub files: Vec<PathBuf>,
     pub splash: bool,
+    /// Where Open > Recent is kept (the settings folder for the real
+    /// application, `default_recent_file`); `None`: in memory only, so that
+    /// tests never touch a user's list.
+    pub recent_file: Option<PathBuf>,
 }
 
 impl Default for StartupOptions {
     fn default() -> Self {
-        Self { files: Vec::new(), splash: true }
+        Self { files: Vec::new(), splash: true, recent_file: None }
     }
 }
 
@@ -170,6 +174,8 @@ pub struct App {
     /// Fixed color ranges chosen by the user, by quantity id, shared by
     /// every structure so figures of different systems compare.
     pub(crate) color_ranges: std::collections::BTreeMap<String, apost3dview_render::ColorScale>,
+    /// Open > Recent.
+    pub(crate) recent: crate::recent::RecentFiles,
     /// List, in the Show menu, the values APOST-3D prints only for
     /// comparison (Mulliken's, in a run with another atomic definition)
     /// and the secondary ones (`results_view::is_secondary`).
@@ -273,6 +279,7 @@ impl App {
             new_preset_name: String::new(),
             toasts: Vec::new(),
             color_ranges: Default::default(),
+            recent: crate::recent::RecentFiles::load(options.recent_file.clone()),
             list_other_values: false,
             windows_to_expand: Vec::new(),
             window_column: Default::default(),
@@ -625,6 +632,8 @@ impl App {
 
     pub(crate) fn show_toolbar(&mut self, ui: &mut egui::Ui) {
         let mut open_request: Option<Option<FileKind>> = None;
+        let mut recent_request: Option<PathBuf> = None;
+        let mut clear_recent = false;
         let mut save_request: Option<bool> = None;
         let response = egui::Panel::top("toolbar").show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -641,6 +650,24 @@ impl App {
                             open_request = Some(Some(kind));
                         }
                     }
+                    ui.separator();
+                    ui.menu_button("Recent", |ui| {
+                        if self.recent.paths.is_empty() {
+                            ui.label(egui::RichText::new("No recent files").weak());
+                        }
+                        for path in &self.recent.paths {
+                            let name = crate::util::file_display_name(path);
+                            if ui.button(name).on_hover_text(path.display().to_string()).clicked() {
+                                recent_request = Some(path.clone());
+                            }
+                        }
+                        if !self.recent.paths.is_empty() {
+                            ui.separator();
+                            if ui.button("Clear recent files").clicked() {
+                                clear_recent = true;
+                            }
+                        }
+                    });
                 });
                 ui.add_enabled_ui(!self.structures.is_empty(), |ui| {
                     ui.menu_button("Save", |ui| {
@@ -679,6 +706,12 @@ impl App {
         self.window_column.top = response.response.rect.bottom();
         if let Some(kind) = open_request {
             self.open_dialog(kind);
+        }
+        if let Some(path) = recent_request {
+            self.open_recent(&path);
+        }
+        if clear_recent {
+            self.recent.clear();
         }
         if let Some(ask_for_name) = save_request {
             self.save_session(ask_for_name);

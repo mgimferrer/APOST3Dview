@@ -69,7 +69,7 @@ pub fn app_with_size(files: Vec<PathBuf>, size: [f32; 2], pixels_per_point: f32)
         .with_size(size)
         .with_pixels_per_point(pixels_per_point)
         .renderer(AppRenderer::new())
-        .build_eframe(move |cc| App::with_options(cc, StartupOptions { files, splash: false }));
+        .build_eframe(move |cc| App::with_options(cc, StartupOptions { files, splash: false, recent_file: None }));
     harness.run_steps(4);
     harness
 }

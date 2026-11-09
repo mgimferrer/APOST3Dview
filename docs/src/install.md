@@ -38,7 +38,7 @@ APOST3Dview opens on an empty window:
 
 ![The window when nothing is open](images/first-start-empty.png)
 
-Open files with **Open** in the toolbar, with <kbd>Cmd</kbd>+<kbd>O</kbd> (<kbd>Ctrl</kbd>+<kbd>O</kbd> on Windows and Linux), or by dragging them onto the window. Every supported file is recognized by its name: `.fchk`, `.molden`, `.xyz`, `.cube`, APOST-3D's `.apost.json` and APOST3Dview's own sessions (`.a3dview`). Several files can be opened at once. The **Open** menu can also show one kind of file at a time, for example only "Gaussian checkpoint (.fchk)" files. From a terminal, `apost3dview file1 file2 ...` opens the files named.
+Open files with **Open** in the toolbar, with <kbd>Cmd</kbd>+<kbd>O</kbd> (<kbd>Ctrl</kbd>+<kbd>O</kbd> on Windows and Linux), or by dragging them onto the window. Every supported file is recognized by its name: `.fchk`, `.molden`, `.xyz`, `.cube`, APOST-3D's `.apost.json` and APOST3Dview's own sessions (`.a3dview`). Several files can be opened at once. The **Open** menu can also show one kind of file at a time, for example only "Gaussian checkpoint (.fchk)" files. **Recent**, in the same menu, lists the last ten files and sessions you opened or saved, to open again with one click (**Clear recent files** empties it). The list is kept in your settings folder, next to your own looks. From a terminal, `apost3dview file1 file2 ...` opens the files named.
 
 With a file open, the window looks like this:
 

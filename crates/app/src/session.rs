@@ -572,6 +572,7 @@ impl App {
         };
         match self.save_session_to(&path) {
             Ok(()) => {
+                self.recent.add(&path);
                 self.show_status(format!("Session saved as {}", crate::util::file_display_name(&path)));
                 self.session_path = Some(path);
             }

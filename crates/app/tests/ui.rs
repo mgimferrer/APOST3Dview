@@ -25,7 +25,7 @@ fn stays_dark_when_the_system_is_light() {
     let mut harness = egui_kittest::Harness::builder()
         .with_theme(egui::Theme::Light)
         .renderer(common::AppRenderer::new())
-        .build_eframe(|cc| apost3dview::App::with_options(cc, apost3dview::StartupOptions { files: Vec::new(), splash: false }));
+        .build_eframe(|cc| apost3dview::App::with_options(cc, apost3dview::StartupOptions { files: Vec::new(), splash: false, recent_file: None }));
     harness.run_steps(2);
     assert_eq!(harness.ctx.theme(), egui::Theme::Dark);
 }

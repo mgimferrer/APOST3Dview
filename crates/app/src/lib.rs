@@ -19,6 +19,7 @@ mod orbital_sets;
 mod orbitals;
 mod panels;
 mod presets;
+mod recent;
 mod results;
 mod results_display;
 mod results_view;
@@ -30,6 +31,7 @@ mod windows;
 
 pub use app::{App, StartupOptions};
 pub use headless::{render_session, DEFAULT_SIZE};
+pub use recent::default_recent_file;
 
 /// The app's name for the system: eframe's folder for saved state (and our
 /// `presets/` inside it), and the window's app id, which on Linux must

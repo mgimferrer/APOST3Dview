@@ -36,7 +36,7 @@ pub fn render_session(session: &Path, out: &Path, size: [u32; 2]) -> Result<Stri
     cc.wgpu_render_state = Some(render_state.clone());
     let mut frame = eframe::Frame::_new_kittest();
     frame.wgpu_render_state = Some(render_state);
-    let mut app = App::with_options(&cc, StartupOptions { files: vec![session.to_path_buf()], splash: false });
+    let mut app = App::with_options(&cc, StartupOptions { files: vec![session.to_path_buf()], splash: false, recent_file: None });
     // A few frames, as in the window: the session opens, surfaces are
     // extracted, results drawn.
     for _ in 0..8 {
