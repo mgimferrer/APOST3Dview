@@ -1194,3 +1194,37 @@ fn efo_shapes() {
     eprintln!("efo-shape-cube: {:?} {:?}", harness.state().structure_labels(), harness.state().surface_labels());
     save_figure(&mut harness, &out, "efo-shape-cube");
 }
+
+/// Ferrocene for the TOC graphic, in the view of `toc_pictures`, showing a
+/// descriptor other than the oxidation states: the TFVC fragment charges, the
+/// fragment bond orders with Fe, and the IQA interaction energies with a Cp
+/// (logarithmic scale: Fe-Cp attraction and Cp-Cp repulsion together).
+#[test]
+fn toc_ferrocene_values() {
+    let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    let eos = dir.join("FeCp2/FeCp2-EOS-OSLO.apost.json");
+    let job = "FeCp2-IQA-ALLPAIRS";
+    let run = dir.join(format!("revision-1/results/ferrocene-iqa/{job}.apost.json"));
+    let folder = common::scratch_dir("toc-ferrocene-iqa");
+    std::fs::copy(&run, folder.join(format!("{job}.apost.json"))).unwrap();
+    std::fs::copy(dir.join("FeCp2/FeCp2-IQA.fchk"), folder.join(format!("{job}.fchk"))).unwrap();
+    let iqa = folder.join(format!("{job}.apost.json"));
+    let atoms = Atoms::of(&read_results(&eos));
+    let axis = atoms.centroid(&atoms.fragments[2]) - atoms.centroid(&atoms.fragments[1]);
+    let front = atoms.fragments[1].iter().copied().find(|&a| atoms.symbols[a] == "C").unwrap();
+    let toward = atoms.positions[front] - atoms.centroid(&atoms.fragments[1]);
+    let view = orientation(axis.cross(toward), axis, 0.45, 0.35);
+    let options = [
+        ("toc-fecp2-charges", &eos, "populations.fragments.charges", 0, ""),
+        ("toc-fecp2-bond-orders", &eos, "bond_orders.fragments.matrix", 0, ""),
+        ("toc-fecp2-iqa", &iqa, "enpart.total.fragments", 1, "log_scale = true\n"),
+    ];
+    for (name, results, id, focus, extra) in options {
+        let view_patch = results_view(id, focus).replace("labels = true\n", &format!("labels = true\nlabel_size = 48.0\n{extra}"));
+        let patch = format!("{FIGURE_LOOK}{}{view_patch}", structure_patch(&atoms, false));
+        let session = out.join(format!("{name}.a3dview"));
+        let mut harness = build(vec![results.clone()], |_| {}, &session, &patch, view, 1.6);
+        eprintln!("{name}: {:?}", harness.state().legend_title());
+        save_png(&mut harness, &out.join(format!("{name}.png")), 3600, 1650);
+    }
+}
