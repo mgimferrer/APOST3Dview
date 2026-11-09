@@ -6,7 +6,7 @@ This page uses the example `H2O-Dimer-B3LYP`: the water dimer at B3LYP/cc-pVDZ, 
 
 ## Interaction energies
 
-In the **APOST-3D** window, open **Show**: the group *Energy decomposition (IQA)* holds the interaction energies between fragments and between atoms. Choose *Inter-fragment interaction energy (TFVC)*: the molecule is seen from the first water, and the other one takes the color of their interaction energy, here the hydrogen bond, in kcal/mol. Negative values (attraction) are red, positive ones (repulsion) blue.
+In the **APOST-3D** window, open **Show**: the group *Energy decomposition (IQA)* holds the interaction energies between fragments and between atoms. Choose *Inter-fragment interaction energy (TFVC)*: the molecule is seen from the first water, and the other one takes the color of their interaction energy, here the hydrogen bond, in kcal/mol. Negative values (attraction) are blue, positive ones (repulsion) red; **Reverse colors** swaps them.
 
 ![The interaction energy between the two waters](../images/iqa-fragments.png)
 

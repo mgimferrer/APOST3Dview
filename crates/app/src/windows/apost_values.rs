@@ -9,7 +9,7 @@ use egui::{Color32, RichText, Sense};
 use crate::app::App;
 use crate::names::{atom_name, fragment_name};
 use crate::util::rgb_to_color32;
-use crate::results_view::{build_scene, display_unit, enpart_term, enpart_term_name, is_energy, scaled_quantity, EnergyUnit, focus_target, choice_label, grouped_entries, is_secondary, matrix_meanings, range_key, shows_diagonal, shown_entry, ResultsView, Shown, FOCUS_COLOR};
+use crate::results_view::{build_scene, display_unit, enpart_term, enpart_term_name, is_energy, scaled_quantity, reversed_colors, EnergyUnit, focus_target, choice_label, grouped_entries, is_secondary, matrix_meanings, range_key, shows_diagonal, shown_entry, ResultsView, Shown, FOCUS_COLOR};
 
 fn shown_label(results: &ApostResults, view: &ResultsView) -> String {
     match &view.shown {
@@ -141,8 +141,13 @@ impl App {
                 }
             });
             if matches!(automatic, Some(ColorScale::Diverging { .. })) {
-                ui.checkbox(&mut view.log_scale, "Logarithmic colors")
-                    .on_hover_text("Colors follow the order of magnitude, so small values (weak interactions) keep their sign's color next to large ones");
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut view.log_scale, "Logarithmic colors")
+                        .on_hover_text("Colors follow the order of magnitude, so small values (weak interactions) keep their sign's color next to large ones");
+                    ui.checkbox(&mut view.reverse_colors, "Reverse colors").on_hover_text(
+                        "Swap red and blue. By default energies are blue when attractive (negative) and red when repulsive, other signed values red when negative and blue when positive",
+                    );
+                });
             }
             for note in build_scene(results, &molecule, view, &self.color_ranges).notes {
                 ui.label(RichText::new(note).small().weak());
@@ -245,7 +250,8 @@ impl App {
                     ui.ctx().copy_text(matrix_text(matrix, &names));
                 }
                 let signed = matches!(scale, Some(ColorScale::Diverging { .. }));
-                if let Some(focus) = heat_map(ui, matrix, &meanings, &names, view.focus, signed, view.log_scale) {
+                let diverging = signed.then(|| (view.log_scale, reversed_colors(&entry, view)));
+                if let Some(focus) = heat_map(ui, matrix, &meanings, &names, view.focus, diverging) {
                     view.focus = focus;
                 }
                 if let Some(focus) = strongest_pairs(ui, matrix, &names, decimals) {
@@ -308,7 +314,8 @@ impl App {
 /// magnitude, the diagonal (a different quantity) in gray, the focused row
 /// outlined. Hovering shows the value; clicking a cell focuses on its row.
 /// The matrix as colored cells, the focus's row outlined. A signed
-/// quantity uses the diverging scale (`log` as on the molecule), others
+/// quantity uses the diverging scale (`diverging`: log and reversed, as
+/// on the molecule), others
 /// the magnitude.
 fn heat_map(
     ui: &mut egui::Ui,
@@ -316,8 +323,7 @@ fn heat_map(
     meanings: &(Option<String>, Option<String>),
     names: &[String],
     focus: usize,
-    signed: bool,
-    log: bool,
+    diverging: Option<(bool, bool)>,
 ) -> Option<usize> {
     let n = matrix.values.len();
     if n == 0 || n > 40 {
@@ -334,8 +340,8 @@ fn heat_map(
                 Color32::from_gray(150)
             } else {
                 let v = matrix.get(i, j).unwrap_or(0.0);
-                if signed {
-                    rgb_to_color32(ColorScale::Diverging { max_abs: if max > 0.0 { max } else { 1.0 }, log, half: Default::default() }.color(v))
+                if let Some((log, reversed)) = diverging {
+                    rgb_to_color32(ColorScale::Diverging { max_abs: if max > 0.0 { max } else { 1.0 }, log, half: Default::default(), reversed }.color(v))
                 } else {
                     rgb_to_color32(apost3dview_render::colormap::sequential(if max > 0.0 { (v.abs() / max) as f32 } else { 0.0 }))
                 }

@@ -48,9 +48,9 @@ const LOG_DECADES_FACTOR: f64 = 100.0;
 pub enum Half {
     #[default]
     Both,
-    /// From zero to +max_abs (white to blue).
+    /// From zero to +max_abs (white to blue; to red when reversed).
     Positive,
-    /// From -max_abs to zero (red to white).
+    /// From -max_abs to zero (red to white; blue when reversed).
     Negative,
 }
 
@@ -58,7 +58,8 @@ pub enum Half {
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "scale", rename_all = "lowercase")]
 pub enum ColorScale {
-    /// Symmetric around zero, from -max_abs (red) to +max_abs (blue).
+    /// Symmetric around zero, from -max_abs (red) to +max_abs (blue), or
+    /// the other way round when `reversed`.
     /// `log`: colors follow the logarithm of the magnitude (two decades
     /// below max_abs, linear near zero), for values spanning orders of
     /// magnitude such as interaction energies.
@@ -68,9 +69,15 @@ pub enum ColorScale {
         log: bool,
         /// Which part of the scale the legend shows: both signs, or only
         /// the half the values use (all positive, or all negative). Colors
-        /// are the same either way: blue positive, red negative.
+        /// are the same either way: blue positive, red negative (or the
+        /// other way round when `reversed`).
         #[serde(default)]
         half: Half,
+        /// Red positive and blue negative: for energies, so that attractive
+        /// (negative) interactions are blue and repulsive ones red; or a
+        /// user's choice for any signed quantity.
+        #[serde(default)]
+        reversed: bool,
     },
     /// From min (light) to max (dark).
     Sequential { min: f64, max: f64 },
@@ -79,14 +86,17 @@ pub enum ColorScale {
 impl ColorScale {
     pub fn color(&self, value: f64) -> [f32; 3] {
         match *self {
-            ColorScale::Diverging { max_abs, log, .. } => diverging(if max_abs <= 0.0 {
-                0.0
-            } else if log {
-                let c = max_abs / LOG_DECADES_FACTOR;
-                (value.signum() * (1.0 + value.abs() / c).ln() / (1.0 + max_abs / c).ln()) as f32
-            } else {
-                (value / max_abs) as f32
-            }),
+            ColorScale::Diverging { max_abs, log, reversed, .. } => {
+                let t = if max_abs <= 0.0 {
+                    0.0
+                } else if log {
+                    let c = max_abs / LOG_DECADES_FACTOR;
+                    (value.signum() * (1.0 + value.abs() / c).ln() / (1.0 + max_abs / c).ln()) as f32
+                } else {
+                    (value / max_abs) as f32
+                };
+                diverging(if reversed { -t } else { t })
+            }
             ColorScale::Sequential { min, max } => sequential(if max > min { ((value - min) / (max - min)) as f32 } else { 1.0 }),
         }
     }
@@ -94,7 +104,7 @@ impl ColorScale {
     /// The same scale for values multiplied by `factor` (a unit change).
     pub fn scaled(&self, factor: f64) -> Self {
         match *self {
-            ColorScale::Diverging { max_abs, log, half } => ColorScale::Diverging { max_abs: max_abs * factor, log, half },
+            ColorScale::Diverging { max_abs, log, half, reversed } => ColorScale::Diverging { max_abs: max_abs * factor, log, half, reversed },
             ColorScale::Sequential { min, max } => ColorScale::Sequential { min: min * factor, max: max * factor },
         }
     }
@@ -102,9 +112,14 @@ impl ColorScale {
     /// The colors along the legend bar, left to right, `u` in [0, 1].
     pub fn bar_color(&self, u: f32) -> [f32; 3] {
         match self {
-            ColorScale::Diverging { half: Half::Both, .. } => diverging(u * 2.0 - 1.0),
-            ColorScale::Diverging { half: Half::Positive, .. } => diverging(u),
-            ColorScale::Diverging { half: Half::Negative, .. } => diverging(u - 1.0),
+            ColorScale::Diverging { half, reversed, .. } => {
+                let t = match half {
+                    Half::Both => u * 2.0 - 1.0,
+                    Half::Positive => u,
+                    Half::Negative => u - 1.0,
+                };
+                diverging(if *reversed { -t } else { t })
+            }
             ColorScale::Sequential { .. } => sequential(u),
         }
     }
@@ -255,9 +270,9 @@ mod tests {
     /// only its half in the legend.
     #[test]
     fn half_scales() {
-        let full = ColorScale::Diverging { max_abs: 0.6, log: false, half: Half::Both };
-        let positive = ColorScale::Diverging { max_abs: 0.6, log: false, half: Half::Positive };
-        let negative = ColorScale::Diverging { max_abs: 0.6, log: false, half: Half::Negative };
+        let full = ColorScale::Diverging { max_abs: 0.6, log: false, half: Half::Both, reversed: false };
+        let positive = ColorScale::Diverging { max_abs: 0.6, log: false, half: Half::Positive, reversed: false };
+        let negative = ColorScale::Diverging { max_abs: 0.6, log: false, half: Half::Negative, reversed: false };
         assert!(close(positive.color(0.3), full.color(0.3)) && close(negative.color(-0.3), full.color(-0.3)));
         assert!(close(positive.bar_color(0.0), diverging(0.0)) && close(positive.bar_color(1.0), diverging(1.0)));
         assert!(close(negative.bar_color(0.0), diverging(-1.0)) && close(negative.bar_color(1.0), diverging(0.0)));
@@ -275,9 +290,23 @@ mod tests {
         assert!(lines.iter().all(|l| text_width(l, 20.0) <= text_width(title, 20.0) * 0.6));
     }
 
+    /// A reversed scale gives each value the color of its opposite, in the
+    /// view and along the legend bar, and keeps the legend's numbers.
+    #[test]
+    fn reversed_scales() {
+        let normal = ColorScale::Diverging { max_abs: 0.5, log: false, half: Half::Both, reversed: false };
+        let reversed = ColorScale::Diverging { max_abs: 0.5, log: false, half: Half::Both, reversed: true };
+        assert!(close(reversed.color(-0.5), hex(0x184f95)) && close(reversed.color(0.5), hex(0x9c2523)));
+        assert!(close(reversed.color(0.2), normal.color(-0.2)));
+        assert!(close(reversed.bar_color(0.0), normal.bar_color(1.0)));
+        assert_eq!(reversed.bar_labels(2), normal.bar_labels(2));
+        let negative = ColorScale::Diverging { max_abs: 0.5, log: false, half: Half::Negative, reversed: true };
+        assert!(close(negative.bar_color(0.0), diverging(1.0)), "an attractive end in blue");
+    }
+
     #[test]
     fn scales() {
-        let d = ColorScale::Diverging { max_abs: 0.5, log: false, half: Half::Both };
+        let d = ColorScale::Diverging { max_abs: 0.5, log: false, half: Half::Both, reversed: false };
         assert!(close(d.color(0.0), hex(0xf0efec)));
         assert!(close(d.color(0.5), hex(0x184f95)));
         assert!(close(d.color(-0.5), hex(0x9c2523)));
@@ -285,7 +314,7 @@ mod tests {
         let s = ColorScale::Sequential { min: 0.0, max: 2.0 };
         assert!(close(s.color(0.0), hex(0xf0efec)));
         assert!(close(s.color(2.0), hex(0x184f95)));
-        let l = ColorScale::Diverging { max_abs: 0.5, log: true, half: Half::Both };
+        let l = ColorScale::Diverging { max_abs: 0.5, log: true, half: Half::Both, reversed: false };
         assert!(close(l.color(0.5), hex(0x184f95)) && close(l.color(-0.5), hex(0x9c2523)) && close(l.color(0.0), hex(0xf0efec)));
         // A value 100 times smaller still gets a third of the way out.
         let t = |c: [f32; 3]| (c[0] - hex(0xf0efec)[0]).abs();
@@ -299,7 +328,7 @@ mod tests {
     fn the_legend_draws_its_bar_and_text() {
         let (w, h) = (800u32, 600u32);
         let mut pixels = vec![255u8; (w * h * 4) as usize];
-        draw_legend(&mut pixels, w, h, &Legend { title: "Fragment charge (TFVC)".into(), scale: ColorScale::Diverging { max_abs: 0.5, log: false, half: Half::Both }, decimals: 2, size: 1.0 }, [30, 30, 30]);
+        draw_legend(&mut pixels, w, h, &Legend { title: "Fragment charge (TFVC)".into(), scale: ColorScale::Diverging { max_abs: 0.5, log: false, half: Half::Both, reversed: false }, decimals: 2, size: 1.0 }, [30, 30, 30]);
         let changed = pixels.chunks(4).filter(|p| p[..3] != [255, 255, 255]).count();
         assert!(changed > 2000, "{changed}");
     }

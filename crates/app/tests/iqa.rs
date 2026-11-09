@@ -193,3 +193,38 @@ fn show_menu_names_every_part_once() {
     }
     assert_eq!(harness.query_all_by_label("Intra-fragment localization index (TFVC)").count(), 0, "ambiguous name");
 }
+
+/// Energies are blue when attractive (negative) and red when repulsive;
+/// other signed values keep red negative and blue positive. Reverse colors
+/// swaps either, and a session keeps the choice.
+#[test]
+fn attractive_energies_are_blue_and_colors_can_be_reversed() {
+    let Some(dir) = fixtures_dir() else { return };
+    // Blue has the larger blue component, red the larger red one.
+    let blue = |c: [f32; 3]| c[2] > c[0];
+    let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.apost.json")]);
+    assert!(harness.state_mut().show_on_molecule("enpart.total.atoms"));
+    harness.run_steps(3);
+    let (left, right) = harness.state().legend_end_colors().unwrap();
+    assert!(blue(left) && !blue(right), "most negative end blue: {left:?} {right:?}");
+
+    assert!(harness.state_mut().show_on_molecule("populations.atoms.charges"));
+    harness.run_steps(3);
+    let (left, right) = harness.state().legend_end_colors().unwrap();
+    assert!(!blue(left) && blue(right), "charges: negative red");
+
+    assert!(harness.state_mut().show_on_molecule("enpart.total.atoms"));
+    harness.run_steps(3);
+    harness.get_by_label("Reverse colors").click_accesskit();
+    harness.run_steps(3);
+    let (left, _) = harness.state().legend_end_colors().unwrap();
+    assert!(!blue(left), "reversed: attractive red");
+
+    let session = common::scratch_dir("reverse-colors").join("reversed.a3dview");
+    harness.state().save_session_to(&session).unwrap();
+    assert!(std::fs::read_to_string(&session).unwrap().contains("reverse_colors = true"));
+    let mut again = app_with(vec![session]);
+    again.run_steps(4);
+    let (left, _) = again.state().legend_end_colors().unwrap();
+    assert!(!blue(left), "the session keeps the reversal");
+}

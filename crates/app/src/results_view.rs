@@ -54,6 +54,11 @@ pub(crate) struct ResultsView {
     /// values spanning orders of magnitude, such as IQA pair energies).
     #[serde(default)]
     pub(crate) log_scale: bool,
+    /// Signed values in the opposite colors to their default (energies:
+    /// attractive blue, repulsive red; other signed quantities: negative
+    /// red, positive blue).
+    #[serde(default)]
+    pub(crate) reverse_colors: bool,
     /// The unit energies are shown in (APOST-3D writes them in au).
     #[serde(default)]
     pub(crate) energy_unit: EnergyUnit,
@@ -114,6 +119,14 @@ pub(crate) fn is_energy(entry: &IndexEntry) -> bool {
     entry.unit.as_deref() == Some("au")
 }
 
+/// Whether `entry`'s signed values are drawn red positive and blue
+/// negative: energies by default, so that attractive (negative)
+/// interactions are blue and repulsive ones red (Martí, 2026-11-09); any
+/// quantity the other way round with Reverse colors.
+pub(crate) fn reversed_colors(entry: &IndexEntry, view: &ResultsView) -> bool {
+    is_energy(entry) != view.reverse_colors
+}
+
 /// The factor `entry`'s values are shown with in `view` (1 unless it is
 /// an energy shown in kcal/mol), and the unit to name, if any.
 pub(crate) fn display_unit(entry: &IndexEntry, view: &ResultsView) -> (f64, Option<&'static str>) {
@@ -161,6 +174,7 @@ impl ResultsView {
             legend_size: 1.0,
             bond_thickness: false,
             log_scale: false,
+            reverse_colors: false,
             energy_unit: EnergyUnit::default(),
             diagonal: false,
             names: true,
@@ -215,7 +229,7 @@ fn automatic_scale(entry: &IndexEntry, values: &[f64]) -> ColorScale {
         } else {
             Half::Both
         };
-        ColorScale::Diverging { max_abs: if max_abs > 0.0 { max_abs } else { 1.0 }, log: false, half }
+        ColorScale::Diverging { max_abs: if max_abs > 0.0 { max_abs } else { 1.0 }, log: false, half, reversed: false }
     } else {
         let max = values.iter().copied().fold(0.0f64, f64::max);
         ColorScale::Sequential { min: 0.0, max: if max > 0.0 { max } else { 1.0 } }
@@ -424,8 +438,9 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             // The focused one's own (diagonal) value doesn't set the scale.
             let others: Vec<f64> = values.iter().enumerate().filter(|(i, _)| Some(*i) != focus).map(|(_, v)| *v).collect();
             let mut scale = fixed.get(&range_key(entry, diagonal)).map(|s| s.scaled(factor)).unwrap_or_else(|| automatic_scale(entry, &others));
-            if let ColorScale::Diverging { log, .. } = &mut scale {
+            if let ColorScale::Diverging { log, reversed, .. } = &mut scale {
                 *log = view.log_scale;
+                *reversed = reversed_colors(entry, view);
             }
             let energy = unit.map(|_| view.energy_unit);
             let decimals = view.decimals.unwrap_or_else(|| automatic_decimals(&others, energy));

@@ -242,4 +242,9 @@ impl App {
             (lo, hi)
         })
     }
+
+    /// The legend's colors at its left and right ends — for tests.
+    pub fn legend_end_colors(&self) -> Option<([f32; 3], [f32; 3])> {
+        self.results_legend().map(|l| (l.scale.bar_color(0.0), l.scale.bar_color(1.0)))
+    }
 }
