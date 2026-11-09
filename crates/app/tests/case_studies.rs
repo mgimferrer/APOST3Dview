@@ -1226,5 +1226,20 @@ fn toc_ferrocene_values() {
         let mut harness = build(vec![results.clone()], |_| {}, &session, &patch, view, 1.6);
         eprintln!("{name}: {:?}", harness.state().legend_title());
         save_png(&mut harness, &out.join(format!("{name}.png")), 3600, 1650);
+        if name == "toc-fecp2-charges" {
+            // For the editable (PowerPoint) TOC: where each label sits, and
+            // the same picture without them.
+            let labels: Vec<String> = harness
+                .state()
+                .placed_labels(3600.0, 1650.0)
+                .into_iter()
+                .map(|(text, r)| format!("{{\"text\": {:?}, \"box\": [{}, {}, {}, {}]}}", text, r.min.x, r.min.y, r.max.x, r.max.y))
+                .collect();
+            std::fs::write(out.join(format!("{name}-labels.json")), format!("[{}]\n", labels.join(",\n"))).unwrap();
+            let bare = format!("{FIGURE_LOOK}{}{}", structure_patch(&atoms, false), results_view(id, focus).replace("labels = true\n", "labels = false\n"));
+            let session = out.join(format!("{name}-nolabels.a3dview"));
+            let mut harness = build(vec![results.clone()], |_| {}, &session, &bare, view, 1.6);
+            save_png(&mut harness, &out.join(format!("{name}-nolabels.png")), 3600, 1650);
+        }
     }
 }
