@@ -239,16 +239,22 @@ fn orbital_sets_map_onto_their_files() {
                 None => assert!(set.beta.iter().flatten().count() == 0, "{name}: beta labels but no beta orbitals"),
             }
             // A labeled EFO's stored "energy" is its gross occupation; an
-            // OSLO's, its FOLI value.
-            for (k, label) in set.alpha.iter().enumerate() {
-                let Some(label) = label else { continue };
-                let stored = wfn.alpha.orbital_energies[k];
-                let expected = match &label.detail {
-                    OrbitalDetail::Efo { gross, net, .. } => gross.or(*net),
-                    OrbitalDetail::Oslo { foli, .. } => *foli,
-                };
-                if let (Some(expected), false) = (expected, matches!(label.detail, OrbitalDetail::Efo { negative: true, .. })) {
-                    assert!((stored - expected).abs() < 1e-6, "{name}: alpha {} stores {stored}, table {expected}", k + 1);
+            // OSLO's, its FOLI value. In both channels: the beta block of a
+            // restricted open-shell run's file too (written since APOST3D
+            // de8b4bc).
+            let channels = [("alpha", &set.alpha, Some(&wfn.alpha)), ("beta", &set.beta, wfn.beta.as_ref())];
+            for (channel, labels, orbitals) in channels {
+                let Some(orbitals) = orbitals else { continue };
+                for (k, label) in labels.iter().enumerate() {
+                    let Some(label) = label else { continue };
+                    let stored = orbitals.orbital_energies[k];
+                    let expected = match &label.detail {
+                        OrbitalDetail::Efo { gross, net, .. } => gross.or(*net),
+                        OrbitalDetail::Oslo { foli, .. } => *foli,
+                    };
+                    if let (Some(expected), false) = (expected, matches!(label.detail, OrbitalDetail::Efo { negative: true, .. })) {
+                        assert!((stored - expected).abs() < 1e-6, "{name}: {channel} {} stores {stored}, table {expected}", k + 1);
+                    }
                 }
             }
         }
@@ -265,8 +271,28 @@ fn orbital_sets_map_onto_their_files() {
         cases += 1;
     }
     println!("{cases} orbital cases, {weights_cases} with atomic weights");
-    assert!(cases >= 9 && preortho_cases == 2, "{cases} cases, {preortho_cases} with OSLOs before orthogonalization");
+    assert!(cases >= 9 && preortho_cases >= 2, "{cases} cases, {preortho_cases} with OSLOs before orthogonalization");
 
+    // Restricted open shell (APOST3D de8b4bc): the main .fchk has one set of
+    // orbitals, the orbital files a beta block like an unrestricted file,
+    // which the beta tables point into.
+    for job in ["CH2-T-ROHF-GEOS-ORCA", "CH2-T-ROHF-OSLO-ORCA", "MnCl4-ROKS-ORCA"] {
+        if !dir.join(format!("{job}.apost.json")).exists() {
+            continue;
+        }
+        let results = load(&dir, job);
+        let main = apost3dview_core::parse_fchk_wavefunction(&dir.join(format!("{job}.fchk"))).unwrap();
+        assert!(main.beta.is_none(), "{job}: the main .fchk is restricted");
+        for set in results.orbital_sets() {
+            let wfn = apost3dview_core::parse_fchk_wavefunction(&dir.join(&set.file)).unwrap();
+            let beta = wfn.beta.unwrap_or_else(|| panic!("{job}: {} has no beta block", set.file));
+            assert_eq!(beta.num_orbitals(), wfn.alpha.num_orbitals(), "{job}: {}", set.file);
+            assert!(set.beta.iter().flatten().count() > 0, "{job}: no beta labels in {}", set.file);
+            if let Some(unweighted) = &set.unweighted_file {
+                assert!(apost3dview_core::parse_fchk_wavefunction(&dir.join(unweighted)).unwrap().beta.is_some(), "{job}: {unweighted} has no beta block");
+            }
+        }
+    }
     let set = |job: &str| load(&dir, job).orbital_sets().remove(0);
     // OSLO, restricted, the C-C bond shared by both CH3 fragments.
     let c2h6 = set("C2H6-OSLO-2CH3");

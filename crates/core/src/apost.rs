@@ -32,8 +32,8 @@ use crate::molecule::Molecule;
 
 pub const RESULTS_SCHEMA: &str = "apost3d-results";
 /// The schema major versions this viewer understands: 0 (the development
-/// versions, last 0.13) and 1, which APOST-3D writes from its release on:
-/// the 0.13 format frozen (Martí, 2026-10-20). A later major is refused.
+/// versions, last 0.17) and 1, which APOST-3D writes from its release on:
+/// the 0.17 format frozen (APOST-3D 5.0). A later major is refused.
 pub const SUPPORTED_SCHEMA_MAJORS: std::ops::RangeInclusive<u32> = 0..=1;
 /// File name suffix of an APOST-3D results file.
 pub const RESULTS_SUFFIX: &str = ".apost.json";

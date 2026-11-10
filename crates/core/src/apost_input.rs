@@ -112,7 +112,7 @@ pub type OrcaFunctional = (&'static str, Option<u32>, Option<u32>, Option<u32>);
 /// kcal/mol, water, def2-TZVP; APOST-3D docs, "Preparing the wavefunction",
 /// ORCA). (ORCA keyword, EXC id, EX id, EC id.) ORCA's B3LYP is not the
 /// `B3LYP` keyword of `# ENPART`, which reproduces Gaussian's.
-pub const ORCA_FUNCTIONALS: [OrcaFunctional; 20] = [
+pub const ORCA_FUNCTIONALS: [OrcaFunctional; 21] = [
     ("LSD", None, Some(1), Some(7)),
     ("LDA", None, Some(1), Some(7)),
     ("BLYP", None, Some(106), Some(131)),
@@ -133,6 +133,7 @@ pub const ORCA_FUNCTIONALS: [OrcaFunctional; 20] = [
     ("M062X", None, Some(450), Some(236)),
     ("PW6B95", Some(451), None, None),
     ("R2SCANH", Some(659), None, None),
+    ("R2SCAN0", Some(660), None, None),
 ];
 
 /// The ENPART method of an ORCA functional (`name` without R/U/RO), from

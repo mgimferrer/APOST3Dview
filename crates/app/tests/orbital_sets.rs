@@ -189,6 +189,38 @@ fn a_closed_shell_eos_set_says_beta_equals_alpha() {
     screenshot(&mut harness, "orbital-set-eos");
 }
 
+/// Restricted open shell (APOST3D de8b4bc): the main .fchk has one set of
+/// orbitals, the orbital files an alpha and a beta block. The first labeled
+/// orbital of each channel is drawn: the OSLOs, the GEOS EFOs (unpaired =
+/// beta, from the unweighted file) and the EOS EFOs of a ROKS run.
+#[test]
+fn restricted_open_shell_sets_draw_their_beta_orbitals() {
+    let Some(dir) = orbital_fixtures() else { return };
+    for (job, option) in [("CH2-T-ROHF-OSLO-ORCA", "OSLOs"), ("CH2-T-ROHF-GEOS-ORCA", "GEOS EFOs"), ("MnCl4-ROKS-ORCA", "EOS EFOs")] {
+        let json = dir.join(format!("{job}.apost.json"));
+        if !json.exists() {
+            eprintln!("{job} not in fixtures/apost3d-orbitals/ (APOST3D before de8b4bc)");
+            continue;
+        }
+        let set = apost3dview_core::load_apost_results(&json).unwrap().orbital_sets().remove(0);
+        let first = |labels: &[Option<apost3dview_core::OrbitalLabel>]| labels.iter().position(Option::is_some).unwrap();
+        let (alpha, beta) = (first(&set.alpha), first(&set.beta));
+        let mut harness = app_with(vec![json]);
+        harness.get_by_label("Surfaces").click_accesskit();
+        harness.run_steps(2);
+        choose_orbitals(&mut harness, option);
+        harness.state_mut().select_set_orbitals(&[alpha], &[beta]);
+        harness.run_steps(2);
+        harness.get_by_label("Generate 2 orbital(s)").click_accesskit();
+        harness.run_steps(3);
+        let labels: Vec<String> = harness.state().surface_labels().into_iter().map(|(l, _)| l).collect();
+        assert_eq!(labels.len(), 2, "{job}: {labels:?} {:?}", toasts(&harness));
+        assert_ne!(labels[0], labels[1], "{job}");
+        assert!(toasts(&harness).iter().any(|m| m.contains("generated")), "{job}: {:?}", toasts(&harness));
+        println!("{job}: {labels:?}");
+    }
+}
+
 #[test]
 fn an_orbital_file_of_another_molecule_is_refused() {
     let dir = example("C2H6-OSLO-2CH3");
