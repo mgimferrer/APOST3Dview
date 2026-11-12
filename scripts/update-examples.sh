@@ -20,6 +20,13 @@
 # Usage: scripts/update-examples.sh
 set -eu
 
+# Empties an example folder of its run's files, keeping the sessions saved
+# there (the case-study examples carry the paper's figure sessions).
+clear_run_files() {
+    mkdir -p "$1"
+    find "$1" -type f ! -name '*.a3dview' -exec rm -f {} +
+}
+
 repo=$(cd "$(dirname "$0")/.." && pwd)
 reference="$repo/fixtures/apost3d"
 orbitals="$repo/fixtures/apost3d-orbitals"
@@ -41,8 +48,7 @@ for job in FeCN5NO3--UBLYP H2O-Dimer-B3LYP C2H6-OSLO-2CH3 CH3F-GEOS H2O-CAS44; d
             exit 1
         fi
     done
-    rm -rf "$dest"
-    mkdir -p "$dest"
+    clear_run_files "$dest"
     cp "$src/$job.apost.json" "$src/$job.apost" "$src/$job.fchk" "$reference/$job.inp" "$dest/"
     for file in "$reference/$job.dm1" "$reference/$job.dm2"; do
         [ ! -f "$file" ] || cp "$file" "$dest/"
@@ -83,8 +89,7 @@ for entry in FeCp2/FeCp2-EOS-OSLO revision-1/results/ferrocene-iqa/FeCp2-IQA-ALL
             continue 2
         fi
     done
-    rm -rf "$dest"
-    mkdir -p "$dest"
+    clear_run_files "$dest"
     cp "$src/$job.apost.json" "$src/$job.apost" "$src/$job.fchk" "$src/$job.inp" "$dest/"
     for file in "$src/$job"-*.fchk; do
         [ ! -f "$file" ] || cp "$file" "$dest/"

@@ -2,7 +2,7 @@
 
 Water CASSCF(4,4)/aug-cc-pVTZ (92 basis functions, smallest overlap
 eigenvalue 3.9e-4: near linear dependence), computed with PySCF 2.14 and
-written to `.fchk` by APOST-3D's `utils/apost3d.py` (GitHub MAJOR-UPDATE,
+written to `.fchk` by APOST-3D's `utils/apost3d.py` (development branch before the 5.0 release,
 2026-10-27), the CASSCF one-particle density matrix in "Total SCF Density",
 with PySCF's own cube files (`cubegen`, 80 points per side) of the two most
 occupied active natural orbitals (named `-HONO`, `-LUNO` by the script) and of
