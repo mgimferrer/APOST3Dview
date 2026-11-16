@@ -6,7 +6,7 @@ This chapter uses `CH3F-GEOS.fchk` from the `examples` folder (`examples/CH3F-GE
 
 - Rotate: drag with the mouse (either button) or the trackpad. The rotation is free in every direction, over the top too. The arrow keys rotate as well, two at once for a diagonal.
 - Pan: <kbd>Shift</kbd>+drag.
-- Zoom: scroll, or pinch on a trackpad.
+- Zoom: scroll over the molecule, or pinch on a trackpad. Scrolling over a window scrolls only that window.
 - Spin: <kbd>Space</kbd>, or **Spin (Space)** in the bar along the bottom, turns the molecule continuously in the direction of the last arrow key pressed; the number next to it is the speed. Press <kbd>Space</kbd> again to stop.
 
 Every control is listed in [Mouse and keyboard](controls.md).

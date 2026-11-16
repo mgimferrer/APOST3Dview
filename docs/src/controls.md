@@ -6,7 +6,7 @@
 |---|---|
 | Rotate | Drag (either mouse button, or the trackpad) |
 | Pan | <kbd>Shift</kbd>+drag |
-| Zoom | Scroll, or pinch on a trackpad |
+| Zoom | Scroll over the molecule, or pinch on a trackpad (scrolling over a window only scrolls the window) |
 | Rotate with the keyboard | Arrow keys; two at once for a diagonal |
 | Turn continuously | <kbd>Space</kbd> (again to stop), in the direction of the last arrow key pressed |
 | Select an atom or a bond | Click it; click again to take it out of the selection |

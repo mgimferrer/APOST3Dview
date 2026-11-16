@@ -362,3 +362,41 @@ fn tool_windows_stack_in_a_column() {
     harness.run_steps(4);
     assert!((rect(&harness, "Measure").width() - 400.0).abs() < 1.0, "default width again");
 }
+
+/// Scrolls `steps` wheel notches at `pos` and lets the smooth scrolling run out.
+fn scroll_at(harness: &mut egui_kittest::Harness<'static, apost3dview::App>, pos: egui::Pos2, steps: usize) {
+    harness.hover_at(pos);
+    harness.run_steps(2);
+    for _ in 0..steps {
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, -3.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run_steps(2);
+    }
+    harness.run_steps(30);
+}
+
+#[test]
+fn scrolling_over_a_window_does_not_zoom_the_molecule() {
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::By;
+
+    let mut harness = app_with(vec![repo_dir().join("validation/gaussian/H2O-631G.fchk")]);
+    harness.run_steps(3);
+    let distance = |h: &egui_kittest::Harness<'static, apost3dview::App>| h.state().camera_state().1;
+    let start = distance(&harness);
+
+    // Over the Molecule window, well past the end of its content: the
+    // window scrolls (or doesn't), the molecule stays as it was.
+    let window = harness.get_all(By::new().role(Role::Window).label("Molecule")).next().expect("Molecule window").rect();
+    scroll_at(&mut harness, window.center(), 40);
+    assert_eq!(distance(&harness), start, "scrolling over a window zoomed the molecule");
+
+    // Over the molecule itself (left of the window column): it zooms.
+    let view = egui::pos2(window.min.x * 0.4, window.center().y);
+    scroll_at(&mut harness, view, 3);
+    assert_ne!(distance(&harness), start, "scrolling over the molecule didn't zoom");
+}

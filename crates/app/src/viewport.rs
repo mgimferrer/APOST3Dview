@@ -72,13 +72,22 @@ impl App {
                 self.camera.orbit(-drag_delta.x * 0.005, -drag_delta.y * 0.005);
             }
         }
-        let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
+        // Scrolling and pinching zoom only with the pointer over the
+        // molecule itself: a scroll over a window (a list, the report, a
+        // dropdown) belongs to that window, also once its content has
+        // reached the end and the window no longer uses it. Labels drawn
+        // on the molecule are in the viewport's own layer, so they don't
+        // stop the zoom.
+        let pointer_on_view = ui
+            .input(|i| i.pointer.hover_pos())
+            .is_some_and(|p| rect.contains(p) && ui.ctx().layer_id_at(p) == Some(ui.layer_id()));
+        let scroll_delta = if pointer_on_view { ui.input(|i| i.smooth_scroll_delta.y) } else { 0.0 };
         if scroll_delta != 0.0 {
             self.camera.zoom(scroll_delta * 0.02);
         }
         // Trackpad pinch (and ctrl/cmd+scroll, which egui reports
         // the same way): a multiplicative zoom factor.
-        let zoom_factor = ui.input(|i| i.zoom_delta());
+        let zoom_factor = if pointer_on_view { ui.input(|i| i.zoom_delta()) } else { 1.0 };
         if zoom_factor != 1.0 && zoom_factor > 0.0 {
             self.camera.zoom(self.camera.distance * (1.0 - 1.0 / zoom_factor));
         }
