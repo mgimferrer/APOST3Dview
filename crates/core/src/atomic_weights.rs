@@ -169,8 +169,8 @@ impl AtomCells {
         if total <= 0.0 {
             // Every P vanished (possible only with extreme ratios): all of
             // them in full, and the nearest atom if that is still nothing.
-            for a in 0..n {
-                scratch.cells[a] = self.cell_product(a, distances, 0.0);
+            for (a, cell) in scratch.cells.iter_mut().enumerate() {
+                *cell = self.cell_product(a, distances, 0.0);
             }
             total = scratch.cells.iter().sum();
             if total <= 0.0 {
