@@ -1,23 +1,23 @@
 # File formats and what is validated
 
-## Files APOST3Dview opens
+## Files APOST-3Dview opens
 
-| File | Written by | What APOST3Dview reads |
+| File | Written by | What APOST-3Dview reads |
 |---|---|---|
 | `.fchk` | Gaussian, Q-Chem, PySCF (through APOST-3D's `apost3d.py`) | The geometry, the basis set and the molecular orbitals (restricted, restricted open shell, unrestricted), and the density matrices stored in it, mean-field and correlated |
 | `.molden` | PySCF, ORCA (`orca_2mkl -molden`) | The geometry, the basis set and the orbitals with their occupations |
 | `.cube` | Any program (Gaussian cube format) | The geometry and the grid of values (the first one, when a file holds several) |
 | `.xyz` | Any program | The geometry |
 | `.apost.json` | APOST-3D | APOST-3D's results (see [APOST-3D results on the molecule](results.md)) |
-| `.a3dview` | APOST3Dview | A session (see [Sessions](sessions.md)) |
+| `.a3dview` | APOST-3Dview | A session (see [Sessions](sessions.md)) |
 
 Basis functions up to g are supported, pure and Cartesian (Cartesian g excepted), with or without effective core potentials (ECPs). With an ECP, densities are valence densities, as in the files themselves. ORCA's own conventions in `.molden` files (the normalization in the coefficients and the sign of some f and g functions) are recognized and undone.
 
-APOST-3D's input files also end in `.inp`, like some Molden files; APOST3Dview tells them apart and explains that an APOST-3D input can't be opened (open the job's `.fchk` or `.apost.json` instead).
+APOST-3D's input files also end in `.inp`, like some Molden files; APOST-3Dview tells them apart and explains that an APOST-3D input can't be opened (open the job's `.fchk` or `.apost.json` instead).
 
 ## What is validated
 
-The orbitals APOST3Dview computes were compared, at every point of the grid, with the cube files the programs write themselves. The calculations and the cubes are in the [`validation` folder](https://github.com/mgimferrer/APOST3Dview/tree/main/validation) of the source repository, one folder per program with a README, and the comparisons run as tests on every change to the code.
+The orbitals APOST-3Dview computes were compared, at every point of the grid, with the cube files the programs write themselves. The calculations and the cubes are in the [`validation` folder](https://github.com/mgimferrer/APOST3Dview/tree/main/validation) of the source repository, one folder per program with a README, and the comparisons run as tests on every change to the code.
 
 | Program | File | What it covers | Largest difference (RMS, of the peak value) |
 |---|---|---|---|
@@ -28,6 +28,6 @@ The orbitals APOST3Dview computes were compared, at every point of the grid, wit
 
 Densities were checked against the density matrices Gaussian writes itself, evaluated independently at every grid point (water at several basis sets, BiCl3 with an ECP and g functions, a triplet's total and spin densities): they agree to about 2 × 10⁻⁷ of the value. Correlated densities, through their natural orbitals, agree with their density matrices to 2 to 7 × 10⁻⁷ (CASSCF, CISD and FCI from PySCF, and Gaussian's MP2 density).
 
-On the APOST-3D side, APOST3Dview is tested on every change against APOST-3D's own reference results: every file loads, every value it lists can be read, and the input APOST3Dview writes is read back as APOST-3D reads it. The atomic weights APOST3Dview rebuilds from a results file agree with APOST-3D's own at 105 points per system to 10⁻¹⁵ (TFVC and Becke-rho atoms), and the EFOs it draws from them and APOST-3D's unweighted orbital file agree with APOST-3D's own cube files of the same EFOs at every point of 16 cubes, to the 5 digits the cube files are written with.
+On the APOST-3D side, APOST-3Dview is tested on every change against APOST-3D's own reference results: every file loads, every value it lists can be read, and the input APOST-3Dview writes is read back as APOST-3D reads it. The atomic weights APOST-3Dview rebuilds from a results file agree with APOST-3D's own at 105 points per system to 10⁻¹⁵ (TFVC and Becke-rho atoms), and the EFOs it draws from them and APOST-3D's unweighted orbital file agree with APOST-3D's own cube files of the same EFOs at every point of 16 cubes, to the 5 digits the cube files are written with.
 
 These files open like any other, and are a quick way to try orbitals and densities.

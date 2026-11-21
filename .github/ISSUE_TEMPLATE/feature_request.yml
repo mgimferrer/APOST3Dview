@@ -1,5 +1,5 @@
 name: Suggestion
-description: Something you would like APOST3Dview to do.
+description: Something you would like APOST-3Dview to do.
 labels: [enhancement]
 body:
   - type: textarea

@@ -18,4 +18,4 @@ The pairs are under *Between atoms* (or *Between fragments*), as *Inter-atomic S
 
 ## Which wavefunctions
 
-For a single determinant (Hartree-Fock or DFT), APOST-3D computes the local spin from the `.fchk` alone. For a correlated wavefunction it needs the density matrices of the calculation, which APOST-3D's `apost3d.py` script writes for PySCF (the `.dm1` and `.dm2` files next to the `.fchk`). The input APOST3Dview prepares for such a file asks for them; see [Making an APOST-3D input](../input.md).
+For a single determinant (Hartree-Fock or DFT), APOST-3D computes the local spin from the `.fchk` alone. For a correlated wavefunction it needs the density matrices of the calculation, which APOST-3D's `apost3d.py` script writes for PySCF (the `.dm1` and `.dm2` files next to the `.fchk`). The input APOST-3Dview prepares for such a file asks for them; see [Making an APOST-3D input](../input.md).

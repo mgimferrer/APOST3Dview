@@ -1,11 +1,11 @@
 # ORCA orbital check
 
-Six ORCA (6.1 or later) single points, to check that APOST3Dview reads
+Six ORCA (6.1 or later) single points, to check that APOST-3Dview reads
 ORCA's `.molden` files correctly. ORCA is known to deviate from the
 Molden conventions for f and g functions (sign and normalization of some
 components), so the cases cover f and g, an open shell, an ECP, and
 natural orbitals with fractional occupations. Each job writes cube files
-of a few orbitals (`%plots`); APOST3Dview then evaluates the same
+of a few orbitals (`%plots`); APOST-3Dview then evaluates the same
 orbitals from the `.molden` file at the cube's own grid points and
 compares them (`compare_cube_molden` example), as was done for Gaussian
 and PySCF.

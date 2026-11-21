@@ -12,8 +12,8 @@ Questions about APOST-3D itself (its analyses, its keywords, its results) are an
 
 ## Building from source
 
-For development, or if a download doesn't work on your system, APOST3Dview can be built from its source code: see [BUILDING.md](https://github.com/mgimferrer/APOST3Dview/blob/main/BUILDING.md) in the repository.
+For development, or if a download doesn't work on your system, APOST-3Dview can be built from its source code: see [BUILDING.md](https://github.com/mgimferrer/APOST3Dview/blob/main/BUILDING.md) in the repository.
 
 ## License
 
-APOST3Dview is free software, licensed under the [GNU General Public License v3.0](https://github.com/mgimferrer/APOST3Dview/blob/main/LICENSE). Copyright © 2026 Martí Gimferrer.
+APOST-3Dview is free software, licensed under the [GNU General Public License v3.0](https://github.com/mgimferrer/APOST3Dview/blob/main/LICENSE). Copyright © 2026 Martí Gimferrer.

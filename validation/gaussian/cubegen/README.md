@@ -22,7 +22,7 @@ matrix, to 1.1e-6 and 4.0e-4.
 
 Note: `cubegen` leaves out the frozen-core orbital (the O 1s) of the
 densities of an MP2 frozen-core file, the SCF density as well as the MP2
-one; APOST3Dview's density includes it, as the density matrix does. The
+one; APOST-3Dview's density includes it, as the density matrix does. The
 test subtracts it before comparing. Without that, the two differ only
 within about half a bohr of the oxygen nucleus.
 

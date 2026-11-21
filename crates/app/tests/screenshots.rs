@@ -26,7 +26,7 @@ fn about_window_tells_where_to_report_problems() {
     harness.get_by_label("About").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("Report a problem or suggest a feature");
-    harness.get_by_label_contains(&format!("APOST3Dview {} · ", env!("CARGO_PKG_VERSION")));
+    harness.get_by_label_contains(&format!("APOST-3Dview {} · ", env!("CARGO_PKG_VERSION")));
     assert!(has_content(&screenshot(&mut harness, "about")));
 }
 

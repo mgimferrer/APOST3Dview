@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>APOST3Dview</string>
+	<string>APOST-3Dview</string>
 	<key>CFBundleDisplayName</key>
-	<string>APOST3Dview</string>
+	<string>APOST-3Dview</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.mgimferrer.apost3dview</string>
 	<key>CFBundleExecutable</key>

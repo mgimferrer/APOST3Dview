@@ -1,9 +1,9 @@
 # Validation data
 
-Calculations from other programs that APOST3Dview's own results are checked
+Calculations from other programs that APOST-3Dview's own results are checked
 against, one folder per program. Each folder holds the inputs, the
-wavefunction files APOST3Dview reads, and cube files of a few orbitals
-written by the program itself (or by Chemcraft, for Gaussian). APOST3Dview
+wavefunction files APOST-3Dview reads, and cube files of a few orbitals
+written by the program itself (or by Chemcraft, for Gaussian). APOST-3Dview
 evaluates the same orbitals at every grid point of the cube, and every one
 must match to the precision of the cube file (RMS below 1e-5 and largest
 difference below 1e-3 of the orbital's largest value; in practice RMS

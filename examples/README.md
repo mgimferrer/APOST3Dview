@@ -1,6 +1,6 @@
 # Examples
 
-Eight complete APOST-3D calculations, to try APOST3Dview without running
+Eight complete APOST-3D calculations, to try APOST-3Dview without running
 APOST-3D first. Five are test systems of APOST-3D itself, three come from
 published bonding analyses: each folder is one run, as APOST-3D leaves it.
 
@@ -28,15 +28,15 @@ In each folder:
 | `<job>.inp` | the APOST-3D input |
 | `<job>.fchk` | the wavefunction (Gaussian or PySCF) |
 | `<job>.apost` | APOST-3D's text report |
-| `<job>.apost.json` | the results file APOST3Dview reads |
+| `<job>.apost.json` | the results file APOST-3Dview reads |
 | `<job>-*.fchk` | orbital files written by EOS, GEOS or OSLO, where there are any |
 | `<job>.dm1`, `<job>.dm2` | the density matrices of a correlated wavefunction (only needed to run APOST-3D again) |
-| `*.a3dview` | sessions of figures made from the folder (in `FeCO6-EOS` and `FeCp2-IQA-ALLPAIRS`): open one in APOST3Dview to see the figure, ready to change or export |
+| `*.a3dview` | sessions of figures made from the folder (in `FeCO6-EOS` and `FeCp2-IQA-ALLPAIRS`): open one in APOST-3Dview to see the figure, ready to change or export |
 
 ## About these files
 
 The first five are APOST-3D's own test cases. The C2H6 and CH3F folders are
-runs made for APOST3Dview with the orbital files written; the other three of
+runs made for APOST-3Dview with the orbital files written; the other three of
 them are APOST-3D's reference results. The ferrocene and [Fe(CO)6]²⁺ folders
 are the systems of published figures (APOST-3D's paper, J. Chem. Phys. 2024,
 160, 172502, Figs 3-4 and Tables I-III; Theor. Chem. Acc. 2026, 145, 74,
@@ -45,5 +45,5 @@ occupations, the FOLI values, the reliability indices and the Fe-Cp and Fe-C
 interaction energies are those published; the Cp-Cp interaction differs from the published one in its exchange-correlation part. The FeCN5NO3 folder doesn't include its EFO file, so its
 EFOs are listed but can't be drawn. The examples are refreshed whenever
 APOST-3D's results format changes (with `scripts/update-examples.sh` in the
-source repository), so they always open in the version of APOST3Dview they
+source repository), so they always open in the version of APOST-3Dview they
 come with.

@@ -1,6 +1,6 @@
 # APOST-3D results on the molecule
 
-Every APOST-3D run writes a results file, `<job>.apost.json`, next to its text report `<job>.apost`. APOST3Dview reads that file (never the text report) and shows what is in it on the molecule, in tables, and in the **APOST-3D** window.
+Every APOST-3D run writes a results file, `<job>.apost.json`, next to its text report `<job>.apost`. APOST-3Dview reads that file (never the text report) and shows what is in it on the molecule, in tables, and in the **APOST-3D** window.
 
 ## Opening results
 
@@ -8,7 +8,7 @@ Open the `<job>.apost.json` file: its `.fchk` (the one APOST-3D read, in the sam
 
 Opening the `.fchk` instead shows the calculation alone. When its results are next to it, the **APOST-3D** window says so and offers **Open these results**.
 
-Before showing anything, APOST3Dview checks that the results belong to this `.fchk`: the same atoms at the same positions, the same number of basis functions and the same SCF energy. Results of another calculation are refused, with a red **Results not loaded** box in the window that says what differs. Two other boxes can appear: one when APOST-3D stopped before the end of the run (with its message; what was written before the stop is still shown), and one when no `.fchk` was found next to the results (the geometry then comes from the results file, and orbitals aren't available).
+Before showing anything, APOST-3Dview checks that the results belong to this `.fchk`: the same atoms at the same positions, the same number of basis functions and the same SCF energy. Results of another calculation are refused, with a red **Results not loaded** box in the window that says what differs. Two other boxes can appear: one when APOST-3D stopped before the end of the run (with its message; what was written before the stop is still shown), and one when no `.fchk` was found next to the results (the geometry then comes from the results file, and orbitals aren't available).
 
 ## The APOST-3D window
 
@@ -45,7 +45,7 @@ Values that follow from others (electron populations and counts, valences, overl
 
 ## Pair values: seen from one atom or fragment
 
-A pair quantity, such as a bond order, can't be drawn on every pair at once in a readable way. APOST3Dview shows it from one atom or fragment at a time: that one is drawn in gold and named in **Seen from**, and every other one takes the color of its value with it. Click another atom or fragment in the view, or choose it in **Seen from**, to see the values from there. A click on a fragment in the **Fragments** list, or on a row of the heat map or of the strongest pairs, does the same.
+A pair quantity, such as a bond order, can't be drawn on every pair at once in a readable way. APOST-3Dview shows it from one atom or fragment at a time: that one is drawn in gold and named in **Seen from**, and every other one takes the color of its value with it. Click another atom or fragment in the view, or choose it in **Seen from**, to see the values from there. A click on a fragment in the **Fragments** list, or on a row of the heat map or of the strongest pairs, does the same.
 
 ## Colors, labels and the legend
 

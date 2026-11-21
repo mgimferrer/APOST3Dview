@@ -1,6 +1,6 @@
 # Orbitals and densities
 
-APOST3Dview draws molecular orbitals and densities straight from a `.fchk` (Gaussian, Q-Chem, PySCF) or `.molden` file (PySCF, ORCA): it evaluates the wavefunction on a grid itself, so no cube file has to be made first. It also shows `.cube` files written by any program. Everything drawn this way is a surface of the molecule, and all of them are listed together in the **Surfaces** window.
+APOST-3Dview draws molecular orbitals and densities straight from a `.fchk` (Gaussian, Q-Chem, PySCF) or `.molden` file (PySCF, ORCA): it evaluates the wavefunction on a grid itself, so no cube file has to be made first. It also shows `.cube` files written by any program. Everything drawn this way is a surface of the molecule, and all of them are listed together in the **Surfaces** window.
 
 This chapter uses files from the `validation` folder of the [source repository](https://github.com/mgimferrer/APOST3Dview/tree/main/validation) and the H2O-CAS44 example.
 

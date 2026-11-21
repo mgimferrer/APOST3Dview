@@ -3,11 +3,11 @@
 Since its results format 0.16, APOST-3D writes the weight functions of its
 real-space atoms (BECKE, BECKE-RHO, TFVC) to the results file
 (`atomic_weights`: the profile, the stiffness and the radius ratio of every
-atom pair). APOST3Dview rebuilds w_A(r) of every atom from them, and the
+atom pair). APOST-3Dview rebuilds w_A(r) of every atom from them, and the
 weight of a fragment, w_F = Σ w_A over its atoms. Since 0.17 APOST-3D also
 writes the unweighted EFOs (`orbital_file_unweighted`): exact basis-set
 vectors φ whose product w_F·φ is the EFO, exactly what its cube files hold.
-APOST3Dview draws w_F·φ.
+APOST-3Dview draws w_F·φ.
 
 Each `<job>.weights-check.json` holds 105 points (at and near the nuclei,
 along the bonds, random) with every atom's and fragment's weight, from an
@@ -46,5 +46,5 @@ All 16 agree to an RMS of at most 1.0e-6 and a largest deviation of 2.9e-5
 of the cube's largest value, the precision of the cube's 5 printed digits.
 For comparison, the fitted file drawn as stored deviates by up to 0.62 of
 the cube's largest value (weakly occupied EFOs of CH3F, fits below 60%),
-and times w_F once more (how APOST3Dview drew them with 0.16 files) by up
+and times w_F once more (how APOST-3Dview drew them with 0.16 files) by up
 to 0.67.

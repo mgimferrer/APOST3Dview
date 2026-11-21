@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds dist/APOST3Dview-macos.dmg (no version in the file name, so the
-# README can link to the latest release's file directly): one APOST3Dview.app
+# README can link to the latest release's file directly): one APOST-3Dview.app
 # holding both an Apple Silicon (arm64) and an Intel (x86_64) build,
 # ad-hoc signed (free; Apple Silicon refuses to run unsigned code at all),
 # next to the examples/ folder and the user guide (guide/; build it first
@@ -18,7 +18,7 @@ for target in aarch64-apple-darwin x86_64-apple-darwin; do
     cargo build --release --locked -p apost3dview --target "$target"
 done
 
-app=dist/APOST3Dview.app
+app=dist/APOST-3Dview.app
 rm -rf dist && mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 lipo -create -output "$app/Contents/MacOS/APOST3Dview" \
     target/aarch64-apple-darwin/release/apost3dview target/x86_64-apple-darwin/release/apost3dview
@@ -50,7 +50,7 @@ cp -R "$app" "$staging/"
 cp -R examples "$staging/"
 cp -R docs/book "$staging/guide"
 ln -s /Applications "$staging/Applications"
-hdiutil create -quiet -volname "APOST3Dview $version" -srcfolder "$staging" -ov -format UDZO \
+hdiutil create -quiet -volname "APOST-3Dview $version" -srcfolder "$staging" -ov -format UDZO \
     dist/APOST3Dview-macos.dmg
 rm -rf "$staging"
 echo dist/APOST3Dview-macos.dmg

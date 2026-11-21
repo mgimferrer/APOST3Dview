@@ -10,8 +10,8 @@ fn main() {
     let mut resource = winresource::WindowsResource::new();
     resource
         .set_icon("assets/icon.ico")
-        .set("ProductName", "APOST3Dview")
-        .set("FileDescription", "APOST3Dview")
+        .set("ProductName", "APOST-3Dview")
+        .set("FileDescription", "APOST-3Dview")
         .set("LegalCopyright", "Copyright (C) 2026 Martí Gimferrer");
     resource.compile().expect("the Windows resource file (icon, version) should compile");
 }

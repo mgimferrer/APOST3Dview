@@ -638,7 +638,7 @@ impl App {
         let response = egui::Panel::top("toolbar").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(4.0);
-                ui.label(egui::RichText::new("APOST3Dview").strong());
+                ui.label(egui::RichText::new("APOST-3Dview").strong());
                 ui.separator();
                 ui.menu_button("Open", |ui| {
                     if ui.button("All supported files...").on_hover_text("Shortcut: Cmd/Ctrl+O. Files can also be dragged onto the window.").clicked() {
@@ -742,11 +742,11 @@ impl App {
         ctx.request_repaint_after(Duration::from_millis(200));
     }
 
-    /// "APOST3Dview - name.a3dview" while a session is open.
+    /// "APOST-3Dview - name.a3dview" while a session is open.
     fn update_title(&mut self, ctx: &egui::Context) {
         let title = match self.session_path.as_ref().and_then(|p| p.file_name()) {
-            Some(name) => format!("APOST3Dview - {}", name.to_string_lossy()),
-            None => "APOST3Dview".to_string(),
+            Some(name) => format!("APOST-3Dview - {}", name.to_string_lossy()),
+            None => "APOST-3Dview".to_string(),
         };
         if title != self.shown_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));

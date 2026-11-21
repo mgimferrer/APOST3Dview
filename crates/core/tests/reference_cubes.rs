@@ -1,4 +1,4 @@
-//! Orbitals evaluated by APOST3Dview against cube files written by other
+//! Orbitals evaluated by APOST-3Dview against cube files written by other
 //! programs: Gaussian `.fchk` files against Chemcraft's cubes
 //! (`validation/gaussian/`), and against the cube files the programs
 //! that computed them wrote themselves (2026-10-21): PySCF `.molden` files

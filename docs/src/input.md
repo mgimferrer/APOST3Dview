@@ -1,12 +1,12 @@
 # Making an APOST-3D input
 
-For a `.fchk`, APOST3Dview prepares the input APOST-3D needs (`<job>.inp`) from a few choices: the atomic definition, the analyses, and the fragments, which are drawn on the molecule while you make them. It covers the common analyses with APOST-3D's defaults, and writes only what differs from them. For anything else (cube files, grids, thresholds, other analyses), edit the input by hand following [APOST-3D's input reference](https://github.com/mgimferrer/APOST3D).
+For a `.fchk`, APOST-3Dview prepares the input APOST-3D needs (`<job>.inp`) from a few choices: the atomic definition, the analyses, and the fragments, which are drawn on the molecule while you make them. It covers the common analyses with APOST-3D's defaults, and writes only what differs from them. For anything else (cube files, grids, thresholds, other analyses), edit the input by hand following [APOST-3D's input reference](https://github.com/mgimferrer/APOST3D).
 
 ## Opening the form
 
 Open the calculation's `.fchk`. If there are no APOST-3D results next to it, the **Molecule** window shows **APOST-3D input...**, which opens the **New input** tab of the **APOST-3D** window. The tab is always there, next to **Results**.
 
-The form starts with the file's name and what APOST3Dview read from it (the program, the method, and whether the wavefunction is restricted, unrestricted or correlated).
+The form starts with the file's name and what APOST-3Dview read from it (the program, the method, and whether the wavefunction is restricted, unrestricted or correlated).
 
 ## Atomic definition and analyses
 
@@ -49,4 +49,4 @@ Run APOST-3D as usual in the folder of the input:
 
     apost3d <job> > <job>.apost 2>&1
 
-and open the `<job>.apost.json` it writes ([APOST-3D results on the molecule](results.md)). Running APOST-3D from APOST3Dview isn't possible for now, since most runs go to a cluster.
+and open the `<job>.apost.json` it writes ([APOST-3D results on the molecule](results.md)). Running APOST-3D from APOST-3Dview isn't possible for now, since most runs go to a cluster.

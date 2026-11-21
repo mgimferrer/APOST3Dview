@@ -1,4 +1,4 @@
-//! APOST3Dview application: egui windows on top of the wgpu renderer.
+//! APOST-3Dview application: egui windows on top of the wgpu renderer.
 //! A library as well as a binary, so integration tests can drive the real
 //! `App` headlessly.
 

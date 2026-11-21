@@ -1,9 +1,9 @@
 # Gaussian orbital check
 
-Seven Gaussian 16 (A.03) B3LYP calculations, to check APOST3Dview's
+Seven Gaussian 16 (A.03) B3LYP calculations, to check APOST-3Dview's
 orbital evaluator on `.fchk` files: the first validation set of the
 evaluator (August 2026). Cubes of a few orbitals were made from each
-`.fchk` with Chemcraft; APOST3Dview evaluates the same orbitals at the
+`.fchk` with Chemcraft; APOST-3Dview evaluates the same orbitals at the
 cube's own grid points and compares them.
 
 | Job | What it tests | Cubes |

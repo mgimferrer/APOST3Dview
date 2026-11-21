@@ -33,14 +33,14 @@ use crate::util::find_bond_between;
 
 pub(crate) const SESSION_EXTENSION: &str = "a3dview";
 const SESSION_FORMAT: &str = "apost3dview-session";
-/// Raised when a change means an older APOST3Dview can't read the file.
+/// Raised when a change means an older APOST-3Dview can't read the file.
 const SESSION_VERSION: u32 = 1;
 
 #[derive(Serialize, Deserialize)]
 struct SessionFile {
     format: String,
     version: u32,
-    /// The APOST3Dview version that wrote the file, for information.
+    /// The APOST-3Dview version that wrote the file, for information.
     #[serde(default)]
     written_by: String,
     /// Position in `structures` (0-based) of the structure on screen.
@@ -501,7 +501,7 @@ impl App {
         SessionFile {
             format: SESSION_FORMAT.to_string(),
             version: SESSION_VERSION,
-            written_by: format!("APOST3Dview {}", env!("CARGO_PKG_VERSION")),
+            written_by: format!("APOST-3Dview {}", env!("CARGO_PKG_VERSION")),
             active_structure: self.active_structure,
             view: ViewState {
                 camera_target: camera.target.to_array(),
@@ -543,7 +543,7 @@ impl App {
     pub fn save_session_to(&self, path: &Path) -> Result<(), String> {
         let base = path.parent().unwrap_or(Path::new("."));
         let text = toml::to_string_pretty(&self.session_state(base)).map_err(|err| err.to_string())?;
-        let header = "# APOST3Dview session: open it with APOST3Dview (Open, drag and drop, or the command line).\n\n";
+        let header = "# APOST-3Dview session: open it with APOST-3Dview (Open, drag and drop, or the command line).\n\n";
         std::fs::write(path, format!("{header}{text}")).map_err(|err| err.to_string())
     }
 
@@ -562,7 +562,7 @@ impl App {
                     .and_then(|p| p.file_stem())
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "session".to_string());
-                let mut dialog = rfd::FileDialog::new().add_filter("APOST3Dview session", &[SESSION_EXTENSION]).set_file_name(format!("{stem}.{SESSION_EXTENSION}"));
+                let mut dialog = rfd::FileDialog::new().add_filter("APOST-3Dview session", &[SESSION_EXTENSION]).set_file_name(format!("{stem}.{SESSION_EXTENSION}"));
                 if let Some(dir) = self.session_path.as_ref().and_then(|p| p.parent()) {
                     dialog = dialog.set_directory(dir);
                 }
@@ -591,11 +591,11 @@ impl App {
             }
         };
         if session.format != SESSION_FORMAT {
-            self.show_warning(format!("{name} is not an APOST3Dview session."));
+            self.show_warning(format!("{name} is not an APOST-3Dview session."));
             return;
         }
         if session.version > SESSION_VERSION {
-            self.show_warning(format!("{name} was saved by a newer APOST3Dview ({}). Please update APOST3Dview to open it.", session.written_by));
+            self.show_warning(format!("{name} was saved by a newer APOST-3Dview ({}). Please update APOST-3Dview to open it.", session.written_by));
             return;
         }
 

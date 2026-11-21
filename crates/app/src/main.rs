@@ -40,7 +40,7 @@ fn main() -> eframe::Result<()> {
     );
     if let Err(err) = &result {
         log::error!("could not start: {err}");
-        diagnostics::show_error(&format!("APOST3Dview could not start:\n\n{err}"));
+        diagnostics::show_error(&format!("APOST-3Dview could not start:\n\n{err}"));
     }
     result
 }

@@ -418,7 +418,7 @@ impl ApostResults {
         let n = match entry.kind {
             QuantityKind::AtomVector | QuantityKind::AtomMatrix => self.molecule.as_ref().map(|m| m.n_atoms).ok_or("the file has no molecule")?,
             QuantityKind::FragmentVector | QuantityKind::FragmentMatrix => self.fragments().len(),
-            _ => return Err(format!("{}: kind not supported by this APOST3Dview", entry.id)),
+            _ => return Err(format!("{}: kind not supported by this APOST-3Dview", entry.id)),
         };
         if entry.kind.is_matrix() {
             let matrix: MatrixObject = serde_json::from_value(value.clone()).map_err(|e| format!("{}: not a matrix object ({e})", entry.id))?;
@@ -828,8 +828,8 @@ pub fn parse_apost_results(text: &str) -> Result<ApostResults, String> {
         Some(m) if SUPPORTED_SCHEMA_MAJORS.contains(&m) => {}
         Some(_) => {
             return Err(format!(
-                "written in results-file version {version}, which this APOST3Dview does not know \
-                 (it reads versions up to {}.x). Please update APOST3Dview.",
+                "written in results-file version {version}, which this APOST-3Dview does not know \
+                 (it reads versions up to {}.x). Please update APOST-3Dview.",
                 SUPPORTED_SCHEMA_MAJORS.end()
             ));
         }
@@ -1117,7 +1117,7 @@ mod tests {
     #[test]
     fn refuses_an_unknown_major_version_with_a_clear_message() {
         let err = parse_apost_results(&edited(|v| v["schema_version"] = "2.0".into())).unwrap_err();
-        assert!(err.contains("version 2.0") && err.contains("up to 1.x") && err.contains("update APOST3Dview"), "{err}");
+        assert!(err.contains("version 2.0") && err.contains("up to 1.x") && err.contains("update APOST-3Dview"), "{err}");
     }
 
     /// The release format (1.x) is read like the last development one.

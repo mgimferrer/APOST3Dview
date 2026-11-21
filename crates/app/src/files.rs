@@ -17,7 +17,7 @@ use crate::session::SESSION_EXTENSION;
 use crate::state::LoadedStructure;
 use crate::util::molecules_share_geometry;
 
-/// Every kind of file APOST3Dview opens.
+/// Every kind of file APOST-3Dview opens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FileKind {
     Fchk,
@@ -39,7 +39,7 @@ impl FileKind {
             FileKind::Xyz => "XYZ coordinates (.xyz)",
             FileKind::Cube => "Gaussian cube (.cube)",
             FileKind::ApostResults => "APOST-3D results (.apost.json)",
-            FileKind::Session => "APOST3Dview session (.a3dview)",
+            FileKind::Session => "APOST-3Dview session (.a3dview)",
         }
     }
 

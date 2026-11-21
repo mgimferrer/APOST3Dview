@@ -61,7 +61,7 @@ jobs:
           cargo build --release --locked -p apost3dview
           $dir = "dist/APOST3Dview-${{ needs.version.outputs.version }}"
           New-Item -ItemType Directory -Force $dir | Out-Null
-          Copy-Item target/release/apost3dview.exe "$dir/APOST3Dview.exe"
+          Copy-Item target/release/apost3dview.exe "$dir/APOST-3Dview.exe"
           Copy-Item LICENSE "$dir/LICENSE.txt"
           Copy-Item crates/render/assets/fonts/OFL.txt "$dir/Arimo-OFL.txt"
           Copy-Item -Recurse examples "$dir/examples"
@@ -129,4 +129,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sed "s/@VERSION@/${{ needs.version.outputs.version }}/g" packaging/release-notes.md > notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* --draft --title "APOST3Dview ${{ needs.version.outputs.version }}" --notes-file notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* --draft --title "APOST-3Dview ${{ needs.version.outputs.version }}" --notes-file notes.md

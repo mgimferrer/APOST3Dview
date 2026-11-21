@@ -1,10 +1,10 @@
 # PySCF orbital check
 
-Four PySCF Hartree–Fock calculations, to check that APOST3Dview reads
+Four PySCF Hartree–Fock calculations, to check that APOST-3Dview reads
 PySCF's `.molden` files correctly (component order, pure and Cartesian
 functions, open shell). `gen_molden.py` writes each `.molden`
 (`pyscf.tools.molden`) and cube files of its HOMO and LUMO
-(`pyscf.tools.cubegen`); APOST3Dview evaluates the same orbitals from the
+(`pyscf.tools.cubegen`); APOST-3Dview evaluates the same orbitals from the
 `.molden` at the cube's own grid points and compares them.
 
 | File | What it tests | Cubes |

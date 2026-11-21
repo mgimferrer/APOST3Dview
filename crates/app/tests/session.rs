@@ -177,7 +177,7 @@ fn a_session_is_opened_from_the_open_menu_like_any_file() {
     let mut harness = app_with(Vec::new());
     harness.get_by_label("Open").click_accesskit();
     harness.run_steps(1);
-    harness.get_by_label("APOST3Dview session (.a3dview)...");
+    harness.get_by_label("APOST-3Dview session (.a3dview)...");
     // Not a session at all: a clear message.
     std::fs::write(dir.join("bad.a3dview"), "format = \"something else\"\nversion = 1\n").unwrap();
     let bad = app_with(vec![dir.join("bad.a3dview")]);

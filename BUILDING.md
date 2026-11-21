@@ -1,4 +1,4 @@
-# Building APOST3Dview from source
+# Building APOST-3Dview from source
 
 For development, or if a [downloaded build](README.md#installation) doesn't work on your system. Most users don't need this.
 
@@ -26,7 +26,7 @@ If `cargo` isn't found right after installing Rust, open a new terminal: an alre
 
 ```bash
 git clone https://github.com/mgimferrer/APOST3Dview.git
-cd APOST3Dview
+cd APOST-3Dview
 cargo run --release -p apost3dview
 ```
 
@@ -45,7 +45,7 @@ cargo test --workspace
 
 ## Test data
 
-- `validation/`: committed. Calculations from Gaussian, PySCF, Q-Chem and ORCA with the programs' own orbital cubes, one folder per program with a README; `crates/core/tests/reference_cubes.rs` checks APOST3Dview's orbitals against them. `validation/apost3d/` holds APOST-3D's atomic weights at reference points, checked by `crates/core/tests/atomic_weights.rs`.
+- `validation/`: committed. Calculations from Gaussian, PySCF, Q-Chem and ORCA with the programs' own orbital cubes, one folder per program with a README; `crates/core/tests/reference_cubes.rs` checks APOST-3Dview's orbitals against them. `validation/apost3d/` holds APOST-3D's atomic weights at reference points, checked by `crates/core/tests/atomic_weights.rs`.
 - `examples/`: committed. Eight complete APOST-3D runs for new users (see its README), also opened by the app's tests (`crates/app/tests/examples.rs`, `orbital_sets.rs`). Refreshed from `fixtures/` with `scripts/update-examples.sh` when APOST-3D's results change.
 - `fixtures/`: not committed. `fixtures/apost3d/` and `fixtures/apost3d-orbitals/` hold APOST-3D's reference results, copied by `scripts/sync-apost3d-fixtures.sh`. Unpublished test systems go in their own subfolder here (for example `fixtures/bi-dianion-osd/`); tests and reference scenes that need one skip themselves without it.
 
@@ -64,7 +64,7 @@ Small programs kept in the crates' `examples/` folders, run with `cargo run --re
 
 In `apost3dview-core`:
 
-- `parse_fchk`, `parse_wavefunction`, `parse_molden`, `parse_cube`: print what APOST3Dview reads from a file.
+- `parse_fchk`, `parse_wavefunction`, `parse_molden`, `parse_cube`: print what APOST-3Dview reads from a file.
 - `compare_cube`, `compare_cube_molden`: one orbital of a `.fchk` or `.molden` against a cube file of it (RMS and largest difference); see `validation/README.md`.
 - `time_grids`: timings of orbitals, densities, isosurfaces and envelopes on a large molecule (needs `fixtures/`).
 
@@ -80,7 +80,7 @@ In `apost3dview-render`, checks of the rendering, most of them on a real GPU dev
 
 `.github/workflows/release.yml` builds the downloadable packages:
 
-- `scripts/package-macos.sh`: universal `APOST3Dview.app` (Apple Silicon + Intel), ad-hoc signed, in a `.dmg`. Runs the same on a Mac by hand.
+- `scripts/package-macos.sh`: universal `APOST-3Dview.app` (Apple Silicon + Intel), ad-hoc signed, in a `.dmg`. Runs the same on a Mac by hand.
 - `scripts/package-linux.sh`: a `.tar.gz` with the executable, its menu entry and `install.sh`.
 - Windows: the `.exe` in a `.zip`, built in the workflow itself.
 

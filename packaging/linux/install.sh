@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs APOST3Dview for the current user (no root needed): the program
+# Installs APOST-3Dview for the current user (no root needed): the program
 # in ~/.local/bin, its icon and its entry in the applications menu.
 set -e
 cd "$(dirname "$0")"
@@ -9,5 +9,5 @@ cp apost3dview "$HOME/.local/bin/"
 cp apost3dview.png "$data/icons/hicolor/512x512/apps/"
 cp APOST3Dview.desktop "$data/applications/"
 command -v update-desktop-database >/dev/null && update-desktop-database "$data/applications" || true
-echo "Installed. Start APOST3Dview from the applications menu, or run: apost3dview"
+echo "Installed. Start APOST-3Dview from the applications menu, or run: apost3dview"
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "(Add ~/.local/bin to your PATH to run it from a terminal.)" ;; esac

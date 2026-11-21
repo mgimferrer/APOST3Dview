@@ -57,12 +57,12 @@ pub fn start() {
     if log::set_logger(logger).is_ok() {
         log::set_max_level(log::LevelFilter::Info);
     }
-    log::info!("APOST3Dview {} on {} {}", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH);
+    log::info!("APOST-3Dview {} on {} {}", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH);
 
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         log::error!("{info}");
-        show_error(&format!("APOST3Dview stopped because of an internal error:\n\n{info}"));
+        show_error(&format!("APOST-3Dview stopped because of an internal error:\n\n{info}"));
         default_hook(info);
     }));
 }
@@ -87,7 +87,7 @@ pub fn show_error(message: &str) {
     let log = log_path().map(|path| format!("\n\nDetails are in {}", path.display())).unwrap_or_default();
     rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Error)
-        .set_title("APOST3Dview")
+        .set_title("APOST-3Dview")
         .set_description(format!("{message}{log}"))
         .show();
 }

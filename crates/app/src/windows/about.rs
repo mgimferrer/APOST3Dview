@@ -5,7 +5,7 @@ use crate::app::App;
 impl App {
     pub(crate) fn show_about_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_about;
-        egui::Window::new("About APOST3Dview")
+        egui::Window::new("About APOST-3Dview")
             .open(&mut open)
             .resizable(false)
             .collapsible(false)
@@ -16,7 +16,7 @@ impl App {
                     ui.image((self.logo_texture.id(), display_size));
 
                     ui.add_space(8.0);
-                    ui.label(format!("APOST3Dview v{}", env!("CARGO_PKG_VERSION")));
+                    ui.label(format!("APOST-3Dview v{}", env!("CARGO_PKG_VERSION")));
                     ui.label("A molecular visualizer for APOST-3D.");
                     ui.add_space(8.0);
                     ui.label("Martí Gimferrer");
@@ -31,7 +31,7 @@ impl App {
                     ui.add_space(8.0);
                     ui.label(
                         egui::RichText::new(
-                            "APOST3Dview does not yet have its own dedicated publication. \
+                            "APOST-3Dview does not yet have its own dedicated publication. \
                              If you use it, please cite the APOST-3D paper:",
                         )
                         .small(),
@@ -65,10 +65,10 @@ impl App {
         self.show_about = open;
     }
 
-    /// "APOST3Dview 0.9.0 · macos aarch64 · Apple M5 (Metal)": what a bug
+    /// "APOST-3Dview 0.9.0 · macos aarch64 · Apple M5 (Metal)": what a bug
     /// report needs to say about where the app runs.
     fn system_details(&self) -> String {
         let info = self.render_state.adapter.get_info();
-        format!("APOST3Dview {} · {} {} · {} ({:?})", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH, info.name, info.backend)
+        format!("APOST-3Dview {} · {} {} · {} ({:?})", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH, info.name, info.backend)
     }
 }

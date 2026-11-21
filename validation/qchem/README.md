@@ -1,9 +1,9 @@
 # Q-Chem orbital check
 
-Four Q-Chem single points of water, to check that APOST3Dview reads
+Four Q-Chem single points of water, to check that APOST-3Dview reads
 Q-Chem `.fchk` files correctly (orbital order, pure/Cartesian functions,
 open shell). Each run writes its `.fchk` (`GUI 2`) and cube files of a few
-orbitals (`$plots`, `MAKE_CUBE_FILES`); APOST3Dview then evaluates the same
+orbitals (`$plots`, `MAKE_CUBE_FILES`); APOST-3Dview then evaluates the same
 orbitals from the `.fchk` at the cube's own grid points and compares them
 (`compare_cube` example), as was done for Gaussian and PySCF.
 

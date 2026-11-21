@@ -2,7 +2,7 @@
 
 ## It doesn't start
 
-APOST3Dview writes what happens at every start to a log file, replaced at each start:
+APOST-3Dview writes what happens at every start to a log file, replaced at each start:
 
 | System | Log file |
 |---|---|
@@ -12,10 +12,10 @@ APOST3Dview writes what happens at every start to a log file, replaced at each s
 
 When it stops with an error, a message says so. Please attach the log file when you [report the problem](help.md).
 
-APOST3Dview draws with the graphics card, through DirectX 12 on Windows, Metal on macOS and Vulkan on Linux. To try another graphics interface, start it from a terminal with the variable `WGPU_BACKEND` set. On Windows, in a Command Prompt in its folder:
+APOST-3Dview draws with the graphics card, through DirectX 12 on Windows, Metal on macOS and Vulkan on Linux. To try another graphics interface, start it from a terminal with the variable `WGPU_BACKEND` set. On Windows, in a Command Prompt in its folder:
 
     set WGPU_BACKEND=vulkan
-    APOST3Dview.exe
+    APOST-3Dview.exe
 
 (`gl` is another option.) On Linux, make sure a Vulkan driver is installed (Mesa's `mesa-vulkan-drivers`, or your card maker's driver).
 
@@ -25,7 +25,7 @@ The downloads aren't signed with a paid certificate, so the first start needs on
 
 ## APOST-3D results are refused
 
-APOST3Dview checks that results belong to the `.fchk` they are opened with (the same atoms at the same positions, the same number of basis functions and the same SCF energy). The red **Results not loaded** box in the **APOST-3D** window says what differs. The usual causes: the `.fchk` was replaced after APOST-3D ran, or the results are from another calculation of the same molecule (another functional or basis set). Open the `.fchk` APOST-3D actually read, or run APOST-3D again.
+APOST-3Dview checks that results belong to the `.fchk` they are opened with (the same atoms at the same positions, the same number of basis functions and the same SCF energy). The red **Results not loaded** box in the **APOST-3D** window says what differs. The usual causes: the `.fchk` was replaced after APOST-3D ran, or the results are from another calculation of the same molecule (another functional or basis set). Open the `.fchk` APOST-3D actually read, or run APOST-3D again.
 
 An orbital file (EFOs, OSLOs) of another run is refused the same way, with the reason in the **Surfaces** window: run APOST-3D again to write it anew.
 
