@@ -87,5 +87,5 @@ In `apost3dview-render`, checks of the rendering, most of them on a real GPU dev
 Every package also holds `examples/` and the guide (`guide/`, built by the workflow's guide job; to run the packaging scripts by hand, run `mdbook build docs` first). Starting the workflow by hand (Actions, Release, Run workflow) only builds; the packages are under the run's Artifacts. To publish a release:
 
 1. Set the version in the root `Cargo.toml` (`[workspace.package] version`) and `CITATION.cff`, commit.
-2. Tag and push: `git tag v0.9.0 && git push origin v0.9.0`. The workflow refuses a tag that doesn't match `Cargo.toml`.
+2. Tag and push: `git tag v1.0.0 && git push origin v1.0.0`. The workflow refuses a tag that doesn't match `Cargo.toml`.
 3. When the workflow is done, a **draft** release with the three packages and their checksums is waiting under Releases: check the notes, then Publish.

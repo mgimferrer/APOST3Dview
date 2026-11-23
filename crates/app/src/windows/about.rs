@@ -65,7 +65,7 @@ impl App {
         self.show_about = open;
     }
 
-    /// "APOST-3Dview 0.9.0 · macos aarch64 · Apple M5 (Metal)": what a bug
+    /// "APOST-3Dview 1.0.0 · macos aarch64 · Apple M5 (Metal)": what a bug
     /// report needs to say about where the app runs.
     fn system_details(&self) -> String {
         let info = self.render_state.adapter.get_info();

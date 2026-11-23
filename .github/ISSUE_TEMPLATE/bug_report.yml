@@ -22,7 +22,7 @@ body:
     attributes:
       label: Version and system
       description: In APOST-3Dview, open About and click "Copy these details", then paste here. If the app doesn't start, write the version you downloaded and your operating system.
-      placeholder: APOST-3Dview 0.9.0 · windows x86_64 · NVIDIA GeForce ... (Dx12)
+      placeholder: APOST-3Dview 1.0.0 · windows x86_64 · NVIDIA GeForce ... (Dx12)
     validations:
       required: true
   - type: dropdown
