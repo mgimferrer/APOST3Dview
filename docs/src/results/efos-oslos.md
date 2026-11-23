@@ -43,7 +43,7 @@ Orbitals are drawn in the usual positive and negative colors. With **Color by fr
 
 ## Frontier EFOs and the reliability index
 
-EOS assigns the electrons to the EFOs of all fragments in order of decreasing occupation. The frontier EFOs are the last occupied (LO) EFO and the first unoccupied (FU) EFO. The closer their occupations, the less clear-cut the assignment: the reliability index R = 100 · min(1, max(0, λ<sub>LO</sub> − λ<sub>FU</sub> + 0.5)) is 100% when they differ by more than half an electron, and 50% when they are equal.
+EOS assigns the electrons to the EFOs of all fragments in order of decreasing occupation. The frontier EFOs are the last occupied (LO) EFO and the first unoccupied (FU) EFO. The closer their occupations, the less clear-cut the assignment: the reliability index R(%) = 100 · min(1, max(0, λ<sub>LO</sub> − λ<sub>FU</sub> + 0.5)) is 100 when they differ by more than half an electron, and 50 when they are equal.
 
 In the **Surfaces** window, **Frontier** ticks the frontier EFOs of the set, in every channel: all of them when several are degenerate (two equivalent ligands, say). In the list they are marked **LO** and **FU**. Here, the frontier EFOs of CH3F's GEOS, colored by fragment: the last occupied one on F, the first unoccupied one on CH3.
 

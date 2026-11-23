@@ -1,12 +1,12 @@
-# Energy decomposition (IQA)
+# Energy partitioning (IQA)
 
-APOST-3D's energy decomposition (ENPART) splits the energy of the molecule into intra-atomic (self) energies and inter-atomic interaction energies, in the interacting quantum atoms (IQA) scheme, for Hartree-Fock, KS-DFT and correlated (CASSCF, CISD) wavefunctions. Each interaction is further split into terms: classical (electrostatic), exchange-correlation and its parts, and more.
+APOST-3D's energy partitioning (ENPART) splits the energy of the molecule into intra-atomic (self) energies and inter-atomic interaction energies, in the interacting quantum atoms (IQA) scheme, for Hartree-Fock, KS-DFT and correlated (CASSCF, CISD) wavefunctions. Each interaction is further split into terms: classical (electrostatic), exchange-correlation and its parts, and more.
 
 This page uses the example `H2O-Dimer-B3LYP`: the water dimer at B3LYP/cc-pVDZ, with TFVC atoms and each water a fragment. Open `H2O-Dimer-B3LYP.apost.json`.
 
 ## Interaction energies
 
-In the **APOST-3D** window, open **Show**: the group *Energy decomposition (IQA)* holds the interaction energies between fragments and between atoms. Choose *Inter-fragment interaction energy (TFVC)*: the molecule is seen from the first water, and the other one takes the color of their interaction energy, here the hydrogen bond, in kcal/mol. Negative values (attraction) are blue, positive ones (repulsion) red; **Reverse colors** swaps them.
+In the **APOST-3D** window, open **Show**: the group *Energy partitioning (IQA)* holds the interaction energies between fragments and between atoms. Choose *Inter-fragment interaction energy (TFVC)*: the molecule is seen from the first water, and the other one takes the color of their interaction energy, here the hydrogen bond, in kcal/mol. Negative values (attraction) are blue, positive ones (repulsion) red; **Reverse colors** swaps them.
 
 ![The interaction energy between the two waters](../images/iqa-fragments.png)
 
@@ -28,11 +28,11 @@ A value marked with "≈" belongs to a pair whose exchange-correlation APOST-3D 
 
 Select two atoms (click one, then the other). **Selected pair** lists their interaction energy term by term, in the unit chosen, and says when the pair comes from the multipolar expansion.
 
-## How well the decomposition adds up
+## How well the partitioning adds up
 
-The section **Energy decomposition (IQA)** in the **APOST-3D** window (its heading gives the final integration error) shows how the decomposition was done and how far its numbers can be trusted:
+The section **Energy partitioning (IQA)** in the **APOST-3D** window (its heading gives the final integration error) shows how the partitioning was done and how far its numbers can be trusted:
 
-<img class="window" src="../images/iqa-window.png" alt="The energy decomposition section of the APOST-3D window">
+<img class="window" src="../images/iqa-window.png" alt="The energy partitioning section of the APOST-3D window">
 
 - **Method**: the wavefunction and, for DFT, the functional with its share of exact exchange.
 - **Total energy (IQA)** and **Energy of the .fchk**, and the **Integration error** between them, with its one-electron (electron-nuclear, kinetic) and two-electron parts.
@@ -41,4 +41,4 @@ The section **Energy decomposition (IQA)** in the **APOST-3D** window (its headi
 
 A value that deserves attention is shown in orange, with a line saying why: a final error above 1 kcal/mol without correction, a one-electron error above 0.1 kcal/mol, a first-grid two-electron error above 5 kcal/mol, or an unusual damping of the correction.
 
-The same section lists the atomic and fragment energies as numbers: the **Intra-atomic (self) energy** of each atom (**Intra-fragment (self) energy** of each fragment) and its **Additive energy** (the self energy plus half of each of its interactions; the additive energies add up to the total energy), with **Copy**. They are dominated by the core electrons, which is why they are listed rather than drawn as colors (they are also in **Show**, under *Energy decomposition (IQA)*, as intra-atomic energies).
+The same section lists the atomic and fragment energies as numbers: the **Intra-atomic (self) energy** of each atom (**Intra-fragment (self) energy** of each fragment) and its **Additive energy** (the self energy plus half of each of its interactions; the additive energies add up to the total energy), with **Copy**. They are dominated by the core electrons, which is why they are listed rather than drawn as colors (they are also in **Show**, under *Energy partitioning (IQA)*, as intra-atomic energies).

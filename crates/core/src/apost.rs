@@ -699,7 +699,7 @@ impl ApostResults {
     }
 }
 
-/// The ENPART (IQA) energy decomposition (since 0.10; correlated
+/// The ENPART (IQA) energy partitioning (since 0.10; correlated
 /// wavefunctions since 0.11): what describes the run, beside the term
 /// matrices and atomic energies the index lists. Every field is optional:
 /// a run stopped inside ENPART writes the block with `functional` only.

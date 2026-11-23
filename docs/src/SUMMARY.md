@@ -14,7 +14,7 @@
 - [APOST-3D results on the molecule](results.md)
     - [Fragments, charges and bond orders](results/fragments.md)
     - [Local spin](results/local-spin.md)
-    - [Energy decomposition (IQA)](results/iqa.md)
+    - [Energy partitioning (IQA)](results/iqa.md)
     - [Effective fragment orbitals and OSLOs](results/efos-oslos.md)
 - [Making an APOST-3D input](input.md)
 - [Appearance](appearance.md)

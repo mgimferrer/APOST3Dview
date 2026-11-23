@@ -96,7 +96,7 @@ fn enpart_takes_the_functional_from_the_fchk() {
     let Some(dir) = fixtures_dir() else { return };
     let fchk = copy_fchk(&dir, "H2O-Dimer-B3LYP", "input-enpart", "dimer");
     let mut harness = generator(&fchk);
-    click(&mut harness, "Energy decomposition, IQA (ENPART)");
+    click(&mut harness, "Energy partitioning, IQA (ENPART)");
     harness.get_by_label("From the .fchk (RB3LYP). It must be the functional of the calculation.");
     click(&mut harness, "Separate molecules");
     click(&mut harness, "Faster (40 \u{d7} 146)");
@@ -129,7 +129,7 @@ fn a_correlated_wavefunction_gets_its_rdm_files() {
     assert_eq!(harness.state().input_text().unwrap(), "# METHOD\nTFVC\nDM 2\n#\n# DM\ncas.dm1\ncas.dm2\npySCF\n#\n");
     assert!(harness.get_by_label("Local spin (SPIN)").accesskit_node().is_disabled());
     harness.get_by_label("cas.dm1 (written by APOST-3D's pySCF script with the .fchk) is not next to the .fchk.");
-    click(&mut harness, "Energy decomposition, IQA (ENPART)");
+    click(&mut harness, "Energy partitioning, IQA (ENPART)");
     harness.get_by_label("Energy of the CASSCF wavefunction (also FCI and CISD from pySCF), from its RDMs.");
     assert!(harness.state().input_text().unwrap().contains("# ENPART\nCASSCF\n#\n"));
 }
@@ -184,7 +184,7 @@ fn an_orca_file_gets_orca_functionals() {
     std::fs::copy(repo_dir().join("validation/orca/orca2fchk/H2O-ORCA-ccpVTZ.fchk"), &fchk).unwrap();
     let mut harness = generator(&fchk);
     harness.get_by_label_contains("ORCA (orca2fchk.py)");
-    click(&mut harness, "Energy decomposition, IQA (ENPART)");
+    click(&mut harness, "Energy partitioning, IQA (ENPART)");
     assert!(harness.state().input_text().unwrap().contains("# ENPART\nHF\n#"), "{}", harness.state().input_text().unwrap());
     harness.get_by_label_contains("ENPART uses ORCA's functional by its libxc ids");
     harness.get_all(By::new().role(Role::ComboBox)).find(|n| n.value().as_deref() == Some("HF")).expect("functional menu").click_accesskit();

@@ -510,7 +510,7 @@ pub(crate) fn build_scene(results: &ApostResults, molecule: &Molecule, view: &Re
             // Oxidation states with the reliability index R of their
             // assignment, which says how clear-cut they are.
             let title = match entry.id.strip_suffix(".fragments.oxidation_states").and_then(|analysis| reliability(results, analysis)) {
-                Some(r) => format!("{title}, R = {r:.1}%"),
+                Some(r) => format!("{title}, R(%) = {r:.1}"),
                 None => title,
             };
             let title = if matches!(scale, ColorScale::Diverging { log: true, .. }) { format!("{title}, log scale") } else { title };
@@ -715,14 +715,14 @@ pub(crate) fn part_source(results: &ApostResults, entry: &IndexEntry, diagonal: 
 
 /// The choices a file offers for the Show menu, grouped: fragment values,
 /// fragment pairs, atom values, atom pairs (fragments first: they are what
-/// fragment analyses are about), then the energy decomposition. A
+/// fragment analyses are about), then the energy partitioning. A
 /// matrix's diagonal is a value on each fragment or atom, so it is listed
 /// with those values (intra); its pairs under "Between" (inter) — Martí,
 /// 2026-10-19. Values in another atomic definition than the run's own,
 /// printed only for comparison, and the secondary ones (`is_secondary`)
 /// are left out unless `include_other`.
 pub(crate) fn grouped_entries(results: &ApostResults, include_other: bool) -> Vec<(&'static str, Vec<Choice<'_>>)> {
-    // The energy decomposition has a group of its own: the IQA matrices
+    // The energy partitioning has a group of its own: the IQA matrices
     // (their other terms through the term selector).
     let is_enpart = |e: &IndexEntry| e.analysis.as_deref() == Some("enpart");
     let listed = |e: &&IndexEntry| (include_other || !(e.is_comparison() || is_secondary(e))) && !is_enpart(e);
@@ -749,7 +749,7 @@ pub(crate) fn grouped_entries(results: &ApostResults, include_other: bool) -> Ve
         .filter_map(|id| results.entry(id))
         .flat_map(|entry| [false, true].map(|diagonal| Choice { entry, diagonal, label: choice_label(results, entry, diagonal) }))
         .collect();
-    groups.push(("Energy decomposition (IQA)", iqa));
+    groups.push(("Energy partitioning (IQA)", iqa));
     groups.retain(|(_, choices)| !choices.is_empty());
     groups
 }

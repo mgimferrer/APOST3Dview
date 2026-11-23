@@ -1,11 +1,11 @@
-//! The APOST-3D window's energy decomposition (ENPART, IQA) section: how
-//! the decomposition was done (wavefunction, functional), how well its
+//! The APOST-3D window's energy partitioning (ENPART, IQA) section: how
+//! the partitioning was done (wavefunction, functional), how well its
 //! energy adds up to the calculation's (the integration errors, including
 //! the two-electron integration and its zero-error correction), and which
 //! atom pairs come from the multipolar expansion; and the atomic and
 //! fragment energies, as numbers (they are dominated by the core, so as
 //! colors they would only tell the elements apart). The pair terms are
-//! shown on the molecule (On the molecule, Energy decomposition).
+//! shown on the molecule (On the molecule, Energy partitioning).
 
 use apost3dview_core::{ApostResults, Enpart, Quantity};
 use apost3dview_render::format_signed;
@@ -60,7 +60,7 @@ fn warnings(enpart: &Enpart) -> Vec<&'static str> {
     let two = enpart.two_electron_integration.as_ref();
     let corrected = two.and_then(|t| t.zero_error_correction.as_deref()) == Some("applied");
     if !corrected && enpart.integration_error_kcal.is_some_and(|e| e.abs() > FINAL_ERROR_KCAL) {
-        found.push("The decomposition's energy differs from the calculation's by more than 1 kcal/mol: a finer integration grid may be needed.");
+        found.push("The partitioned energy differs from the calculation's by more than 1 kcal/mol: a finer integration grid may be needed.");
     }
     if [enpart.electron_nuclear_error_kcal, enpart.kinetic_error_kcal].into_iter().flatten().any(|e| e.abs() > ONE_ELECTRON_ERROR_KCAL) {
         found.push("A one-electron integration error is above 0.1 kcal/mol: the atomic integration grid may be too coarse.");
@@ -96,8 +96,8 @@ impl App {
         let Some(enpart) = results.enpart() else { return };
         let warnings = warnings(&enpart);
         let mut header = RichText::new(match enpart.integration_error_kcal {
-            Some(e) => format!("Energy decomposition (IQA) \u{b7} error {}", kcal(e)),
-            None => "Energy decomposition (IQA)".to_string(),
+            Some(e) => format!("Energy partitioning (IQA) \u{b7} error {}", kcal(e)),
+            None => "Energy partitioning (IQA)".to_string(),
         })
         .strong();
         if !warnings.is_empty() {
@@ -105,7 +105,7 @@ impl App {
         }
         egui::CollapsingHeader::new(header).id_salt("apost_enpart").show(ui, |ui| {
             if enpart.total_energy.is_none() {
-                ui.label(RichText::new("The run stopped during the energy decomposition: no terms were written.").color(NOTICE));
+                ui.label(RichText::new("The run stopped during the energy partitioning: no terms were written.").color(NOTICE));
             }
             let two = enpart.two_electron_integration.as_ref();
             let notice = |text: String, warn: bool| if warn { RichText::new(text).monospace().color(NOTICE) } else { RichText::new(text).monospace() };

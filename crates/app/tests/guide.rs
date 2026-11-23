@@ -416,9 +416,9 @@ fn local_spin() {
     snap_figure(&mut guide, "local-spin-intra", 1200, 750);
 }
 
-/// "Energy decomposition (IQA)".
+/// "Energy partitioning (IQA)".
 #[test]
-fn energy_decomposition() {
+fn energy_partitioning() {
     let mut guide = open_example("H2O-Dimer-B3LYP");
     frame(&mut guide, 0.0, 0.0, 0.6);
     choose(&mut guide, "Nothing", "Inter-fragment interaction energy (TFVC)");
@@ -438,7 +438,7 @@ fn energy_decomposition() {
     guide.state_mut().select_atoms(&[0, 4]);
     guide.run_steps(3);
     sees_text(&guide, "Selected pair");
-    guide.get_by_label_contains("Energy decomposition (IQA) \u{b7} error").click_accesskit();
+    guide.get_by_label_contains("Energy partitioning (IQA) \u{b7} error").click_accesskit();
     guide.run_steps(3);
     sees(&guide, "Integration error");
     settle(&mut guide);

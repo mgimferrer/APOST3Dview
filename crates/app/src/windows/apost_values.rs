@@ -388,7 +388,7 @@ fn strongest_pairs(ui: &mut egui::Ui, matrix: &MatrixObject, names: &[String], d
     clicked
 }
 
-/// au or kcal/mol, for the energies of the energy decomposition.
+/// au or kcal/mol, for the energies of the energy partitioning.
 pub(crate) fn energy_unit_selector(ui: &mut egui::Ui, unit: &mut EnergyUnit) {
     ui.horizontal(|ui| {
         ui.label("Energies in");

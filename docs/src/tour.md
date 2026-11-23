@@ -14,15 +14,15 @@ In the **APOST-3D** window, open the **Show** menu and choose *Inter-fragment bo
 
 More in [Fragments, charges and bond orders](results/fragments.md).
 
-## An energy decomposition: H2O-Dimer-B3LYP
+## An energy partitioning: H2O-Dimer-B3LYP
 
-The water dimer at B3LYP/cc-pVDZ, with TFVC atoms, each water a fragment, and APOST-3D's energy decomposition (IQA).
+The water dimer at B3LYP/cc-pVDZ, with TFVC atoms, each water a fragment, and APOST-3D's energy partitioning (IQA).
 
 In **Show**, choose *Inter-atomic interaction energy (TFVC)*. The molecule is seen from O1: every other atom takes the color of its interaction energy with O1, in kcal/mol, red for attraction and blue for repulsion.
 
 ![Interaction energies seen from O1](images/tour-iqa.png)
 
-More in [Energy decomposition (IQA)](results/iqa.md).
+More in [Energy partitioning (IQA)](results/iqa.md).
 
 ## A shared OSLO in two colors: C2H6-OSLO-2CH3
 
@@ -44,7 +44,7 @@ Open **Surfaces**, choose *GEOS EFOs* in the **Orbitals:** menu, click **Select 
 
 ## A correlated density: H2O-CAS44
 
-Water at CASSCF(4,4)/STO-3G, computed with PySCF, with TFVC atoms, the local spin and the energy decomposition of the correlated wavefunction.
+Water at CASSCF(4,4)/STO-3G, computed with PySCF, with TFVC atoms, the local spin and the energy partitioning of the correlated wavefunction.
 
 Open **Surfaces**, tick **Total density**, and click **Generate 1 surface(s)**. The density drawn is the CASSCF density, which APOST-3Dview evaluates from the density matrix stored in the `.fchk`; the total density starts translucent, so the molecule shows through.
 

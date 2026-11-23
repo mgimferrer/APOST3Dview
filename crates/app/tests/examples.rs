@@ -72,7 +72,7 @@ fn fragments_charges_and_bond_orders() {
 }
 
 #[test]
-fn energy_decomposition() {
+fn energy_partitioning() {
     let mut harness = open("H2O-Dimer-B3LYP");
     menu_offers(&mut harness, "Nothing", &["Inter-atomic interaction energy (TFVC)", "Inter-fragment interaction energy (TFVC)"]);
     choose(&mut harness, "Nothing", "Inter-atomic interaction energy (TFVC)");
@@ -80,7 +80,7 @@ fn energy_decomposition() {
     harness.get_by_label_contains("pair from the multipolar expansion");
     harness.get_by_label("Logarithmic colors");
     menu_offers(&mut harness, "Total (IQA)", &["Classical (electrostatic)"]);
-    harness.get_by_label_contains("Energy decomposition (IQA) \u{b7} error");
+    harness.get_by_label_contains("Energy partitioning (IQA) \u{b7} error");
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn ferrocene_efos_and_oslos() {
 }
 
 #[test]
-fn ferrocene_energy_decomposition() {
+fn ferrocene_energy_partitioning() {
     let mut harness = open("FeCp2-IQA-ALLPAIRS");
     choose(&mut harness, "Nothing", "Inter-fragment interaction energy (TFVC)");
     assert_eq!(harness.state().legend_title().as_deref(), Some("Inter-fragment interaction energy with 1 Fe (TFVC), kcal/mol"));

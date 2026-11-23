@@ -70,7 +70,7 @@ impl App {
     pub(crate) fn show_key_numbers(&mut self, ui: &mut egui::Ui) {
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) else { return };
         let Some(Ok(results)) = structure.apost.as_ref().map(|a| &a.results) else { return };
-        // The energy decomposition's numbers are in its own section.
+        // The energy partitioning's numbers are in its own section.
         let entries: Vec<&IndexEntry> =
             results.entries(QuantityKind::Scalar).filter(|e| (self.list_other_values || !e.is_comparison()) && e.analysis.as_deref() != Some("enpart")).collect();
         if entries.is_empty() {

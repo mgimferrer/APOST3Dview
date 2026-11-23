@@ -81,7 +81,7 @@ fn show_analyses(ui: &mut egui::Ui, draft: &mut InputDraft) {
         ui.checkbox(&mut input.spin, "Local spin (SPIN)");
     }
     let mut enpart = input.enpart.is_some();
-    if ui.add_enabled(real || enpart, egui::Checkbox::new(&mut enpart, "Energy decomposition, IQA (ENPART)")).on_disabled_hover_text("ENPART needs a real-space atomic definition (TFVC)").changed() {
+    if ui.add_enabled(real || enpart, egui::Checkbox::new(&mut enpart, "Energy partitioning, IQA (ENPART)")).on_disabled_hover_text("ENPART needs a real-space atomic definition (TFVC)").changed() {
         input.enpart = enpart.then_some(EnpartOptions { method: None, fast_grid: false });
     }
 }
@@ -338,7 +338,7 @@ impl App {
             show_fragments(ui, draft, &atomic_numbers, &selected, &mut action);
         });
         if draft.input.enpart.is_some() {
-            egui::CollapsingHeader::new(RichText::new("Energy decomposition (ENPART)").strong()).id_salt("input_enpart").default_open(true).show(ui, |ui| show_enpart_options(ui, draft));
+            egui::CollapsingHeader::new(RichText::new("Energy partitioning (ENPART)").strong()).id_salt("input_enpart").default_open(true).show(ui, |ui| show_enpart_options(ui, draft));
         }
         egui::CollapsingHeader::new(RichText::new("Input file").strong()).id_salt("input_text").default_open(false).show(ui, |ui| {
             ui.label(RichText::new(&file_name).strong());

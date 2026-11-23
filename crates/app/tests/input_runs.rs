@@ -98,13 +98,13 @@ fn generated_inputs_run_in_apost3d() {
         click(h, "Around the selected atom(s)");
     });
     run(&apost3d, "H2O-Dimer-B3LYP", &[], |h| {
-        click(h, "Energy decomposition, IQA (ENPART)");
+        click(h, "Energy partitioning, IQA (ENPART)");
         click(h, "Separate molecules");
         click(h, "Faster (40 \u{d7} 146)");
     });
     run(&apost3d, "H2O-CAS44", &["dm1", "dm2"], |h| {
         click(h, "Local spin (SPIN)");
-        click(h, "Energy decomposition, IQA (ENPART)");
+        click(h, "Energy partitioning, IQA (ENPART)");
         click(h, "Faster (40 \u{d7} 146)");
     });
 }

@@ -1,4 +1,4 @@
-//! The energy decomposition (ENPART, IQA): the IQA view with its term
+//! The energy partitioning (ENPART, IQA): the IQA view with its term
 //! selector, between atoms and between fragments, the pairs from the
 //! multipolar expansion marked, the atomic energies as numbers, the
 //! selected pair's decomposition, and the run-quality section.
@@ -24,7 +24,7 @@ fn iqa_between_atoms_with_its_terms() {
     harness.get_by_label_contains("pair from the multipolar expansion (approximate exchange-correlation)");
     harness.get_by_label("Intra-atomic (self) energy of O1: \u{2212}46986.2 kcal/mol");
     // The run-quality section, with the final error in its heading.
-    harness.get_by_label_contains("Energy decomposition (IQA) \u{b7} error");
+    harness.get_by_label_contains("Energy partitioning (IQA) \u{b7} error");
     screenshot(&mut harness, "iqa-atoms-total");
 
     // Another term, the same atoms.
@@ -74,7 +74,7 @@ fn atomic_energies_and_the_selected_pair() {
     let Some(dir) = fixtures_dir() else { return };
     let mut harness = app_with(vec![dir.join("H2O-Dimer-B3LYP.apost.json")]);
     // Atomic energies as numbers, in the IQA section.
-    harness.get_by_label_contains("Energy decomposition (IQA)").click_accesskit();
+    harness.get_by_label_contains("Energy partitioning (IQA)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("Atomic energies, kcal/mol");
     harness.get_by_label("Fragment energies, kcal/mol");
@@ -91,16 +91,16 @@ fn atomic_energies_and_the_selected_pair() {
 fn stopped_and_unreferenced_runs() {
     let Some(dir) = fixtures_dir() else { return };
     let mut harness = app_with(vec![dir.join("H2O-WB97X.apost.json")]);
-    harness.get_by_label_contains("Energy decomposition (IQA)").click_accesskit();
+    harness.get_by_label_contains("Energy partitioning (IQA)").click_accesskit();
     harness.run_steps(2);
-    harness.get_by_label("The run stopped during the energy decomposition: no terms were written.");
+    harness.get_by_label("The run stopped during the energy partitioning: no terms were written.");
     let mut harness = app_with(vec![dir.join("H2O-Dimer-RHF-NOREF.apost.json")]);
-    harness.get_by_label_contains("Energy decomposition (IQA)").click_accesskit();
+    harness.get_by_label_contains("Energy partitioning (IQA)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label_contains("Not possible: the .fchk has no reference energy components");
     // A run in an external field: its energy is listed.
     let mut harness = app_with(vec![dir.join("H2O-RHF-FIELD.apost.json")]);
-    harness.get_by_label_contains("Energy decomposition (IQA)").click_accesskit();
+    harness.get_by_label_contains("Energy partitioning (IQA)").click_accesskit();
     harness.run_steps(2);
     harness.get_by_label("External field energy");
 }

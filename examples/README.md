@@ -13,12 +13,12 @@ opens with its results.
 | Folder | System | What it shows |
 |---|---|---|
 | `FeCN5NO3--UBLYP` | [Fe(CN)5NO]³⁻, UBLYP/def2-SVP, Löwdin atoms, seven fragments | Fragments, charges, bond orders, EOS oxidation states |
-| `H2O-Dimer-B3LYP` | Water dimer, B3LYP/cc-pVDZ, TFVC atoms | Energy decomposition (IQA) |
+| `H2O-Dimer-B3LYP` | Water dimer, B3LYP/cc-pVDZ, TFVC atoms | Energy partitioning (IQA) |
 | `C2H6-OSLO-2CH3` | Ethane, B3LYP/cc-pVTZ, TFVC atoms, two CH3 | OSLOs, the C-C bond shared in two colors |
 | `CH3F-GEOS` | Fluoromethane, BP86/def2-SVP, TFVC atoms, F and CH3 | GEOS oxidation states and effective fragment orbitals |
 | `H2O-CAS44` | Water, CASSCF(4,4)/STO-3G from PySCF, TFVC atoms | Correlated density, natural orbitals, local spin |
 | `FeCp2-EOS-OSLO` | Ferrocene, B3LYP/def2-TZVPP, TFVC atoms, Fe and two Cp | EOS and OSLO: the Fe d and Cp pi effective fragment orbitals, OSLOs with their FOLI |
-| `FeCp2-IQA-ALLPAIRS` | Ferrocene, as above, every atom pair integrated numerically | Energy decomposition (IQA) between Fe and the rings, and atom by atom |
+| `FeCp2-IQA-ALLPAIRS` | Ferrocene, as above, every atom pair integrated numerically | Energy partitioning (IQA) between Fe and the rings, and atom by atom |
 | `FeCO6-EOS` | [Fe(CO)6]²⁺, B3LYP/def2-TZVP, TFVC atoms, Fe and six CO; free CO (`CO.fchk`) | The sigma, pi and pi* effective fragment orbitals of a carbonyl, next to free CO's own MOs |
 
 In each folder:

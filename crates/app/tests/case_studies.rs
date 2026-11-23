@@ -1041,7 +1041,7 @@ fn ethane_and_ammonia_borane_oslos() {
     }
     let mut patch = String::from(FIGURE_LOOK);
     for _ in 0..2 {
-        patch.push_str("[[structures]]\n[[structures.surfaces]]\nisovalue = 0.08\nvisible = true\n");
+        patch.push_str("[[structures]]\n[[structures.surfaces]]\nisovalue = 0.1\nvisible = true\n");
     }
     // A single-column figure (3.31 in), its captions at 8 pt as printed.
     patch.push_str("[figure.settings]\nfixed_layout = true\nrows = 1\ncolumns = 2\nfigure_width_in = 3.31\nfont_size_pt = 8.0\n");
@@ -1236,13 +1236,16 @@ fn toc_ferrocene_values() {
     let front = atoms.fragments[1].iter().copied().find(|&a| atoms.symbols[a] == "C").unwrap();
     let toward = atoms.positions[front] - atoms.centroid(&atoms.fragments[1]);
     let view = orientation(axis.cross(toward), axis, 0.45, 0.35);
+    // (name, results, quantity, focus, label size, extra view settings). The
+    // TOC itself uses the unlabeled picture and writes the labels at print
+    // size (toc.py in the manuscript folder).
     let options = [
-        ("toc-fecp2-charges", &eos, "populations.fragments.charges", 0, ""),
-        ("toc-fecp2-bond-orders", &eos, "bond_orders.fragments.matrix", 0, ""),
-        ("toc-fecp2-iqa", &iqa, "enpart.total.fragments", 1, "log_scale = true\n"),
+        ("toc-fecp2-charges", &eos, "populations.fragments.charges", 0, 48.0, ""),
+        ("toc-fecp2-bond-orders", &eos, "bond_orders.fragments.matrix", 0, 48.0, ""),
+        ("toc-fecp2-iqa", &iqa, "enpart.total.fragments", 1, 48.0, "log_scale = true\n"),
     ];
-    for (name, results, id, focus, extra) in options {
-        let view_patch = results_view(id, focus).replace("labels = true\n", &format!("labels = true\nlabel_size = 48.0\n{extra}"));
+    for (name, results, id, focus, label_size, extra) in options {
+        let view_patch = results_view(id, focus).replace("labels = true\n", &format!("labels = true\nlabel_size = {label_size:.1}\n{extra}"));
         let patch = format!("{FIGURE_LOOK}{}{view_patch}", structure_patch(&atoms, false));
         let session = out.join(format!("{name}.a3dview"));
         let mut harness = build(vec![results.clone()], |_| {}, &session, &patch, view, 1.6);

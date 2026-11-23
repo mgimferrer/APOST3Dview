@@ -149,7 +149,7 @@ fn oxidation_states_show_their_reliability_index() {
     harness.run_steps(2);
     assert!(harness.state_mut().show_on_molecule("eos.fragments.oxidation_states"));
     harness.run_steps(2);
-    assert_eq!(harness.state().legend_title().as_deref(), Some("EOS oxidation states (Lowdin), R = 64.5%"));
+    assert_eq!(harness.state().legend_title().as_deref(), Some("EOS oxidation states (Lowdin), R(%) = 64.5"));
 }
 
 /// The legend's size can be raised for a figure printed small: the exported

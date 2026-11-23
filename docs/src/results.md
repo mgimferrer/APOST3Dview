@@ -33,7 +33,7 @@ At first nothing is drawn on the molecule. Choose what to show in **Show**, unde
 - Any value APOST-3D computed. The menu groups them by where they live:
   - *Fragment values* and *Atom values*: one value on each fragment or atom, such as a charge, a spin population or an oxidation state. A fragment is colored by its value, an atom gets a colored halo.
   - *Between fragments* and *Between atoms*: one value for each pair, such as a bond order or an interaction energy.
-  - *Energy decomposition (IQA)*, when the run has one (see [Energy decomposition (IQA)](results/iqa.md)).
+  - *Energy partitioning (IQA)*, when the run has one (see [Energy partitioning (IQA)](results/iqa.md)).
 
 ![The Show menu](images/results-show-menu.png)
 
@@ -67,5 +67,5 @@ With two atoms selected, **Selected pair** lists every pair value APOST-3D compu
 
 - [Fragments, charges and bond orders](results/fragments.md)
 - [Local spin](results/local-spin.md)
-- [Energy decomposition (IQA)](results/iqa.md)
+- [Energy partitioning (IQA)](results/iqa.md)
 - [Effective fragment orbitals and OSLOs](results/efos-oslos.md)
