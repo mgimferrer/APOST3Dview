@@ -63,23 +63,19 @@ done
 echo "From APOST-3D $(cat "$reference/APOST3D-COMMIT" 2>/dev/null || echo '(commit unknown)')."
 
 # The paper's case studies that are examples too (Martí's calculations, run
-# with APOST-3D on his cluster, in fixtures/case-studies/<system>/, local
-# only): refreshed from there when it is here. After a results-format
-# change, they are run again on the cluster first.
+# with APOST-3D 5.0.0 on his cluster, in fixtures/case-studies/<system>/,
+# local only): refreshed from there when it is here. After a results-format
+# change, they are run again on the cluster first. Their figure sessions are
+# copied from the figure output (target/case-studies/figures) with the paths
+# made local, when that output is here.
 cases="$repo/fixtures/case-studies"
 if [ ! -d "$cases" ]; then
     echo "No fixtures/case-studies: FeCp2-EOS-OSLO, FeCp2-IQA-ALLPAIRS and FeCO6-EOS left as they are."
     exit 0
 fi
 # The IQA example is the manuscript's run with every atom pair integrated
-# (THREBOD -1, revision-1 on the cluster); its .fchk is FeCp2-IQA.fchk under
-# the job's name.
-iqa="$cases/revision-1/results/ferrocene-iqa"
-if [ -f "$iqa/FeCp2-IQA-ALLPAIRS.apost.json" ] && [ ! -f "$iqa/FeCp2-IQA-ALLPAIRS.fchk" ]; then
-    cp "$cases/FeCp2/FeCp2-IQA.fchk" "$iqa/FeCp2-IQA-ALLPAIRS.fchk"
-fi
-rm -rf "$repo/examples/FeCp2-IQA"
-for entry in FeCp2/FeCp2-EOS-OSLO revision-1/results/ferrocene-iqa/FeCp2-IQA-ALLPAIRS FeCO6/FeCO6-EOS; do
+# (THREBOD -1), next to the ferrocene .fchk under the job's name.
+for entry in FeCp2/FeCp2-EOS-OSLO FeCp2/FeCp2-IQA-ALLPAIRS FeCO6/FeCO6-EOS; do
     job=$(basename "$entry")
     src="$cases/$(dirname "$entry")"
     dest="$repo/examples/$job"
@@ -100,3 +96,12 @@ for entry in FeCp2/FeCp2-EOS-OSLO revision-1/results/ferrocene-iqa/FeCp2-IQA-ALL
     fi
     echo "examples/$job: $(ls "$dest" | wc -l | tr -d ' ') files"
 done
+figures="$repo/target/case-studies/figures"
+if [ -d "$figures" ]; then
+    for pair in FeCO6-EOS:carbonyl-efos FeCp2-IQA-ALLPAIRS:ferrocene-iqa-fragments FeCp2-IQA-ALLPAIRS:ferrocene-iqa-classical FeCp2-IQA-ALLPAIRS:ferrocene-iqa-xc; do
+        job=${pair%%:*} session=${pair##*:}
+        sed -E -e '/^(file|results)_absolute = /d' -e 's#^(file|results) = ".*/([^/]+)"$#\1 = "\2"#' \
+            "$figures/$session.a3dview" > "$repo/examples/$job/$session.a3dview"
+    done
+    echo "Figure sessions copied into examples/FeCO6-EOS and examples/FeCp2-IQA-ALLPAIRS."
+fi

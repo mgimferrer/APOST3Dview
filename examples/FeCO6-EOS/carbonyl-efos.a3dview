@@ -1,8 +1,8 @@
-# APOST3Dview session: open it with APOST3Dview (Open, drag and drop, or the command line).
+# APOST-3Dview session: open it with APOST-3Dview (Open, drag and drop, or the command line).
 
 format = "apost3dview-session"
 version = 1
-written_by = "APOST3Dview 0.9.0"
+written_by = "APOST-3Dview 1.0.0"
 active_structure = 0
 
 [view]
@@ -52,6 +52,7 @@ measurement_line_color = [
     0.05,
     0.05,
 ]
+orbital_colors = "blue-red"
 
 [appearance.material]
 ambient = 0.3
@@ -94,6 +95,12 @@ fresnel = [
     0.0,
 ]
 
+[appearance.molecule_style]
+style = "ball-and-stick"
+stick_radius = 0.16
+thin_stick_radius = 0.06
+space_filling_scale = 1.0
+
 [[structures]]
 file = "FeCO6-EOS.fchk"
 atomic_numbers = [
@@ -124,16 +131,18 @@ size = 7243121
 sha256 = "25d63a0f9ea18f7cfd9db7afc4c02f6478a5d81e3cfadb8c38a514bd8d23aab4"
 
 [structures.results_fingerprint]
-size = 54740
-sha256 = "8bc0c891c02d8bed1ff08977acf5f2cbe02d3f9fdde7e493bf315c6327ed3c09"
+size = 54739
+sha256 = "45b9e78b308b96b7ccebc88478b20fa6a8f936ab00b6b61e5c69a85af437ead3"
 
 [structures.results_view]
 visible = true
 focus = 0
 labels = true
 label_size = 34.0
+legend_size = 1.0
 bond_thickness = false
 log_scale = false
+reverse_colors = false
 energy_unit = "kcal_per_mol"
 names = true
 diagonal = false

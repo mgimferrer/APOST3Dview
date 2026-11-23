@@ -6,7 +6,7 @@
                   / ___ |/ ____/ /_/ /___/ // /_____/__/ / /_/ /
                  /_/  |_/_/    \____//____//_/     /____/_____/
 
-                        Version 5   --   22 September 2026
+                        Version 5   --   12 November 2026
                          --------------------------------
 
       Real-space and Hilbert-space tools for wave function analysis
@@ -93,7 +93,7 @@
 
   ------------------------------------------------------------------------------
 
-  OpenMP threads                          : 4
+  OpenMP threads                          : 8
 
   ------------------------
     WAVEFUNCTION SUMMARY
@@ -106,7 +106,7 @@
   Primitive gaussians                     : 714
   Spin density                            : built from the MOs
   Doubly occupied MOs                     : 54
-  SCF energy (au)                         :   -1943.3773914620
+  SCF energy (au)                         :   -1943.3773915
 
   -----------------
     INPUT SUMMARY
@@ -127,8 +127,8 @@
   Fragment  6 :   6  12
   Fragment  7 :   7  13
 
-  TIMING CPU  :: Initialization                                    0.64 s
-  TIMING WALL :: Initialization                                    0.70 s
+  TIMING CPU  :: Initialization                                    2.64 s
+  TIMING WALL :: Initialization                                    0.98 s
 
   ----------------------------------------
     SETTING ATOMIC GRIDS FOR INTEGRATION
@@ -166,8 +166,8 @@
 
   Sum of atomic overlaps, largest error   : 7.73E-03 (from the analytic overlap S)
 
-  TIMING CPU  :: Atomic definition                                14.64 s
-  TIMING WALL :: Atomic definition                                 3.89 s
+  TIMING CPU  :: Atomic definition                                17.78 s
+  TIMING WALL :: Atomic definition                                 3.16 s
 
   -----------------------------
     DOING POPULATION ANALYSIS
@@ -538,8 +538,8 @@
   ---------------------
   Total (diagonal and one triangle)       :     108.019400
 
-  TIMING CPU  :: Population analysis                               0.63 s
-  TIMING WALL :: Population analysis                               0.61 s
+  TIMING CPU  :: Population analysis                               0.68 s
+  TIMING WALL :: Population analysis                               0.64 s
 
   --------------------------------------
     EFFECTIVE FRAGMENT ORBITALS (EFOs)
@@ -685,9 +685,9 @@
   EFO file (.fchk)                        : FeCO6-EOS-EOS-EFOs.fchk
   Unweighted EFO file (.fchk)             : FeCO6-EOS-EOS-EFOs-unweighted.fchk
 
-  TIMING CPU  :: EFFAO computation                                75.76 s
-  TIMING WALL :: EFFAO computation                                31.78 s
-  TIMING CPU  :: EOS analysis                                      0.29 s
-  TIMING WALL :: EOS analysis                                      0.45 s
+  TIMING CPU  :: EFFAO computation                                94.69 s
+  TIMING WALL :: EFFAO computation                                21.42 s
+  TIMING CPU  :: EOS analysis                                      0.40 s
+  TIMING WALL :: EOS analysis                                      0.52 s
 
   ...Normal Termination of APOST-3D...

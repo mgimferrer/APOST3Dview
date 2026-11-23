@@ -6,7 +6,7 @@
                   / ___ |/ ____/ /_/ /___/ // /_____/__/ / /_/ /
                  /_/  |_/_/    \____//____//_/     /____/_____/
 
-                        Version 5   --   22 September 2026
+                        Version 5   --   12 November 2026
                          --------------------------------
 
       Real-space and Hilbert-space tools for wave function analysis
@@ -93,7 +93,7 @@
 
   ------------------------------------------------------------------------------
 
-  OpenMP threads                          : 48
+  OpenMP threads                          : 16
 
   ------------------------
     WAVEFUNCTION SUMMARY
@@ -106,7 +106,7 @@
   Primitive gaussians                     : 810
   Spin density                            : built from the MOs
   Doubly occupied MOs                     : 48
-  SCF energy (au)                         :   -1650.9955095893
+  SCF energy (au)                         :   -1650.9955096
 
   -----------------
     INPUT SUMMARY
@@ -128,8 +128,8 @@
   Fragment  2 :   2   3   4   5   6   7   8   9  10  11
   Fragment  3 :  12  13  14  15  16  17  18  19  20  21
 
-  TIMING CPU  :: Initialization                                    4.86 s
-  TIMING WALL :: Initialization                                    1.03 s
+  TIMING CPU  :: Initialization                                    1.67 s
+  TIMING WALL :: Initialization                                    0.95 s
 
   ----------------------------------------
     SETTING ATOMIC GRIDS FOR INTEGRATION
@@ -200,8 +200,8 @@
 
   Sum of atomic overlaps, largest error   : 2.20E-05 (from the analytic overlap S)
 
-  TIMING CPU  :: Atomic definition                              1029.09 s
-  TIMING WALL :: Atomic definition                                27.64 s
+  TIMING CPU  :: Atomic definition                              1013.13 s
+  TIMING WALL :: Atomic definition                                68.68 s
 
   -----------------------------
     DOING POPULATION ANALYSIS
@@ -539,8 +539,8 @@
   ---------------------------------------------
   Total (diagonal and one triangle)       :      96.000056
 
-  TIMING CPU  :: Population analysis                               1.98 s
-  TIMING WALL :: Population analysis                               1.53 s
+  TIMING CPU  :: Population analysis                               1.61 s
+  TIMING WALL :: Population analysis                               1.52 s
 
   --------------------------------
     ENERGY PARTITIONING (ENPART)
@@ -854,8 +854,8 @@
   ---------------------------------------------
   Total (diagonal and one triangle)       :     909.240217
 
-  TIMING CPU  :: ENPART one-electron terms                       138.03 s
-  TIMING WALL :: ENPART one-electron terms                         3.44 s
+  TIMING CPU  :: ENPART one-electron terms                       131.66 s
+  TIMING WALL :: ENPART one-electron terms                         8.48 s
 
   ------------------------------------
     DFT EXCHANGE-CORRELATION (BODEN)
@@ -1022,8 +1022,8 @@
   ---------------------------------------------
   Total (diagonal and one triangle)       :     -91.944506
 
-  TIMING CPU  :: ENPART DFT exchange-correlation                4625.51 s
-  TIMING WALL :: ENPART DFT exchange-correlation                 120.30 s
+  TIMING CPU  :: ENPART DFT exchange-correlation                4217.91 s
+  TIMING WALL :: ENPART DFT exchange-correlation                 291.20 s
 
   ---------------------
     TWO-ELECTRON GRID
@@ -1033,10 +1033,10 @@
   Angular points                          : 590
   Grid points                             : 1858500
 
-  TIMING CPU  :: ENPART Coulomb                                 6958.31 s
-  TIMING WALL :: ENPART Coulomb                                  148.62 s
-  TIMING CPU  :: ENPART exact exchange                       1047613.49 s
-  TIMING WALL :: ENPART exact exchange                         22609.35 s
+  TIMING CPU  :: ENPART Coulomb                                 6580.04 s
+  TIMING WALL :: ENPART Coulomb                                  412.24 s
+  TIMING CPU  :: ENPART exact exchange                       1025405.05 s
+  TIMING WALL :: ENPART exact exchange                         64295.00 s
 
   ----------------------------------
     TWO-ELECTRON INTEGRATION ERROR
@@ -1054,8 +1054,8 @@
   The one-center Coulomb and exchange terms of the matrices below
   are the corrected ones; the pair terms do not change.
 
-  TIMING CPU  :: ENPART zero-error correction                 140209.72 s
-  TIMING WALL :: ENPART zero-error correction                   2998.49 s
+  TIMING CPU  :: ENPART zero-error correction                 123694.98 s
+  TIMING WALL :: ENPART zero-error correction                   7766.47 s
 
   ------------------
     COULOMB ENERGY
@@ -1725,7 +1725,7 @@
   ---------------------------------------------
   Total (diagonal and one triangle)       :       0.279938
 
-  TIMING CPU  :: ENPART two-electron terms                   1195741.81 s
-  TIMING WALL :: ENPART two-electron terms                     25776.86 s
+  TIMING CPU  :: ENPART two-electron terms                   1156625.58 s
+  TIMING WALL :: ENPART two-electron terms                     72533.23 s
 
   ...Normal Termination of APOST-3D...

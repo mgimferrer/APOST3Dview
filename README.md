@@ -16,7 +16,7 @@ APOST-3Dview is free, and nothing else needs to be installed:
 | macOS 11 or later (Apple Silicon and Intel) | [APOST3Dview-macos.dmg](https://github.com/mgimferrer/APOST3Dview/releases/latest/download/APOST3Dview-macos.dmg) |
 | Linux (x86_64) | [APOST3Dview-linux.tar.gz](https://github.com/mgimferrer/APOST3Dview/releases/latest/download/APOST3Dview-linux.tar.gz) |
 
-The first time you open it, Windows and macOS ask once whether to trust it, because APOST-3Dview isn't signed with a paid certificate: [what to click](https://mgimferrer.github.io/APOST3Dview/install.html). Each download also holds an `examples` folder with five APOST-3D calculations to try, and the user guide to read offline. Earlier versions are on the [releases page](https://github.com/mgimferrer/APOST3Dview/releases).
+The first time you open it, Windows and macOS ask once whether to trust it, because APOST-3Dview isn't signed with a paid certificate: [what to click](https://mgimferrer.github.io/APOST3Dview/install.html). Each download also holds an `examples` folder with eight APOST-3D calculations to try, and the user guide to read offline. Earlier versions are on the [releases page](https://github.com/mgimferrer/APOST3Dview/releases).
 
 ## Documentation
 

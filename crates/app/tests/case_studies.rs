@@ -24,11 +24,14 @@ fn case_studies() -> Option<PathBuf> {
 }
 
 /// (folder, job, orbital sets in the Surfaces window's Orbitals menu).
-const RUNS: [(&str, &str, &[&str]); 12] = [
-    ("Nitroprusside", "NP-EOS", &["EOS EFOs"]),
-    ("p-Benzyne", "pB-CAS22", &[]),
+const RUNS: [(&str, &str, &[&str]); 15] = [
+    ("nitroprusside", "NP-EOS", &["EOS EFOs"]),
+    ("p-benzyne", "pB-CAS22", &[]),
     ("FeCp2", "FeCp2-EOS-OSLO", &["EOS EFOs", "OSLOs"]),
     ("FeCp2", "FeCp2-IQA", &[]),
+    ("FeCp2", "FeCp2-IQA-ALLPAIRS", &[]),
+    ("oslo-ethane-borane", "H3CCH3-OSLO", &["OSLOs"]),
+    ("oslo-ethane-borane", "H3NBH3-OSLO", &["OSLOs"]),
     ("FeCO6", "FeCO6-EOS", &["EOS EFOs"]),
     ("Be-cAAC-Dip", "Be-cAAC-Dip-EOS", &["EOS EFOs"]),
     ("Be-cAAC-Dip", "Be-cAAC-Dip-GEOS", &["GEOS EFOs"]),
@@ -583,18 +586,8 @@ fn print_sized(view: &str, label_size: f32, legend_size: f32) -> String {
 fn ferrocene_iqa() {
     let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
     // The run with every atom pair integrated numerically (THREBOD -1, the
-    // paper's numbers; revision-1 on the cluster), next to a copy of its
-    // .fchk under the job's name.
-    let job = "FeCp2-IQA-ALLPAIRS";
-    let run = dir.join(format!("revision-1/results/ferrocene-iqa/{job}.apost.json"));
-    if !run.is_file() {
-        eprintln!("{} not found", run.display());
-        return;
-    }
-    let folder = common::scratch_dir("ferrocene-iqa-allpairs");
-    std::fs::copy(&run, folder.join(format!("{job}.apost.json"))).unwrap();
-    std::fs::copy(dir.join("FeCp2/FeCp2-IQA.fchk"), folder.join(format!("{job}.fchk"))).unwrap();
-    let results = folder.join(format!("{job}.apost.json"));
+    // paper's numbers), next to the ferrocene .fchk under the job's name.
+    let results = dir.join("FeCp2/FeCp2-IQA-ALLPAIRS.apost.json");
     let atoms = Atoms::of(&read_results(&results));
     // Ferrocene on its side (the rings left and right, as in the TOC
     // picture), so fragment labels don't overlap.
@@ -930,7 +923,7 @@ fn octahedral_view_at(atoms: &Atoms, axial: usize, elevation: f32, turn: f32) ->
 #[test]
 fn nitroprusside_figure() {
     let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
-    let results = dir.join("Nitroprusside/NP-EOS.apost.json");
+    let results = dir.join("nitroprusside/NP-EOS.apost.json");
     let atoms = Atoms::of(&read_results(&results));
     let view = octahedral_view(&atoms, 2);
     // (b) EOS oxidation states, (c) fragment bond orders from Fe.
@@ -991,7 +984,7 @@ fn nitroprusside_figure() {
 #[test]
 fn p_benzyne_figure() {
     let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
-    let results = dir.join("p-Benzyne/pB-CAS22.apost.json");
+    let results = dir.join("p-benzyne/pB-CAS22.apost.json");
     let atoms = Atoms::of(&read_results(&results));
     // The ring facing the viewer, the two radical carbons (C1, C4) left and
     // right.
@@ -1023,6 +1016,40 @@ fn p_benzyne_figure() {
     eprintln!("pb local spin: {:?}", harness.state().legend_title());
     save_png(&mut harness, &out.join("pb-local-spin.png"), 1400, 1100);
     harness.state().save_session_to(&session).unwrap();
+}
+
+/// The OSLO example: ethane (CH3 | CH3) and ammonia borane (NH3 | BH3), the
+/// same number of electrons, each split into its halves. The bond OSLO (the
+/// last, 9, of each) in the usual orbital colors, its fragments in the
+/// caption: shared by the two CH3, owned by NH3. Ammonia borane aligned onto ethane
+/// on all eight atoms (same numbering: X, its three H, Y, its three H).
+#[test]
+fn ethane_and_ammonia_borane_oslos() {
+    let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
+    let ethane = dir.join("oslo-ethane-borane/H3CCH3-OSLO.apost.json");
+    let borane = dir.join("oslo-ethane-borane/H3NBH3-OSLO.apost.json");
+    let atoms = Atoms::of(&read_results(&ethane));
+    // The bond horizontal (C1 left), one H of C1 straight up, seen a little
+    // from above and turned so the H atoms behind show.
+    let p = &atoms.positions;
+    let axis = p[4] - p[0];
+    let h = p[1] - p[0];
+    let up = h - axis * (h.dot(axis) / axis.length_squared());
+    let view = orientation(up, axis, 0.15, 0.3);
+    fn generate(harness: &mut egui_kittest::Harness<'static, apost3dview::App>, _: usize) {
+        generate_in_order(harness, "OSLOs", &[(8, false)]);
+    }
+    let mut patch = String::from(FIGURE_LOOK);
+    for _ in 0..2 {
+        patch.push_str("[[structures]]\n[[structures.surfaces]]\nisovalue = 0.08\nvisible = true\n");
+    }
+    // A single-column figure (3.31 in), its captions at 8 pt as printed.
+    patch.push_str("[figure.settings]\nfixed_layout = true\nrows = 1\ncolumns = 2\nfigure_width_in = 3.31\nfont_size_pt = 8.0\n");
+    for caption in ["C-C: 2.001 (CH3 + CH3)", "B-N: 1.236 (NH3)"] {
+        patch.push_str(&format!("[[figure.panels]]\ncaption = \"{caption}\"\n"));
+    }
+    let all: Vec<usize> = (0..8).collect();
+    aligned_figure(&out, "ethane-borane-oslos", [ethane, borane], [all.clone(), all], generate, &patch, view, 0.5);
 }
 
 /// Supporting Information: the rendering options on one scene, Be(cAAC)2
@@ -1086,7 +1113,7 @@ fn molecule_styles() {
 #[test]
 fn toc_pictures() {
     let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
-    let results = dir.join("Nitroprusside/NP-EOS.apost.json");
+    let results = dir.join("nitroprusside/NP-EOS.apost.json");
     let atoms = Atoms::of(&read_results(&results));
     let metal = atoms.positions[atoms.fragments[0][0]];
     let axis = atoms.positions[atoms.fragments[1][0]] - metal;
@@ -1203,12 +1230,7 @@ fn efo_shapes() {
 fn toc_ferrocene_values() {
     let (Some(dir), Some(out)) = (case_studies(), figures_dir()) else { return };
     let eos = dir.join("FeCp2/FeCp2-EOS-OSLO.apost.json");
-    let job = "FeCp2-IQA-ALLPAIRS";
-    let run = dir.join(format!("revision-1/results/ferrocene-iqa/{job}.apost.json"));
-    let folder = common::scratch_dir("toc-ferrocene-iqa");
-    std::fs::copy(&run, folder.join(format!("{job}.apost.json"))).unwrap();
-    std::fs::copy(dir.join("FeCp2/FeCp2-IQA.fchk"), folder.join(format!("{job}.fchk"))).unwrap();
-    let iqa = folder.join(format!("{job}.apost.json"));
+    let iqa = dir.join("FeCp2/FeCp2-IQA-ALLPAIRS.apost.json");
     let atoms = Atoms::of(&read_results(&eos));
     let axis = atoms.centroid(&atoms.fragments[2]) - atoms.centroid(&atoms.fragments[1]);
     let front = atoms.fragments[1].iter().copied().find(|&a| atoms.symbols[a] == "C").unwrap();
