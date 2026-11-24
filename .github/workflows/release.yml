@@ -174,5 +174,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sed "s/@VERSION@/${{ needs.version.outputs.version }}/g" packaging/release-notes.md > notes.md
+          version=${{ needs.version.outputs.version }}
+          sed "s/@VERSION@/$version/g" packaging/release-notes.md > notes.md
+          # What changed: this version's section of CHANGELOG.md (from its
+          # "## X.Y.Z" heading to the next "## "). A tag without one stops here.
+          scripts/changelog-section.sh "$version" > changes.md
+          { echo; echo "## What changed"; echo; cat changes.md; } >> notes.md
           gh release create "$GITHUB_REF_NAME" dist/* --draft --title "APOST-3Dview ${{ needs.version.outputs.version }}" --notes-file notes.md
