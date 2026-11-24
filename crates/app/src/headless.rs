@@ -21,7 +21,9 @@ pub const DEFAULT_SIZE: [u32; 2] = [1920, 1200];
 /// (or a single image with a caption) gives that figure; otherwise the
 /// view, `size` pixels.
 pub fn render_session(session: &Path, out: &Path, size: [u32; 2]) -> Result<String, String> {
-    let setup = egui_wgpu::WgpuSetup::CreateNew(egui_wgpu::WgpuSetupCreateNew::without_display_handle());
+    let mut create = egui_wgpu::WgpuSetupCreateNew::without_display_handle();
+    create.instance_descriptor.backends = crate::graphics::backends();
+    let setup = egui_wgpu::WgpuSetup::CreateNew(create);
     let instance = pollster::block_on(setup.new_instance());
     let options = egui_wgpu::RendererOptions {
         msaa_samples: apost3dview_render::MSAA_SAMPLES,
@@ -29,7 +31,10 @@ pub fn render_session(session: &Path, out: &Path, size: [u32; 2]) -> Result<Stri
         ..Default::default()
     };
     let render_state = pollster::block_on(egui_wgpu::RenderState::create(&egui_wgpu::WgpuConfiguration { wgpu_setup: setup, ..Default::default() }, &instance, None, options))
-        .map_err(|e| format!("no graphics device: {e}"))?;
+        .map_err(|e| format!("no graphics device: {e}\n\n{}", crate::graphics::no_adapter_message()))?;
+    if let Some(problem) = crate::graphics::unsupported_adapter(&render_state.adapter.get_info()) {
+        return Err(problem);
+    }
 
     let ctx = egui::Context::default();
     let mut cc = eframe::CreationContext::_new_kittest(ctx.clone());

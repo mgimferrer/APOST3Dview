@@ -17,7 +17,17 @@ APOST-3Dview draws with the graphics card, through DirectX 12 on Windows, Metal 
     set WGPU_BACKEND=vulkan
     APOST-3Dview.exe
 
-(`gl` is another option.) On Linux, make sure a Vulkan driver is installed (Mesa's `mesa-vulkan-drivers`, or your card maker's driver).
+OpenGL (`gl`) isn't enough yet: APOST-3Dview says so and stops.
+
+## Linux: "APOST-3Dview needs Vulkan"
+
+On Linux, APOST-3Dview needs a Vulkan driver for the graphics card. Without one it says so at the start and stops. Install the driver: Mesa's for Intel and AMD cards (the package `mesa-vulkan-drivers` on Ubuntu, Debian, Fedora, RHEL and Rocky Linux), or NVIDIA's own driver. `vulkaninfo --summary` (package `vulkan-tools`) shows whether Vulkan works.
+
+A remote session (`ssh -X`, most remote desktops) usually has no Vulkan, even when the remote computer has a graphics card: run APOST-3Dview on the computer in front of you, and copy the files there.
+
+## Linux: "version `GLIBC_2.xx' not found"
+
+Downloads up to version 1.0.1 needed a recent Linux (glibc 2.35, Ubuntu 22.04 or newer). Download the latest version, which runs on any Linux with glibc 2.17 or later (`ldd --version` tells which glibc a system has).
 
 ## Windows or macOS won't open it
 

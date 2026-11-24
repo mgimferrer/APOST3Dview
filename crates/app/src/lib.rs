@@ -9,6 +9,7 @@ mod app;
 mod export;
 mod files;
 mod frames;
+pub mod graphics;
 mod headless;
 mod input_generator;
 mod isosurfaces;

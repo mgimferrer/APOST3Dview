@@ -122,13 +122,13 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: linux
-      - run: dnf install -y mesa-vulkan-drivers vulkan-loader mesa-libEGL mesa-dri-drivers
+      - run: dnf install -y mesa-vulkan-drivers vulkan-loader vulkan-tools
       - run: tar xzf APOST3Dview-linux.tar.gz
-      - name: Vulkan drivers
-        run: ls /usr/share/vulkan/icd.d/
+      - name: Vulkan on this system
+        run: |
+          ls /usr/share/vulkan/icd.d/
+          VK_LOADER_DEBUG=error,warn vulkaninfo --summary || true
       - name: Render an example session
-        env:
-          WGPU_BACKEND: vulkan
         run: |
           cd APOST3Dview-*/
           ldd --version | head -1
