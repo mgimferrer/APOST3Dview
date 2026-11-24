@@ -124,7 +124,11 @@ jobs:
           name: linux
       - run: dnf install -y mesa-vulkan-drivers vulkan-loader mesa-libEGL mesa-dri-drivers
       - run: tar xzf APOST3Dview-linux.tar.gz
+      - name: Vulkan drivers
+        run: ls /usr/share/vulkan/icd.d/
       - name: Render an example session
+        env:
+          WGPU_BACKEND: vulkan
         run: |
           cd APOST3Dview-*/
           ldd --version | head -1
