@@ -47,3 +47,13 @@ EFOs are listed but can't be drawn. The examples are refreshed whenever
 APOST-3D's results format changes (with `scripts/update-examples.sh` in the
 source repository), so they always open in the version of APOST-3Dview they
 come with.
+
+## A reaction path
+
+`reaction-path/reaction-path.xyz` is not an APOST-3D run: it is a path of 22
+geometries in one `.xyz` file, ethylamine adding to methyl acetate (the
+nitrogen bonding to the carbonyl carbon while its hydrogen moves to the
+methoxy oxygen, giving N-ethylacetamide and methanol). Open it to play the
+frames, watch the bonds form and break, and save the path as a GIF: see
+[Reaction paths and other frames](https://mgimferrer.github.io/APOST3Dview/frames.html)
+in the user guide.

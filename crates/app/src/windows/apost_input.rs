@@ -357,7 +357,7 @@ impl App {
         let structure = &mut self.structures[active];
         let n_atoms = structure.molecule.atomic_numbers.len();
         let bonds: Vec<(usize, usize)> =
-            structure.molecule.bonds.iter().enumerate().filter(|(i, _)| !structure.hidden_bonds.contains(i)).map(|(_, b)| (b.atom_a, b.atom_b)).collect();
+            structure.molecule.bonds.iter().enumerate().filter(|(i, _)| !structure.drawn_hidden_bonds().contains(i)).map(|(_, b)| (b.atom_a, b.atom_b)).collect();
         let selected = structure.selected_atoms.clone();
         let Some(draft) = structure.input_draft.as_mut() else { return };
         match action {

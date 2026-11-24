@@ -386,6 +386,18 @@ impl App {
 
     fn show_gif_export(&mut self, ui: &mut egui::Ui) {
         ui.label(egui::RichText::new("Animation (GIF)").strong());
+        let player = self.active_structure.and_then(|i| self.structures.get(i)).and_then(|s| s.frames.as_ref()).map(|f| (f.count(), f.player));
+        if let Some((n, player)) = player {
+            ui.horizontal(|ui| {
+                ui.label("Animate:");
+                ui.selectable_value(&mut self.render_export.gif_plays_frames, true, "Play the frames");
+                ui.selectable_value(&mut self.render_export.gif_plays_frames, false, "Turn");
+            });
+            if self.render_export.gif_plays_frames {
+                self.show_frames_gif_export(ui, n, player);
+                return;
+            }
+        }
         ui.horizontal(|ui| {
             ui.label("Width:");
             ui.add(egui::DragValue::new(&mut self.render_export.gif_width).range(160..=1920).suffix(" px"));
@@ -412,6 +424,36 @@ impl App {
         ui.add_space(6.0);
         if ui.add_sized([ui.available_width(), 30.0], egui::Button::new("Render and save GIF...")).clicked() {
             self.export_render_gif();
+        }
+    }
+
+    /// The GIF of a structure's frames: as they play in the window.
+    fn show_frames_gif_export(&mut self, ui: &mut egui::Ui, n: usize, player: crate::frames::PlayerSettings) {
+        ui.horizontal(|ui| {
+            ui.label("Width:");
+            ui.add(egui::DragValue::new(&mut self.render_export.gif_width).range(160..=1920).suffix(" px"));
+        });
+        let steps = crate::frames::timeline(n, &player);
+        let seconds = crate::frames::cycle_seconds(&steps);
+        let gif_settings = self.gif_export_settings();
+        let turning = if self.auto_spin { " Spin is on: it turns as well, as in the window." } else { "" };
+        ui.label(
+            egui::RichText::new(format!(
+                "The frames as they play in the window (speed, smoothness, loop and pauses: the bar at the bottom), from the current view: {} pictures, {seconds:.1} s, {} x {} px, looping.{turning} Uses the Appearance background color.",
+                steps.len(),
+                gif_settings.width,
+                gif_settings.height
+            ))
+            .small()
+            .weak(),
+        );
+        let too_fast = player.fps() > crate::frames::MAX_GIF_FPS + 1e-3;
+        if too_fast {
+            ui.label(egui::RichText::new(crate::export::gif_too_fast_message()).small().color(egui::Color32::from_rgb(230, 160, 60)));
+        }
+        ui.add_space(6.0);
+        if ui.add_enabled(!too_fast, egui::Button::new("Render and save GIF...").min_size(egui::vec2(ui.available_width(), 30.0))).clicked() {
+            self.export_frames_gif();
         }
     }
 }

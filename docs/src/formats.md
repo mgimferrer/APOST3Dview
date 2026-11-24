@@ -7,7 +7,7 @@
 | `.fchk` | Gaussian, Q-Chem, PySCF (through APOST-3D's `apost3d.py`) | The geometry, the basis set and the molecular orbitals (restricted, restricted open shell, unrestricted), and the density matrices stored in it, mean-field and correlated |
 | `.molden` | PySCF, ORCA (`orca_2mkl -molden`) | The geometry, the basis set and the orbitals with their occupations |
 | `.cube` | Any program (Gaussian cube format) | The geometry and the grid of values (the first one, when a file holds several) |
-| `.xyz` | Any program | The geometry |
+| `.xyz` | Any program | The geometry, or several one after the other (a reaction path, an optimization; ORCA's `.allxyz` too), with the energies on their comment lines (see [Reaction paths and other frames](frames.md)) |
 | `.apost.json` | APOST-3D | APOST-3D's results (see [APOST-3D results on the molecule](results.md)) |
 | `.a3dview` | APOST-3Dview | A session (see [Sessions](sessions.md)) |
 

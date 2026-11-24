@@ -137,6 +137,12 @@ pub(crate) struct LoadedStructure {
     /// Aligned onto another structure on selected atoms: where its
     /// coordinates sit in the shared frame (`alignment.rs`).
     pub(crate) placement: Option<crate::alignment::Placement>,
+    /// The geometries of a multi-frame .xyz file, shown one at a time
+    /// (`frames.rs`); `molecule.positions` hold the one shown.
+    pub(crate) frames: Option<crate::frames::Frames>,
+    /// Which geometry of its file this structure is (0-based), when the
+    /// file holds several shown as separate structures.
+    pub(crate) file_frame: Option<usize>,
 }
 
 impl LoadedStructure {
@@ -169,6 +175,26 @@ impl LoadedStructure {
             input_draft: None,
             view: None,
             placement: None,
+            frames: None,
+            file_frame: None,
+        }
+    }
+
+    /// The bonds not drawn: those the user hid and, for frames, those not
+    /// there in the geometry shown.
+    pub(crate) fn drawn_hidden_bonds(&self) -> std::borrow::Cow<'_, HashSet<usize>> {
+        match &self.frames {
+            Some(frames) if !frames.absent_bonds.is_empty() => std::borrow::Cow::Owned(self.hidden_bonds.union(&frames.absent_bonds).copied().collect()),
+            _ => std::borrow::Cow::Borrowed(&self.hidden_bonds),
+        }
+    }
+
+    /// A sphere holding the molecule (every frame of a path): center and
+    /// radius, angstrom.
+    pub(crate) fn bounds(&self) -> (glam::Vec3, f32) {
+        match &self.frames {
+            Some(frames) => frames.bounds(),
+            None => self.molecule.bounding_sphere(),
         }
     }
 

@@ -25,6 +25,7 @@ use glam::{Quat, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
 use crate::app::App;
+use crate::frames::FrameAlignment;
 use crate::isosurfaces::{OrbitalColors, Surface, SurfaceSettings, SurfaceSource};
 use crate::orbitals::{density_surface, orbital_surfaces, OrbitalChoice, OrbitalNames, SetContext};
 use crate::results_view::ResultsView;
@@ -210,6 +211,39 @@ struct StructureState {
     /// Aligned onto another structure on selected atoms.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     alignment: Option<AlignmentState>,
+    /// Which geometry of a multi-frame .xyz file this structure is
+    /// (1-based), when its frames were opened as separate structures.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    frame_of_file: Option<usize>,
+    /// The frames of a multi-frame .xyz file: where they were and how they
+    /// play (2026-11-24; absent before).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    frames: Option<FramesState>,
+}
+
+/// How a structure with frames was left.
+#[derive(Serialize, Deserialize)]
+struct FramesState {
+    /// Where along the frames, 1 = the first frame (1.5 = halfway to the
+    /// second).
+    frame: f32,
+    #[serde(default)]
+    line_up: LineUp,
+    /// The atoms the frames are lined up on (1-based), for `line_up =
+    /// "atoms"`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    line_up_atoms: Vec<usize>,
+    #[serde(default)]
+    player: crate::frames::PlayerSettings,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum LineUp {
+    #[default]
+    Previous,
+    Atoms,
+    File,
 }
 
 /// Where an aligned structure's coordinates sit in the shared frame
@@ -470,6 +504,15 @@ impl App {
                         atoms: p.atoms,
                         rmsd: p.rmsd,
                     }),
+                    frame_of_file: structure.file_frame.map(|k| k + 1),
+                    frames: structure.frames.as_ref().map(|f| {
+                        let (line_up, line_up_atoms) = match &f.alignment {
+                            FrameAlignment::Previous => (LineUp::Previous, Vec::new()),
+                            FrameAlignment::Atoms(atoms) => (LineUp::Atoms, atoms.iter().map(|a| a + 1).collect()),
+                            FrameAlignment::File => (LineUp::File, Vec::new()),
+                        };
+                        FramesState { frame: f.position + 1.0, line_up, line_up_atoms, player: f.player }
+                    }),
                 })
             })
             .collect();
@@ -614,7 +657,7 @@ impl App {
                 continue;
             };
             check_fingerprint(&file, state.file_fingerprint.as_ref(), &mut problems);
-            let Some(index) = self.open_structure_file(&file) else {
+            let Some(index) = self.open_structure_file(&file, state.frame_of_file.and_then(|k| k.checked_sub(1))) else {
                 problems.push(format!("{} could not be opened", file_name(&state.file)));
                 continue;
             };
@@ -756,6 +799,19 @@ impl App {
             }
         }
         structure.hidden_atoms.extend(state.hidden_atoms.iter().filter(|&&a| a >= 1 && a <= n_atoms).map(|a| a - 1));
+        if let (Some(saved), Some(frames)) = (&state.frames, structure.frames.as_mut()) {
+            frames.player = saved.player;
+            frames.alignment = match saved.line_up {
+                LineUp::Previous => FrameAlignment::Previous,
+                LineUp::Atoms if valid(&saved.line_up_atoms) => FrameAlignment::Atoms(saved.line_up_atoms.iter().map(|a| a - 1).collect()),
+                LineUp::Atoms => FrameAlignment::Previous,
+                LineUp::File => FrameAlignment::File,
+            };
+            frames.realign();
+            let position = saved.frame - 1.0;
+            self.show_frame_position(index, position);
+        }
+        let structure = &mut self.structures[index];
         for m in state.measurements.iter().filter(|m| valid(&m.atoms)) {
             let atoms: Vec<usize> = m.atoms.iter().map(|a| a - 1).collect();
             if let Some(kind) = MeasurementKind::from_picks(&atoms) {

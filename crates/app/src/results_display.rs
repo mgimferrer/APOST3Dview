@@ -25,7 +25,22 @@ impl App {
         Some(build_scene(results, &structure.molecule, view, &self.color_ranges))
     }
 
+    /// Each bond's thickness factor, when not all are 1: from bond orders
+    /// (APOST-3D results, on request) times, for frames, how much of the
+    /// bond is there in the geometry shown.
     pub(crate) fn bond_scales(&self, structure: &LoadedStructure) -> Option<Vec<f32>> {
+        let thickness = self.bond_order_scales(structure);
+        let Some(frames) = &structure.frames else { return thickness };
+        let n = structure.molecule.bonds.len();
+        let mut scales = thickness.unwrap_or_else(|| vec![1.0; n]);
+        scales.resize(n, 1.0);
+        for (scale, presence) in scales.iter_mut().zip(&frames.bond_presence) {
+            *scale *= presence;
+        }
+        Some(scales)
+    }
+
+    fn bond_order_scales(&self, structure: &LoadedStructure) -> Option<Vec<f32>> {
         if self.editing_input() {
             return None;
         }

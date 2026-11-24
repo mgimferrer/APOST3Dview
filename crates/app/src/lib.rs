@@ -8,6 +8,7 @@ mod alignment;
 mod app;
 mod export;
 mod files;
+mod frames;
 mod headless;
 mod input_generator;
 mod isosurfaces;

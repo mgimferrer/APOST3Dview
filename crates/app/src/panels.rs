@@ -295,7 +295,7 @@ impl App {
                     return self.camera;
                 }
                 let mut camera = self.camera;
-                camera.target = structure.molecule.bounding_sphere().0;
+                camera.target = structure.bounds().0;
                 return camera;
             }
         }
@@ -305,7 +305,7 @@ impl App {
         }
         let mut camera = self.camera;
         camera.world_up = crate::alignment::up_in(own);
-        let (center, radius) = structure.molecule.bounding_sphere();
+        let (center, radius) = structure.bounds();
         // Room for fragment envelopes and the values beside them.
         let has_fragments = structure.apost.as_ref().and_then(|a| a.results.as_ref().ok()).is_some_and(|r| !r.fragments().is_empty());
         camera.frame_bounds(center, if has_fragments { radius + 2.2 } else { radius });

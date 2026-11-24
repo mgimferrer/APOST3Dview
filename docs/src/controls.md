@@ -14,8 +14,9 @@
 | Clear the selection | <kbd>Esc</kbd> |
 | See pair values from another atom or fragment | Click it, while a pair quantity is shown |
 | Move a measurement's label | Drag it |
+| Previous or next frame (a structure with [frames](frames.md)) | <kbd>,</kbd> or <kbd>.</kbd> |
 
-The arrow keys and <kbd>Space</kbd> do nothing while you are typing in a text field.
+The arrow keys, <kbd>Space</kbd>, <kbd>,</kbd> and <kbd>.</kbd> do nothing while you are typing in a text field.
 
 ## Anywhere
 

@@ -268,6 +268,40 @@ fn looking_at_a_molecule() {
     snap_figure(&mut guide, "molecule-measurements", 1200, 750);
 }
 
+/// "Reaction paths and other frames": the example path, the N-C distance
+/// measured as it forms, between two frames, the line-up choices and the
+/// GIF of the frames in the Export window.
+#[test]
+fn reaction_path() {
+    let mut guide = open(vec![repo_dir().join("examples/reaction-path/reaction-path.xyz")]);
+    sees(&guide, "22 frames");
+    sees(&guide, "Frame 1 of 22");
+    for label in ["Each frame on the one before", "On the selected atoms", "As in the file", "Open each frame as a structure", "\u{25b6} Play", "Speed:", "Smoothness:", "Pause at the ends:"] {
+        sees(&guide, label);
+    }
+    assert!(guide.get_all(By::new().role(Role::ComboBox)).any(|n| n.value().as_deref() == Some("Back and forth")), "the loop menu shows Back and forth");
+    // The forming N-C bond, measured.
+    guide.state_mut().select_atoms(&[11, 1]);
+    guide.run_steps(3);
+    click(&mut guide, "Add measurement");
+    guide.state_mut().select_atoms(&[]);
+    click(&mut guide, "\u{23ed}");
+    sees(&guide, "Frame 22 of 22");
+    sees_text(&guide, "1.39");
+    click(&mut guide, "\u{25c0}");
+    sees(&guide, "Frame 21 of 22");
+    guide.state_mut().go_to_frame_position(12.5);
+    guide.run_steps(3);
+    sees(&guide, "Between frames 13 and 14 of 22");
+    frame(&mut guide, 0.0, 0.0, 0.9);
+    settle(&mut guide);
+    snap_window(&mut guide, "frames-window", 1400);
+    click(&mut guide, "Export");
+    sees(&guide, "Play the frames");
+    sees(&guide, "Turn");
+    sees_text(&guide, "The frames as they play in the window");
+}
+
 /// "Looking at a molecule", Styles: an Fe d EFO of ferrocene (the
 /// FeCp2-EOS-OSLO example) in the four styles, side by side, in the view of
 /// the paper's figure (Cp-Fe-Cp vertical, seen from a little above).

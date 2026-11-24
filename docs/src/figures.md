@@ -42,7 +42,7 @@ When a value of the APOST-3D results is shown on the molecule, its legend is dra
 
 ## Turning videos (GIF)
 
-Under **Animation (GIF)**, give the **Width:** in pixels, the **Duration:** of one full turn, and the **Frame rate:**, then click **Render and save GIF...**. The molecule makes one full turn from the current view and the video loops seamlessly. It turns in the direction of the last arrow key pressed (horizontally if none was), about the center of the view, so leave some margin around the molecule. GIF files play directly in PowerPoint, Keynote and Google Slides. They use the background color of the **Appearance** window.
+Under **Animation (GIF)**, give the **Width:** in pixels, the **Duration:** of one full turn, and the **Frame rate:**, then click **Render and save GIF...**. The molecule makes one full turn from the current view and the video loops seamlessly. It turns in the direction of the last arrow key pressed (horizontally if none was), about the center of the view, so leave some margin around the molecule. GIF files play directly in PowerPoint, Keynote and Google Slides. They use the background color of the **Appearance** window. For a structure with frames (a reaction path), the GIF can play the frames instead: see [A video of the path](frames.md#a-video-of-the-path).
 
 ## The session beside each figure
 

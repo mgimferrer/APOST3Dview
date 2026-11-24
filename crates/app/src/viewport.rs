@@ -125,6 +125,12 @@ impl App {
         if keyboard_free && space_pressed {
             self.auto_spin = !self.auto_spin;
         }
+        if keyboard_free {
+            let (back, forward) = ui.input(|i| (i.key_pressed(egui::Key::Comma), i.key_pressed(egui::Key::Period)));
+            if back || forward {
+                self.step_frame(if forward { 1 } else { -1 });
+            }
+        }
         let auto_spinning = self.auto_spin && !keyboard_rotating && !camera_dragging;
         if auto_spinning {
             self.camera.orbit_along(self.spin_direction, self.auto_spin_speed * dt);
@@ -169,7 +175,7 @@ impl App {
             let atom_hit = pick_atom(&structure.molecule, origin, direction, &sizes, &structure.hidden_atoms);
             let bond_hit = match sizes.bond_radius {
                 Some(bond_radius) if atom_hit.is_none() => {
-                    pick_bond(&structure.molecule, origin, direction, bond_radius, &structure.hidden_atoms, &structure.hidden_bonds)
+                    pick_bond(&structure.molecule, origin, direction, bond_radius, &structure.hidden_atoms, &structure.drawn_hidden_bonds())
                 }
                 _ => None,
             };
@@ -219,9 +225,13 @@ impl App {
         // ever fire by coincidence.
         let ao_recompute_samples = if !self.ao_enabled {
             None
-        } else if self.ao_last_camera != Some(self.camera) || self.ao_last_settings != Some(self.ao_settings) {
+        } else if self.ao_last_camera != Some(self.camera)
+            || self.ao_last_settings != Some(self.ao_settings)
+            || self.ao_geometry_seen != self.geometry_version.get()
+        {
             self.ao_last_camera = Some(self.camera);
             self.ao_last_settings = Some(self.ao_settings);
+            self.ao_geometry_seen = self.geometry_version.get();
             self.ao_settled = false;
             ui.ctx().request_repaint();
             Some(apost3dview_render::AO_LIVE_SAMPLE_COUNT)

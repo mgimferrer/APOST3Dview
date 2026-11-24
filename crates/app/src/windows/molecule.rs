@@ -23,6 +23,12 @@ impl App {
                 ui.add_space(6.0);
                 self.show_links_to_other_windows(ui, active);
 
+                if self.structures[active].frames.is_some() {
+                    ui.add_space(6.0);
+                    ui.separator();
+                    self.show_frames_section(ui, active);
+                }
+
                 ui.add_space(6.0);
                 ui.separator();
                 self.show_display_settings(ui, active);

@@ -196,6 +196,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui_kittest",
+ "gif 0.14.2",
  "glam",
  "image",
  "log",

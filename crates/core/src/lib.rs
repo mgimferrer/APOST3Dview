@@ -19,6 +19,7 @@ pub mod measurement;
 pub mod molden;
 pub mod molecule;
 pub mod superpose;
+pub mod trajectory;
 pub mod units;
 pub mod wavefunction;
 pub mod xyz;
@@ -74,11 +75,12 @@ pub use interpolation::refine_grid;
 pub use isosurface::{extract_isosurface, IsosurfaceMesh};
 pub use measurement::{measure, MeasurementKind};
 pub use molden::{parse_molden_geometry, parse_molden_wavefunction};
-pub use molecule::{Bond, Molecule};
+pub use molecule::{bond_cutoff, Bond, Molecule};
 pub use superpose::{superpose, Superposition};
 pub use units::LengthUnit;
 pub use wavefunction::{parse_fchk_wavefunction, BasisSet, MolecularOrbitals, Shell, Wavefunction};
-pub use xyz::parse_xyz;
+pub use trajectory::{bond_presence, comment_energy, positions_at, Trajectory, BOND_FADE_END};
+pub use xyz::{parse_xyz, parse_xyz_frames, XyzFile, XyzFrame};
 
 #[cfg(test)]
 mod fortran_numbers {

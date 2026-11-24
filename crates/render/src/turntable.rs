@@ -58,16 +58,7 @@ pub fn render_turntable_gif<W: Write + Send + 'static>(
     let (width, height) = (settings.width as usize, settings.height as usize);
     let aspect = settings.width as f32 / settings.height.max(1) as f32;
 
-    let (collector, writer) = gifski::new(gifski::Settings {
-        width: None,
-        height: None,
-        quality: turntable.quality.clamp(1, 100),
-        fast: false,
-        repeat: gifski::Repeat::Infinite,
-    })
-    .map_err(|err| format!("Could not start GIF encoder: {err}"))?;
-    let encoder = std::thread::spawn(move || writer.write(out, &mut gifski::progress::NoProgress {}));
-
+    let mut gif = GifWriter::new(turntable.quality, out)?;
     let step = std::f32::consts::TAU / frames as f32;
     let mut failure = None;
     for index in 0..frames {
@@ -86,18 +77,69 @@ pub fn render_turntable_gif<W: Write + Send + 'static>(
         crate::export::readback_to_rgba(&mut pixels, target_format);
         // Anything drawn onto the finished image (a legend).
         finish_frame(&mut pixels, settings.width, settings.height);
-        let frame = imgref::ImgVec::new(rgb::FromSlice::as_rgba(pixels.as_slice()).to_vec(), width, height);
-        if let Err(err) = collector.add_frame_rgba(index, frame, index as f64 / fps) {
-            failure = Some(format!("GIF encoding failed: {err}"));
+        if let Err(err) = gif.add_frame(pixels, width, height, index as f64 / fps) {
+            failure = Some(err);
             break;
         }
     }
-    // Dropping the collector tells the encoder no more frames are coming.
-    drop(collector);
-    let encoded = match encoder.join() {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(err)) => Err(format!("GIF encoding failed: {err}")),
-        Err(_) => Err("GIF encoder stopped unexpectedly".to_string()),
-    };
+    let encoded = gif.finish();
     failure.map_or(encoded, Err)
+}
+
+/// A looping GIF written with gifski as frames come in: gifski encodes on
+/// its own thread, so frames stream in rather than all being held in
+/// memory first. For animations whose frames the caller renders itself
+/// (a reaction path, where the atoms move between frames).
+pub struct GifWriter {
+    collector: Option<gifski::Collector>,
+    encoder: Option<std::thread::JoinHandle<gifski::GifResult<()>>>,
+    next_index: usize,
+}
+
+impl GifWriter {
+    /// Starts the encoder writing to `out`; `quality` is gifski's, 1-100.
+    pub fn new<W: Write + Send + 'static>(quality: u8, out: W) -> Result<Self, String> {
+        let (collector, writer) = gifski::new(gifski::Settings {
+            width: None,
+            height: None,
+            quality: quality.clamp(1, 100),
+            fast: false,
+            repeat: gifski::Repeat::Infinite,
+        })
+        .map_err(|err| format!("Could not start GIF encoder: {err}"))?;
+        let encoder = std::thread::spawn(move || writer.write(out, &mut gifski::progress::NoProgress {}));
+        Ok(Self { collector: Some(collector), encoder: Some(encoder), next_index: 0 })
+    }
+
+    /// Adds the next frame (`width` x `height` RGBA pixels), shown from
+    /// `seconds` after the start until the next frame's time (a longer gap
+    /// holds this frame longer).
+    pub fn add_frame(&mut self, rgba: Vec<u8>, width: usize, height: usize, seconds: f64) -> Result<(), String> {
+        let collector = self.collector.as_ref().ok_or("GIF encoder already finished")?;
+        let frame = imgref::ImgVec::new(rgb::FromSlice::as_rgba(rgba.as_slice()).to_vec(), width, height);
+        collector.add_frame_rgba(self.next_index, frame, seconds).map_err(|err| format!("GIF encoding failed: {err}"))?;
+        self.next_index += 1;
+        Ok(())
+    }
+
+    /// Tells the encoder no more frames are coming and waits for the file.
+    pub fn finish(mut self) -> Result<(), String> {
+        self.close()
+    }
+
+    fn close(&mut self) -> Result<(), String> {
+        // Dropping the collector tells the encoder no more frames are coming.
+        drop(self.collector.take());
+        match self.encoder.take().map(|e| e.join()) {
+            None | Some(Ok(Ok(()))) => Ok(()),
+            Some(Ok(Err(err))) => Err(format!("GIF encoding failed: {err}")),
+            Some(Err(_)) => Err("GIF encoder stopped unexpectedly".to_string()),
+        }
+    }
+}
+
+impl Drop for GifWriter {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
 }

@@ -142,6 +142,11 @@ pub struct App {
     pub(crate) ao_last_camera: Option<OrbitCamera>,
     pub(crate) ao_last_settings: Option<AoSettings>,
     pub(crate) ao_settled: bool,
+    /// Counts geometry rebuilds (atoms moved, hidden, restyled): ambient
+    /// occlusion is computed again when it changes, as when the camera
+    /// moves (`ao_geometry_seen`).
+    pub(crate) geometry_version: std::cell::Cell<u64>,
+    pub(crate) ao_geometry_seen: u64,
     /// Depth of field — same shared live+export toggle/settings shape as
     /// AO, but with no settle-tiering of its own: unlike AO's SSAO sample
     /// count, DoF's blur is cheap enough to just rerun at full quality
@@ -271,6 +276,8 @@ impl App {
             ao_last_camera: None,
             ao_last_settings: None,
             ao_settled: false,
+            geometry_version: std::cell::Cell::new(0),
+            ao_geometry_seen: 0,
             dof_enabled: true,
             dof_settings: DofSettings::default(),
             surface_defaults: SurfaceSettings::default(),
@@ -307,7 +314,7 @@ impl App {
             self.material.atom_scale,
             self.material.bond_radius,
             &structure.hidden_atoms,
-            &structure.hidden_bonds,
+            &structure.drawn_hidden_bonds(),
             bond_scales,
         )
     }
@@ -332,12 +339,14 @@ impl App {
         let Some(structure) = self.structures.get(active) else { return };
         let bond_scales = self.bond_scales(structure);
         let sizes = self.drawn_sizes_with(structure, bond_scales.as_deref());
+        let hidden_bonds = structure.drawn_hidden_bonds();
+        self.geometry_version.set(self.geometry_version.get() + 1);
         self.with_resources(|resources| {
             resources.update_geometry(
                 &self.render_state.device,
                 &structure.molecule,
                 &structure.hidden_atoms,
-                &structure.hidden_bonds,
+                &hidden_bonds,
                 &structure.bond_styles,
                 None,
                 bond_scales.as_deref(),
@@ -829,6 +838,10 @@ impl eframe::App for App {
             self.save_session(false);
         }
         self.update_title(&ctx);
+        let dt = ctx.input(|i| i.stable_dt.min(0.1));
+        if self.advance_playback(dt) {
+            ctx.request_repaint();
+        }
         self.handle_dropped_files(&ctx);
         self.update_surfaces(&ctx);
         self.update_results_display(&ctx);
@@ -837,6 +850,7 @@ impl eframe::App for App {
         self.expand_requested_windows(&ctx);
         self.show_toolbar(ui);
         self.show_status_bar(ui);
+        self.show_frames_bar(ui);
         self.plan_window_column(&ctx);
         self.show_molecule_window(&ctx);
         self.show_surfaces_window(&ctx);

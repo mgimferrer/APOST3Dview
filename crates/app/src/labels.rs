@@ -108,7 +108,8 @@ impl App {
         // An atom counts as visible when a fair part of it can be seen
         // (a hydrogen in front of a carbon's center doesn't hide it).
         let sizes = self.drawn_sizes(structure);
-        let visible = |a: usize| atom_visible_fraction(molecule, eye, a, &sizes, &structure.hidden_atoms, &structure.hidden_bonds) >= MIN_VISIBLE_FRACTION;
+        let hidden_bonds = structure.drawn_hidden_bonds();
+        let visible = |a: usize| atom_visible_fraction(molecule, eye, a, &sizes, &structure.hidden_atoms, &hidden_bonds) >= MIN_VISIBLE_FRACTION;
         let (ink, background) = self.label_colors();
         let mut pending: Vec<Pending> = Vec::new();
 

@@ -26,13 +26,17 @@ pub struct Molecule {
 /// stretched bonds without merging non-bonded contacts.
 const BOND_TOLERANCE: f32 = 1.2;
 
+/// The longest distance (angstrom) at which atoms of atomic numbers `a` and
+/// `b` are taken as bonded.
+pub fn bond_cutoff(a: u32, b: u32) -> f32 {
+    (element_data(a).covalent_radius + element_data(b).covalent_radius) * BOND_TOLERANCE
+}
+
 fn perceive_bonds(atomic_numbers: &[u32], positions: &[Vec3]) -> Vec<Bond> {
     let mut bonds = Vec::new();
     for i in 0..positions.len() {
-        let radius_i = element_data(atomic_numbers[i]).covalent_radius;
         for j in (i + 1)..positions.len() {
-            let radius_j = element_data(atomic_numbers[j]).covalent_radius;
-            let cutoff = (radius_i + radius_j) * BOND_TOLERANCE;
+            let cutoff = bond_cutoff(atomic_numbers[i], atomic_numbers[j]);
             let distance = positions[i].distance(positions[j]);
             if distance > 0.1 && distance < cutoff {
                 bonds.push(Bond { atom_a: i, atom_b: j });

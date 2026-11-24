@@ -6,8 +6,8 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use apost3dview_core::{
-    find_results_for, is_results_file, load_apost_results, parse_cube, parse_fchk_wavefunction, parse_molden_wavefunction, parse_xyz,
-    wavefunction_path_for, Molecule, Wavefunction,
+    find_results_for, is_results_file, load_apost_results, parse_cube, parse_fchk_wavefunction, parse_molden_wavefunction, parse_xyz_frames,
+    wavefunction_path_for, Molecule, Trajectory, Wavefunction,
 };
 
 use crate::app::App;
@@ -125,7 +125,7 @@ impl App {
                         None
                     }
                 }
-                Some(FileKind::Xyz) => self.open_xyz(&path),
+                Some(FileKind::Xyz) => self.open_xyz(&path, None),
                 Some(FileKind::Cube) => {
                     let opened = self.open_cube(&path, &given_surface);
                     given_surface.extend(opened);
@@ -176,11 +176,12 @@ impl App {
     /// `.cube` becomes a structure of its own without its surface (the
     /// session lists the surfaces), and nothing is merged into structures
     /// already open.
-    pub(crate) fn open_structure_file(&mut self, path: &Path) -> Option<usize> {
+    /// `frame` (0-based) opens only that geometry of a multi-frame .xyz.
+    pub(crate) fn open_structure_file(&mut self, path: &Path, frame: Option<usize>) -> Option<usize> {
         match FileKind::of_path(path)? {
             FileKind::Fchk => self.open_wavefunction_file(path, Molecule::from_fchk, parse_fchk_wavefunction, true),
             FileKind::Molden => self.open_wavefunction_file(path, Molecule::from_molden, parse_molden_wavefunction, false),
-            FileKind::Xyz => self.open_xyz(path),
+            FileKind::Xyz => self.open_xyz(path, frame),
             FileKind::Cube => {
                 let cube = parse_cube(path).ok()?;
                 Some(self.push_structure(LoadedStructure::new(file_label(path), cube.molecule, Some(path.to_path_buf()))))
@@ -250,14 +251,62 @@ impl App {
         Some(self.push_structure(structure))
     }
 
-    fn open_xyz(&mut self, path: &Path) -> Option<usize> {
-        match parse_xyz(path) {
-            Ok(molecule) => Some(self.push_structure(LoadedStructure::new(file_label(path), molecule, Some(path.to_path_buf())))),
+    /// An .xyz file. Several geometries of the same atoms (a reaction
+    /// path, an optimization) become one structure whose frames are shown
+    /// one at a time (`frames.rs`); geometries of different molecules
+    /// become one structure each. `only_frame` opens just that geometry
+    /// (0-based) as a structure of its own, as a session recorded it.
+    pub(crate) fn open_xyz(&mut self, path: &Path, only_frame: Option<usize>) -> Option<usize> {
+        let label = file_label(path);
+        let file = match parse_xyz_frames(path) {
+            Ok(file) => file,
             Err(err) => {
-                self.show_warning(format!("Could not load {}: {err}", file_label(path)));
-                None
+                self.show_warning(format!("Could not load {label}: {err}"));
+                return None;
             }
+        };
+        if let Some(problem) = &file.stopped {
+            self.show_warning(format!("{label}: {problem}. The {} complete geometries before are shown.", file.frames.len()));
         }
+        let source = Some(path.to_path_buf());
+        let single = |frame: &apost3dview_core::XyzFrame, label: String| {
+            LoadedStructure::new(label, Molecule::from_atoms(frame.atomic_numbers.clone(), frame.positions.clone()), source.clone())
+        };
+        if let Some(k) = only_frame {
+            let Some(frame) = file.frames.get(k) else {
+                self.show_warning(format!("{label} has no geometry {}", k + 1));
+                return None;
+            };
+            let mut structure = single(frame, format!("{label} ({})", k + 1));
+            structure.file_frame = Some(k);
+            return Some(self.push_structure(structure));
+        }
+        if file.frames.len() == 1 {
+            return Some(self.push_structure(single(&file.frames[0], label)));
+        }
+        let Some(path_frames) = Trajectory::from_frames(&file.frames) else {
+            // Different molecules: one structure each.
+            let n = file.frames.len();
+            let first = self.structures.len();
+            for (k, frame) in file.frames.iter().enumerate() {
+                let mut structure = single(frame, format!("{label} ({})", k + 1));
+                structure.file_frame = Some(k);
+                self.push_structure(structure);
+            }
+            self.show_status(format!("{label} holds {n} different molecules: each opened as a structure"));
+            return Some(first);
+        };
+        let bonds = path_frames.path_bonds();
+        let n_bonds = bonds.len();
+        let molecule = Molecule { atomic_numbers: path_frames.atomic_numbers.clone(), positions: path_frames.frames[0].clone(), bonds };
+        let mut structure = LoadedStructure::new(label.clone(), molecule, source);
+        let n = path_frames.frames.len();
+        structure.frames = Some(crate::frames::Frames::new(path_frames, n_bonds));
+        let index = self.push_structure(structure);
+        self.show_frame_position(index, 0.0);
+        self.open_window(crate::windows::ToolWindow::Molecule);
+        self.show_status(format!("{label}: {n} frames, played with the bar at the bottom"));
+        Some(index)
     }
 
     /// A `.cube` file becomes a surface of the open structure with the

@@ -1,6 +1,6 @@
 //! PNG and animated GIF export.
 
-use apost3dview_render::{render_turntable_gif, ExportSettings, SceneUniforms, TurntableSettings, ViewportResources};
+use apost3dview_render::{render_turntable_gif, ExportSettings, GifWriter, SceneUniforms, TurntableSettings, ViewportResources};
 
 use crate::app::App;
 use crate::session::SESSION_EXTENSION;
@@ -52,6 +52,9 @@ pub(crate) struct RenderExportState {
     pub(crate) gif_width: u32,
     pub(crate) gif_seconds: f32,
     pub(crate) gif_fps: u32,
+    /// For a structure with frames: the GIF turns the view (false) or
+    /// plays the frames (true, the default).
+    pub(crate) gif_plays_frames: bool,
     /// Panels, and the caption of a single image (`panels.rs`).
     pub(crate) figure: crate::panels::PanelExportState,
 }
@@ -70,6 +73,7 @@ impl Default for RenderExportState {
             gif_width: 800,
             gif_seconds: 6.0,
             gif_fps: 20,
+            gif_plays_frames: true,
             figure: Default::default(),
         }
     }
@@ -324,4 +328,83 @@ impl App {
             }
         }
     }
+
+    /// Plays the active structure's frames into a GIF, exactly as they play
+    /// in the window (`frames::timeline`: speed, geometries between frames,
+    /// loop, pauses), from the current view; turning as well while Spin is
+    /// on. Blocks the UI until done, like the other exports.
+    pub(crate) fn export_frames_gif(&mut self) {
+        let Some(active) = self.active_structure else { return };
+        let default_name = self.structures[active]
+            .source_path
+            .as_ref()
+            .and_then(|p| p.file_stem())
+            .map(|s| format!("{}.gif", s.to_string_lossy()))
+            .unwrap_or_else(|| "frames.gif".to_string());
+        let Some(path) = rfd::FileDialog::new().add_filter("GIF animation", &["gif"]).set_file_name(default_name).save_file() else {
+            return;
+        };
+        match self.save_frames_gif(&path) {
+            Ok(_) => self.report_saved_image(&path),
+            Err(message) => {
+                let _ = std::fs::remove_file(&path);
+                self.show_warning(message);
+            }
+        }
+    }
+
+    /// The frames GIF written to `path`; the number of pictures in it. The
+    /// frames and the view are left as they were — public for tests.
+    pub fn save_frames_gif(&mut self, path: &std::path::Path) -> Result<usize, String> {
+        let active = self.active_structure.ok_or("Open a structure first.")?;
+        let frames = self.structures[active].frames.as_ref().ok_or("This structure has no frames.")?;
+        let player = frames.player;
+        if player.fps() > crate::frames::MAX_GIF_FPS + 1e-3 {
+            return Err(gif_too_fast_message());
+        }
+        let steps = crate::frames::timeline(frames.count(), &player);
+        let (position, playing) = (frames.position, frames.playing);
+        let file = std::fs::File::create(path).map_err(|err| format!("Could not create {}: {err}", path.display()))?;
+        let settings = self.gif_export_settings();
+        let camera = self.camera;
+        let spin = self.auto_spin.then_some((self.spin_direction, self.auto_spin_speed));
+        let mut gif = GifWriter::new(GIF_QUALITY, std::io::BufWriter::new(file))?;
+        let mut seconds = 0.0_f64;
+        let mut result = Ok(steps.len());
+        for step in &steps {
+            self.show_frame_position(active, step.position);
+            if let Some((direction, speed)) = spin {
+                self.camera = camera;
+                self.camera.orbit_along(direction, speed * seconds as f32);
+            }
+            let pixels = match self.render_rgba_with(active, &settings, true) {
+                Ok(pixels) => pixels,
+                Err(err) => {
+                    result = Err(format!("Render failed: {err}"));
+                    break;
+                }
+            };
+            if let Err(err) = gif.add_frame(pixels, settings.width as usize, settings.height as usize, seconds) {
+                result = Err(err);
+                break;
+            }
+            seconds += step.seconds as f64;
+        }
+        let encoded = gif.finish();
+        self.camera = camera;
+        self.show_frame_position(active, position);
+        if let Some(frames) = self.structures[active].frames.as_mut() {
+            frames.playing = playing;
+        }
+        encoded?;
+        result
+    }
+}
+
+/// Why a frames GIF can't be made at the player's speed.
+pub(crate) fn gif_too_fast_message() -> String {
+    format!(
+        "A GIF plays at most {} pictures per second: lower the speed or the smoothness.",
+        crate::frames::MAX_GIF_FPS as u32
+    )
 }
