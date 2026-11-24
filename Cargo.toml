@@ -9,3 +9,12 @@ authors = ["Martí Gimferrer <mgimferrer18@gmail.com>"]
 license = "GPL-3.0"
 repository = "https://github.com/mgimferrer/APOST3Dview"
 description = "A molecular and orbital/density visualizer for APOST-3D"
+
+# The test builds of CI (cargo test --profile ci): optimized, with the
+# debug build's checks kept (debug assertions, overflow checks). The
+# every-point orbital comparisons take minutes unoptimized.
+[profile.ci]
+inherits = "dev"
+opt-level = 2
+debug = false
+incremental = false

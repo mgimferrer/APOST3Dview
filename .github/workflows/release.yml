@@ -112,9 +112,10 @@ jobs:
           path: dist/*.tar.gz
 
   # The Linux package on an older system than the build machine (Rocky
-  # Linux 8, glibc 2.28): it starts and renders an example session on the
-  # software renderer.
-  linux-check:
+  # Linux 8, glibc 2.28): it starts, and, as the container has no working
+  # Vulkan (its software renderer, lavapipe, fails to start there), stops
+  # with the message that says so.
+  linux-check-rocky8:
     needs: linux
     runs-on: ubuntu-latest
     container: rockylinux:8
@@ -122,16 +123,31 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: linux
-      - run: dnf install -y mesa-vulkan-drivers vulkan-loader vulkan-tools
       - run: tar xzf APOST3Dview-linux.tar.gz
-      - name: Vulkan on this system
-        run: |
-          ls /usr/share/vulkan/icd.d/
-          VK_LOADER_DEBUG=error,warn vulkaninfo --summary || true
-      - name: Render an example session
+      - name: Starts, and says that Vulkan is missing
         run: |
           cd APOST3Dview-*/
           ldd --version | head -1
+          if ./apost3dview --render examples/FeCp2-IQA-ALLPAIRS/ferrocene-iqa-fragments.a3dview ferrocene.png 2> errors.txt; then
+            echo "Rendered without Vulkan?"; exit 1
+          fi
+          cat errors.txt
+          grep -q "APOST-3Dview needs Vulkan" errors.txt
+
+  # The Linux package draws: an example session rendered on the software
+  # renderer (lavapipe) of GitHub's Ubuntu machine.
+  linux-check-render:
+    needs: linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux
+      - run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+      - run: tar xzf APOST3Dview-linux.tar.gz
+      - name: Render an example session
+        run: |
+          cd APOST3Dview-*/
           ./apost3dview --render examples/FeCp2-IQA-ALLPAIRS/ferrocene-iqa-fragments.a3dview ferrocene.png --size 640x400
           test -s ferrocene.png
       - uses: actions/upload-artifact@v7
@@ -140,7 +156,7 @@ jobs:
           path: APOST3Dview-*/ferrocene.png
 
   publish:
-    needs: [version, windows, macos, linux, linux-check]
+    needs: [version, windows, macos, linux, linux-check-rocky8, linux-check-render]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:

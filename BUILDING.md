@@ -40,6 +40,7 @@ cargo test --workspace
 
 - The tests that check APOST-3D's reference results need them copied into `fixtures/` first: `scripts/sync-apost3d-fixtures.sh --pinned` fetches them from GitHub at the APOST-3D commit CI tests against (`scripts/apost3d-commit`), or `scripts/sync-apost3d-fixtures.sh path/to/APOST3D` copies them from a local APOST-3D checkout. Without them, those tests skip themselves. CI runs them on every push; to move to newer APOST-3D results, put the new commit in `scripts/apost3d-commit`.
 - The app tests (`-p apost3dview`) render with the real GPU pipelines, so they need a GPU (or a software one). The core and render tests don't.
+- `cargo test --workspace --profile ci` (as CI does) builds the tests optimized, with the debug checks kept: slower to compile, much faster to run (the every-point orbital comparisons of `reference_cubes.rs`: 208 s unoptimized, 31 s with it). The reference scenes are written and compared with the default (debug) build, see `render_reference.rs`.
 - `crates/app/tests/input_runs.rs` runs inputs made with the input generator through APOST-3D itself and opens their results; it needs an APOST-3D checkout with the program built, `APOST3D_DIR=path/to/APOST3D cargo test -p apost3dview --test input_runs`, and skips itself otherwise (so it doesn't run in CI).
 - Reference scenes (pixel-by-pixel comparisons before and after a renderer change): see the comments at the top of `crates/app/tests/render_reference.rs`.
 
@@ -81,7 +82,7 @@ In `apost3dview-render`, checks of the rendering, most of them on a real GPU dev
 `.github/workflows/release.yml` builds the downloadable packages:
 
 - `scripts/package-macos.sh`: universal `APOST-3Dview.app` (Apple Silicon + Intel), ad-hoc signed, in a `.dmg`. Runs the same on a Mac by hand.
-- `scripts/package-linux.sh`: a `.tar.gz` with the executable, its menu entry and `install.sh`. The executable is built with [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) against glibc 2.17 (`pip install ziglang cargo-zigbuild`), so it runs on older systems than the build machine (a program needs a glibc at least as new as the one it was built against). The script checks the glibc the executable asks for, and the workflow's `linux-check` job renders an example session with the package on Rocky Linux 8.
+- `scripts/package-linux.sh`: a `.tar.gz` with the executable, its menu entry and `install.sh`. The executable is built with [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) against glibc 2.17 (`pip install ziglang cargo-zigbuild`), so it runs on older systems than the build machine (a program needs a glibc at least as new as the one it was built against). The script checks the glibc the executable asks for, and the workflow checks that the package starts on Rocky Linux 8 (glibc 2.28) and renders an example session with it on Ubuntu.
 - Windows: the `.exe` in a `.zip`, built in the workflow itself.
 
 Every package also holds `examples/` and the guide (`guide/`, built by the workflow's guide job; to run the packaging scripts by hand, run `mdbook build docs` first). Starting the workflow by hand (Actions, Release, Run workflow) only builds; the packages are under the run's Artifacts. To publish a release:
