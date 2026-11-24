@@ -23,6 +23,17 @@ Bonds are worked out from the distances in each frame. A bond that forms grows i
 - the loop: **Back and forth** (first to last and back, the natural one for a reaction), **Repeat** (first to last, again and again) or **Once**.
 - **Pause at the ends:** how long the first and the last frame stay before the motion starts again.
 
+## Turning the molecule along the way
+
+To show the path from a better side as it goes (the reacting atoms at the transition state, a part hidden at the start), keep views at chosen frames. Go to a frame, turn, zoom and move the molecule as you want to see it there, and click **Keep this view here** in the bar. Do the same at other frames. As the frames play, the camera moves smoothly from each kept view to the next, starting and stopping gently, and stays on the first kept view before it and on the last one after it. For example: a view at frame 1, a turned and closer one at the transition state, and a view of the products at the last frame.
+
+- The kept views show as small marks under the slider and as buttons with their frame numbers. A number goes to that frame as kept, **×** removes the view.
+- At a frame that has a kept view the button reads **Replace the view here**.
+- Each view belongs to its frame, not to a moment: with **Back and forth** the way back turns back through the same views, and with **Repeat** the view jumps back to the first at the restart, as the atoms do.
+- While the views turn the molecule, **Spin (Space)** waits. You can still turn the molecule by hand while it plays, and the kept views take over again at the next frame.
+- **Follow the kept views** off lets you look around freely again, as without kept views. The views stay kept.
+- Changing how the frames are lined up (below) keeps every view on its frame.
+
 ## Energies along the path
 
 When the comment line of every frame gives an energy, the bar also plots it: the energy of each frame relative to the first, in kcal/mol, with a line where you are. Click or drag on the plot to go to a frame, and hover a point to read its value. The energies are read the way programs write them on that line: ORCA's `... E -76.4`, xtb's `energy: -5.07 ...`, a line that holds only a number (all in hartree), or the `energy=` of an extended xyz file (electronvolt, as ASE writes it). The example has no energies.
@@ -43,8 +54,8 @@ Lining up only turns and moves whole frames. Distances, angles and bonds are the
 
 ## A video of the path
 
-In the **Export** window, a structure with frames offers **Animate:** **Play the frames** or **Turn**. With **Play the frames**, **Render and save GIF...** records the frames exactly as they play in the window: the same speed, smoothness, loop and pauses, from the current view. If **Spin (Space)** is on, the molecule turns in the GIF as well. A GIF plays at most 50 pictures per second, so very high speeds with high smoothness are refused: lower one of them.
+In the **Export** window, a structure with frames offers **Animate:** **Play the frames** or **Turn**. With **Play the frames**, **Render and save GIF...** records the frames exactly as they play in the window: the same speed, smoothness, loop and pauses, seen from the kept views when there are any, from the current view otherwise. Without kept views, if **Spin (Space)** is on, the molecule turns in the GIF as well. A GIF plays at most 50 pictures per second, so very high speeds with high smoothness are refused: lower one of them.
 
 ## Sessions
 
-A session records where the frames were, how they are lined up and how they play, and reopens them that way. Frames opened as structures of their own come back as such.
+A session records where the frames were, how they are lined up, how they play and the kept views, and reopens them that way. Frames opened as structures of their own come back as such.

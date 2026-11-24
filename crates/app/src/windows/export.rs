@@ -436,10 +436,16 @@ impl App {
         let steps = crate::frames::timeline(n, &player);
         let seconds = crate::frames::cycle_seconds(&steps);
         let gif_settings = self.gif_export_settings();
-        let turning = if self.auto_spin { " Spin is on: it turns as well, as in the window." } else { "" };
+        let following = self.active_structure.and_then(|i| self.structures.get(i)).and_then(|s| s.frames.as_ref()).is_some_and(|f| f.following());
+        let view = if following { "seen from the kept views" } else { "from the current view" };
+        let turning = match (following, self.auto_spin) {
+            (true, true) => " Spin is not used: the kept views turn the molecule.",
+            (false, true) => " Spin is on: it turns as well, as in the window.",
+            _ => "",
+        };
         ui.label(
             egui::RichText::new(format!(
-                "The frames as they play in the window (speed, smoothness, loop and pauses: the bar at the bottom), from the current view: {} pictures, {seconds:.1} s, {} x {} px, looping.{turning} Uses the Appearance background color.",
+                "The frames as they play in the window (speed, smoothness, loop and pauses: the bar at the bottom), {view}: {} pictures, {seconds:.1} s, {} x {} px, looping.{turning} Uses the Appearance background color.",
                 steps.len(),
                 gif_settings.width,
                 gif_settings.height

@@ -269,8 +269,8 @@ fn looking_at_a_molecule() {
 }
 
 /// "Reaction paths and other frames": the example path, the N-C distance
-/// measured as it forms, between two frames, the line-up choices and the
-/// GIF of the frames in the Export window.
+/// measured as it forms, between two frames, a kept view, the line-up
+/// choices and the GIF of the frames in the Export window.
 #[test]
 fn reaction_path() {
     let mut guide = open(vec![repo_dir().join("examples/reaction-path/reaction-path.xyz")]);
@@ -290,6 +290,11 @@ fn reaction_path() {
     sees_text(&guide, "1.39");
     click(&mut guide, "\u{25c0}");
     sees(&guide, "Frame 21 of 22");
+    // A view kept at frame 21 (the products).
+    click(&mut guide, "Keep this view here");
+    sees(&guide, "Replace the view here");
+    sees(&guide, "Follow the kept views");
+    assert_eq!(guide.state().kept_view_frames(), vec![21.0]);
     guide.state_mut().go_to_frame_position(12.5);
     guide.run_steps(3);
     sees(&guide, "Between frames 13 and 14 of 22");
@@ -300,6 +305,7 @@ fn reaction_path() {
     sees(&guide, "Play the frames");
     sees(&guide, "Turn");
     sees_text(&guide, "The frames as they play in the window");
+    sees_text(&guide, "seen from the kept views");
 }
 
 /// "Looking at a molecule", Styles: an Fe d EFO of ferrocene (the

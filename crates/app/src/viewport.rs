@@ -131,7 +131,8 @@ impl App {
                 self.step_frame(if forward { 1 } else { -1 });
             }
         }
-        let auto_spinning = self.auto_spin && !keyboard_rotating && !camera_dragging;
+        // Kept views turn the frames while they play: Spin waits.
+        let auto_spinning = self.auto_spin && !keyboard_rotating && !camera_dragging && !self.kept_views_turning();
         if auto_spinning {
             self.camera.orbit_along(self.spin_direction, self.auto_spin_speed * dt);
         }

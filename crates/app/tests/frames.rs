@@ -311,3 +311,144 @@ fn energies_on_the_comment_lines_are_plotted() {
     harness.run_steps(3);
     screenshot(&mut harness, "frames-between");
 }
+
+fn button<'a>(harness: &'a Harness, label: &str) -> egui_kittest::Node<'a> {
+    harness
+        .get_all(By::new().role(Role::Button))
+        .find(|n| n.accesskit_node().label().as_deref() == Some(label))
+        .unwrap_or_else(|| panic!("no button {label}"))
+}
+
+#[test]
+fn kept_views_turn_the_camera_along_the_path() {
+    let mut harness = app_with(vec![reaction_path()]);
+    harness.run_steps(2);
+    harness.get_by_label("Keep this view here").click_accesskit();
+    harness.run_steps(2);
+    let start = harness.state().camera_state();
+
+    // At the transition state: turned and closer, kept there too.
+    harness.state_mut().go_to_frame_position(10.0);
+    assert_eq!(harness.state().camera_state(), start, "after the last kept view the camera stays on it");
+    harness.state_mut().turn_view(1.2, 0.4);
+    harness.state_mut().zoom_view(0.6);
+    harness.run_steps(1);
+    harness.get_by_label("Keep this view here").click_accesskit();
+    harness.run_steps(2);
+    let ts = harness.state().camera_state();
+    assert_eq!(harness.state().kept_view_frames(), vec![1.0, 11.0]);
+    assert!(harness.query_by_label("Replace the view here").is_some());
+    assert!(harness.query_by_label("Follow the kept views").is_some());
+
+    // Between them the camera is between them; outside, held.
+    harness.state_mut().go_to_frame_position(5.0);
+    let mid = harness.state().camera_state();
+    assert!(mid.1 < start.1 && mid.1 > ts.1, "zoomed partly: {} between {} and {}", mid.1, start.1, ts.1);
+    assert!(mid.2 != start.2 && mid.2 != ts.2, "turned partly");
+    harness.state_mut().go_to_frame_position(21.0);
+    assert_eq!(harness.state().camera_state(), ts);
+    // The player's buttons go along the views too.
+    harness.get_by_label("\u{23ee}").click_accesskit();
+    harness.run_steps(2);
+    assert_eq!(harness.state().camera_state(), start);
+
+    // Not followed: the camera stays where it is turned.
+    harness.get_by_label("Follow the kept views").click_accesskit();
+    harness.run_steps(2);
+    harness.state_mut().turn_view(0.3, 0.0);
+    let free = harness.state().camera_state();
+    harness.state_mut().go_to_frame_position(10.0);
+    assert_eq!(harness.state().camera_state(), free);
+    // A kept view's button still shows it.
+    button(&harness, "11").click_accesskit();
+    harness.run_steps(2);
+    assert_eq!(harness.state().camera_state(), ts);
+
+    // Removed.
+    button(&harness, "\u{d7}").click_accesskit();
+    harness.run_steps(2);
+    assert_eq!(harness.state().kept_view_frames(), vec![11.0]);
+}
+
+/// The GIF's first picture and its whole bytes.
+fn gif_of(harness: &mut Harness, name: &str) -> (Vec<u8>, Vec<u8>) {
+    let path = scratch_dir("frames-gif-views").join(name);
+    harness.state_mut().save_frames_gif(&path).unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    let mut options = gif::DecodeOptions::new();
+    options.set_color_output(gif::ColorOutput::RGBA);
+    let mut decoder = options.read_info(bytes.as_slice()).unwrap();
+    let first = decoder.read_next_frame().unwrap().unwrap().buffer.to_vec();
+    (first, bytes)
+}
+
+#[test]
+fn the_gif_follows_the_kept_views_and_spin_waits() {
+    let mut harness = app_with(vec![reaction_path()]);
+    harness.run_steps(2);
+    set_field(&mut harness, "frames/s", 10.0);
+    set_field(&mut harness, "between", 0.0);
+    harness.get_by_label("Export").click_accesskit();
+    harness.run_steps(2);
+    set_field(&mut harness, " px", 160.0);
+    let (plain_first, plain) = gif_of(&mut harness, "plain.gif");
+
+    harness.get_by_label("Keep this view here").click_accesskit();
+    harness.run_steps(2);
+    harness.state_mut().go_to_frame_position(21.0);
+    harness.state_mut().turn_view(1.5, 0.2);
+    harness.run_steps(1);
+    harness.get_by_label("Keep this view here").click_accesskit();
+    harness.run_steps(2);
+    harness.state_mut().go_to_frame_position(0.0);
+    let camera = harness.state().camera_state();
+    assert!(harness.query_by_label_contains("seen from the kept views").is_some());
+    let (views_first, views) = gif_of(&mut harness, "views.gif");
+    assert_eq!(harness.state().camera_state(), camera, "the view is left as it was");
+    // Both start from the same view (gifski smooths each picture with its
+    // neighbors, so the first pictures differ only by that).
+    let differing = views_first.chunks(4).zip(plain_first.chunks(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 32)).count();
+    eprintln!("first pictures: {differing} of {} pixels differ", views_first.len() / 4);
+    assert!(differing * 100 < views_first.len() / 4, "both start from the same view ({differing} pixels differ)");
+    assert_ne!(views, plain, "the kept views turn the molecule");
+
+    harness.get_by_label("Spin (Space)").click_accesskit();
+    harness.run_steps(1);
+    assert!(harness.query_by_label_contains("Spin is not used").is_some());
+    let (_, spun) = gif_of(&mut harness, "spin.gif");
+    assert_eq!(spun, views, "Spin waits while kept views turn the molecule");
+}
+
+#[test]
+fn kept_views_stay_on_their_frame_lined_up_otherwise_and_in_sessions() {
+    let session = scratch_dir("frames-views-session").join("views.a3dview");
+    let mut harness = app_with(vec![turned_copy()]);
+    harness.run_steps(2);
+    harness.get_by_label("Keep this view here").click_accesskit();
+    harness.run_steps(2);
+    harness.state_mut().go_to_frame_position(12.0);
+    harness.state_mut().turn_view(0.8, -0.3);
+    harness.run_steps(1);
+    harness.get_by_label("Keep this view here").click_accesskit();
+    harness.run_steps(2);
+    let lined_up = harness.state_mut().render_image(320, 240).unwrap();
+
+    // As in the file, every frame sits elsewhere: the view goes with it.
+    harness.get_by_label("As in the file").click_accesskit();
+    harness.run_steps(2);
+    let as_in_file = harness.state_mut().render_image(320, 240).unwrap();
+    let differing = lined_up.chunks(4).zip(as_in_file.chunks(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 16)).count();
+    eprintln!("lined up otherwise: {differing} pixels differ");
+    assert!(differing * 100 < 320 * 240, "the frame is seen as before ({differing} pixels differ)");
+
+    harness.state_mut().save_session_to(&session).unwrap();
+    let text = std::fs::read_to_string(&session).unwrap();
+    assert!(text.contains("[[structures.frames.views]]") && !text.contains("follow_views"), "{text}");
+    let mut reopened = app_with(vec![session]);
+    reopened.run_steps(3);
+    assert_eq!(reopened.state().kept_view_frames(), vec![1.0, 13.0]);
+    assert!(reopened.state_mut().render_image(320, 240).unwrap() == as_in_file, "the session reopens pixel-identical");
+    reopened.state_mut().go_to_frame_position(0.0);
+    harness.state_mut().go_to_frame_position(0.0);
+    assert_eq!(reopened.state().camera_state(), harness.state().camera_state(), "the views came back");
+}

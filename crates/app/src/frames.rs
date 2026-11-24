@@ -13,11 +13,17 @@
 //! Playback and the GIF follow one timeline (`timeline`): the frames, and
 //! the geometries between them, each shown for a fixed time, with pauses
 //! at the ends. What plays in the window is what the GIF records.
+//!
+//! Views can be kept at chosen frames (`KeptView`): while the frames play
+//! (and in the GIF) the camera then moves from one kept view to the next,
+//! eased in and out, and stays on the first before it and on the last
+//! after it. Each view belongs to a place along the frames, not to a
+//! moment, so going back retraces the turn.
 
 use std::collections::HashSet;
 
-use apost3dview_core::{bond_presence, positions_at, Trajectory};
-use glam::Vec3;
+use apost3dview_core::{bond_presence, positions_at, superpose, Trajectory};
+use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};
 
 use crate::app::App;
@@ -163,6 +169,51 @@ fn time_of(steps: &[Step], position: f32) -> f32 {
     best.1
 }
 
+/// A view kept at a place along the frames: where the camera looks, how
+/// far it is and how it is turned, in the coordinates of the frames as
+/// drawn.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct KeptView {
+    /// Along the frames, 0 = the first frame.
+    pub(crate) position: f32,
+    pub(crate) target: Vec3,
+    pub(crate) distance: f32,
+    pub(crate) orientation: Quat,
+}
+
+/// Two kept views closer than this along the frames are the same place.
+const SAME_PLACE: f32 = 1e-3;
+
+/// The camera (target, distance, orientation) at `position` along the
+/// frames, from views sorted by position: the nearest view outside them,
+/// eased from one to the next between them (turned along the shortest
+/// way, zoomed evenly). `None` without views.
+pub(crate) fn view_at(views: &[KeptView], position: f32) -> Option<(Vec3, f32, Quat)> {
+    let parts = |v: &KeptView| (v.target, v.distance, v.orientation);
+    let (first, last) = (views.first()?, views.last()?);
+    if position <= first.position {
+        return Some(parts(first));
+    }
+    if position >= last.position {
+        return Some(parts(last));
+    }
+    let i = views.windows(2).position(|w| position < w[1].position)?;
+    let (a, b) = (&views[i], &views[i + 1]);
+    let t = ((position - a.position) / (b.position - a.position)).clamp(0.0, 1.0);
+    let s = t * t * (3.0 - 2.0 * t);
+    let end = if a.orientation.dot(b.orientation) < 0.0 { -b.orientation } else { b.orientation };
+    let orientation = a.orientation.slerp(end, s).normalize();
+    let distance = a.distance * (b.distance / a.distance.max(1e-6)).powf(s);
+    Some((a.target.lerp(b.target, s), distance, orientation))
+}
+
+/// A place along the frames as the player shows it: "12" for a frame,
+/// "12.5" between two (1-based).
+pub(crate) fn place_text(position: f32) -> String {
+    let shown = position + 1.0;
+    if (shown - shown.round()).abs() < SAME_PLACE { format!("{}", shown.round() as usize) } else { format!("{shown:.1}") }
+}
+
 /// The frames of a structure opened from a multi-frame .xyz file.
 pub(crate) struct Frames {
     /// The file's frames and energies.
@@ -183,6 +234,10 @@ pub(crate) struct Frames {
     pub(crate) playing: bool,
     /// Seconds into the playback cycle.
     pub(crate) clock: f32,
+    /// Views kept at places along the frames, sorted by place.
+    pub(crate) views: Vec<KeptView>,
+    /// Whether the camera follows the kept views (when there are any).
+    pub(crate) follow_views: bool,
 }
 
 impl Frames {
@@ -199,7 +254,37 @@ impl Frames {
             player: PlayerSettings::default(),
             playing: false,
             clock: 0.0,
+            views: Vec::new(),
+            follow_views: true,
         }
+    }
+
+    /// Whether the camera follows kept views.
+    pub(crate) fn following(&self) -> bool {
+        self.follow_views && !self.views.is_empty()
+    }
+
+    /// Keeps `camera`'s view at the place shown (replacing a view kept
+    /// there); its index.
+    pub(crate) fn keep_view(&mut self, camera: &apost3dview_render::OrbitCamera) -> usize {
+        let view = KeptView { position: self.position, target: camera.target, distance: camera.distance, orientation: camera.orientation };
+        self.add_view(view)
+    }
+
+    /// Adds a view in its place (replacing one kept there); its index.
+    pub(crate) fn add_view(&mut self, view: KeptView) -> usize {
+        if let Some(i) = self.view_here(view.position) {
+            self.views[i] = view;
+            return i;
+        }
+        let i = self.views.partition_point(|v| v.position < view.position);
+        self.views.insert(i, view);
+        i
+    }
+
+    /// The kept view at `position`, if any.
+    pub(crate) fn view_here(&self, position: f32) -> Option<usize> {
+        self.views.iter().position(|v| (v.position - position).abs() < SAME_PLACE)
     }
 
     pub(crate) fn count(&self) -> usize {
@@ -210,13 +295,27 @@ impl Frames {
         self.count().saturating_sub(1) as f32
     }
 
-    /// The frames lined up again, after the alignment changed.
+    /// The frames lined up again, after the alignment changed. Kept views
+    /// move with their frame, so they still show it as they did.
     pub(crate) fn realign(&mut self) {
+        let old = std::mem::take(&mut self.drawn);
         self.drawn = match &self.alignment {
             FrameAlignment::Previous => self.path.aligned_frames(None),
             FrameAlignment::Atoms(atoms) => self.path.aligned_frames(Some(atoms)),
             FrameAlignment::File => self.path.frames.clone(),
         };
+        if old.len() != self.drawn.len() {
+            return;
+        }
+        for view in &mut self.views {
+            let k = (view.position.round() as usize).min(old.len() - 1);
+            // new ≈ rotation · old + translation (exactly: both are the
+            // same frame of the file, turned and moved).
+            if let Some(fit) = superpose(&self.drawn[k], &old[k]) {
+                view.target = fit.rotation * view.target + fit.translation;
+                view.orientation = (fit.rotation * view.orientation).normalize();
+            }
+        }
     }
 
     /// A sphere holding every frame as drawn: center and radius, angstrom.
@@ -270,6 +369,58 @@ impl App {
         }
     }
 
+    /// Shows structure `index` at `position` and, when it follows kept
+    /// views, turns the camera to the view there: where the player, the
+    /// keys and the GIF go.
+    pub(crate) fn go_to_frame(&mut self, index: usize, position: f32) {
+        self.show_frame_position(index, position);
+        self.follow_kept_views(index);
+    }
+
+    /// Turns the camera to the kept view at the place shown, when the
+    /// active structure `index` follows kept views.
+    pub(crate) fn follow_kept_views(&mut self, index: usize) {
+        if self.active_structure != Some(index) {
+            return;
+        }
+        let Some(frames) = self.structures.get(index).and_then(|s| s.frames.as_ref()) else { return };
+        if !frames.following() {
+            return;
+        }
+        if let Some((target, distance, orientation)) = view_at(&frames.views, frames.position) {
+            self.camera.target = target;
+            self.camera.distance = distance;
+            self.camera.orientation = orientation;
+        }
+    }
+
+    /// Whether kept views turn the active structure while it plays (so
+    /// Spin waits).
+    pub(crate) fn kept_views_turning(&self) -> bool {
+        self.active_structure.and_then(|i| self.structures.get(i)).and_then(|s| s.frames.as_ref()).is_some_and(|f| f.playing && f.following())
+    }
+
+    /// Keeps the current view at the place the active structure's frames
+    /// are shown — public for tests.
+    pub fn keep_view_here(&mut self) {
+        let camera = self.camera;
+        let Some(frames) = self.active_structure.and_then(|i| self.structures.get_mut(i)).and_then(|s| s.frames.as_mut()) else { return };
+        let replaced = frames.view_here(frames.position).is_some();
+        frames.keep_view(&camera);
+        let place = place_text(frames.position);
+        self.show_status(if replaced { format!("View at frame {place} replaced") } else { format!("View kept at frame {place}") });
+    }
+
+    /// The places (1-based frames) of the active structure's kept views —
+    /// for tests.
+    pub fn kept_view_frames(&self) -> Vec<f32> {
+        self.active_structure
+            .and_then(|i| self.structures.get(i))
+            .and_then(|s| s.frames.as_ref())
+            .map(|f| f.views.iter().map(|v| v.position + 1.0).collect())
+            .unwrap_or_default()
+    }
+
     /// Redraws the active structure after its atoms moved.
     pub(crate) fn geometry_moved(&mut self) {
         self.rebuild_geometry();
@@ -278,13 +429,13 @@ impl App {
     }
 
     /// Lines up the frames of structure `index` in another way, keeping
-    /// the position shown.
+    /// the position shown (and the kept views on their frames).
     pub(crate) fn set_frame_alignment(&mut self, index: usize, alignment: FrameAlignment) {
         let Some(frames) = self.structures.get_mut(index).and_then(|s| s.frames.as_mut()) else { return };
         frames.alignment = alignment;
         frames.realign();
         let position = frames.position;
-        self.show_frame_position(index, position);
+        self.go_to_frame(index, position);
     }
 
     /// Starts or stops playing the active structure's frames. Playing
@@ -315,14 +466,14 @@ impl App {
             if frames.player.loop_mode == LoopMode::Once {
                 frames.playing = false;
                 let last = frames.last();
-                self.show_frame_position(index, last);
+                self.go_to_frame(index, last);
                 return true;
             }
             frames.clock %= cycle.max(1e-3);
         }
         let position = step_at(&steps, frames.clock).map_or(frames.position, |s| s.position);
         if position != frames.position {
-            self.show_frame_position(index, position);
+            self.go_to_frame(index, position);
         }
         true
     }
@@ -360,7 +511,7 @@ impl App {
         let Some(frames) = self.structures.get_mut(index).and_then(|s| s.frames.as_mut()) else { return };
         frames.playing = false;
         let target = if direction > 0 { frames.position.floor() + 1.0 } else { frames.position.ceil() - 1.0 };
-        self.show_frame_position(index, target);
+        self.go_to_frame(index, target);
     }
 
     /// Where the active structure is along its frames — for tests.
@@ -368,11 +519,12 @@ impl App {
         self.active_structure.and_then(|i| self.structures.get(i)).and_then(|s| s.frames.as_ref()).map(|f| f.position)
     }
 
-    /// Shows the active structure at `position` along its frames — for
-    /// tests (and later, scripting).
+    /// Shows the active structure at `position` along its frames, seen
+    /// from the kept views if it follows them — for tests (and later,
+    /// scripting).
     pub fn go_to_frame_position(&mut self, position: f32) {
         if let Some(index) = self.active_structure {
-            self.show_frame_position(index, position);
+            self.go_to_frame(index, position);
         }
     }
 
@@ -406,7 +558,10 @@ impl App {
         let response = egui::Panel::bottom("frames_bar").show(ui, |ui| {
             ui.add_space(2.0);
             ui.horizontal(|ui| {
-                self.show_player_controls(ui, index);
+                ui.vertical(|ui| {
+                    self.show_player_controls(ui, index);
+                    self.show_kept_views_row(ui, index);
+                });
                 if let Some(energies) = self.structures[index].frames.as_ref().and_then(Frames::relative_energies) {
                     ui.separator();
                     self.show_energy_profile(ui, index, &energies);
@@ -420,6 +575,7 @@ impl App {
     fn show_player_controls(&mut self, ui: &mut egui::Ui, index: usize) {
         let Some(frames) = self.structures[index].frames.as_ref() else { return };
         let (position, last, playing, mut player) = (frames.position, frames.last(), frames.playing, frames.player);
+        let marks: Vec<f32> = frames.views.iter().map(|v| v.position).collect();
         let mut go_to = None;
         let mut toggle = false;
         ui.vertical(|ui| {
@@ -445,8 +601,23 @@ impl App {
                 // user picks is rounded to a frame instead.
                 let mut shown = position + 1.0;
                 let slider = egui::Slider::new(&mut shown, 1.0..=last + 1.0).show_value(false);
-                if ui.add_sized([220.0, 18.0], slider).changed() {
+                let slider = ui.add_sized([220.0, 18.0], slider);
+                if slider.changed() {
                     go_to = Some((shown - 1.0).round());
+                }
+                // The kept views, as marks under the slider's rail (which
+                // runs between the handle's centers at both ends).
+                let rect = slider.rect;
+                let inset = rect.height() / 2.5;
+                let color = ui.visuals().selection.bg_fill;
+                for &mark in &marks {
+                    let x = rect.left() + inset + (rect.width() - 2.0 * inset) * mark / last.max(1.0);
+                    let y = rect.bottom() + 1.0;
+                    ui.painter().add(egui::Shape::convex_polygon(
+                        vec![egui::pos2(x, y - 4.0), egui::pos2(x + 3.5, y + 1.5), egui::pos2(x - 3.5, y + 1.5)],
+                        color,
+                        egui::Stroke::NONE,
+                    ));
                 }
                 ui.label(self.structures[index].frames.as_ref().map(Frames::frame_text).unwrap_or_default());
             });
@@ -478,7 +649,70 @@ impl App {
             if let Some(frames) = self.structures[index].frames.as_mut() {
                 frames.playing = false;
             }
-            self.show_frame_position(index, target);
+            self.go_to_frame(index, target);
+        }
+    }
+
+    /// The kept views: keep the current one here, go to or remove one,
+    /// and whether the camera follows them.
+    fn show_kept_views_row(&mut self, ui: &mut egui::Ui, index: usize) {
+        let Some(frames) = self.structures[index].frames.as_ref() else { return };
+        let places: Vec<f32> = frames.views.iter().map(|v| v.position).collect();
+        let here = frames.view_here(frames.position).is_some();
+        let mut follow = frames.follow_views;
+        let mut keep = false;
+        let mut go_to = None;
+        let mut remove = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Views:");
+            let keep_text = if here { "Replace the view here" } else { "Keep this view here" };
+            if ui
+                .button(keep_text)
+                .on_hover_text("Keeps how the molecule is seen now (turn, zoom, position) at this frame. As the frames play, and in the GIF, the camera moves smoothly from each kept view to the next.")
+                .clicked()
+            {
+                keep = true;
+            }
+            if places.is_empty() {
+                ui.label(egui::RichText::new("Turn and zoom at a frame, then keep that view: the camera moves from view to view as the frames play.").small().weak());
+            }
+            for (i, &place) in places.iter().enumerate() {
+                let text = place_text(place);
+                if ui.small_button(&text).on_hover_text(format!("Go to frame {text}, as kept")).clicked() {
+                    go_to = Some(place);
+                }
+                if ui.small_button("\u{d7}").on_hover_text(format!("Remove the view kept at frame {text}")).clicked() {
+                    remove = Some(i);
+                }
+            }
+            if !places.is_empty() {
+                ui.checkbox(&mut follow, "Follow the kept views")
+                    .on_hover_text("Off: the frames play from whatever view you turn to, and Spin turns them, as without kept views. The views stay kept.");
+            }
+        });
+        if keep {
+            self.keep_view_here();
+        }
+        let Some(frames) = self.structures[index].frames.as_mut() else { return };
+        let turned_on = follow && !frames.follow_views;
+        frames.follow_views = follow;
+        if let Some(i) = remove {
+            frames.views.remove(i);
+            self.show_status("Kept view removed");
+        }
+        if let Some(place) = go_to {
+            if let Some(frames) = self.structures[index].frames.as_mut() {
+                frames.playing = false;
+            }
+            // Going to a kept view shows it, even when not following.
+            self.show_frame_position(index, place);
+            if let Some((target, distance, orientation)) = self.structures[index].frames.as_ref().and_then(|f| view_at(&f.views, place)) {
+                self.camera.target = target;
+                self.camera.distance = distance;
+                self.camera.orientation = orientation;
+            }
+        } else if turned_on {
+            self.follow_kept_views(index);
         }
     }
 
@@ -522,7 +756,7 @@ impl App {
                 if let Some(frames) = self.structures[index].frames.as_mut() {
                     frames.playing = false;
                 }
-                self.show_frame_position(index, target);
+                self.go_to_frame(index, target);
             }
         });
     }
@@ -597,6 +831,43 @@ mod tests {
         assert_eq!(step_at(&steps, 0.76).unwrap().position, 0.5);
         assert!(step_at(&steps, 10.0).is_none());
         assert!((time_of(&steps, 1.5) - 1.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn kept_views_are_eased_from_one_to_the_next() {
+        let turned = Quat::from_rotation_y(1.0);
+        let views = [
+            KeptView { position: 2.0, target: Vec3::ZERO, distance: 10.0, orientation: Quat::IDENTITY },
+            KeptView { position: 6.0, target: Vec3::new(4.0, 0.0, 0.0), distance: 2.5, orientation: turned },
+        ];
+        assert!(view_at(&[], 1.0).is_none());
+        // Held before the first and after the last.
+        assert_eq!(view_at(&views, 0.0), Some((Vec3::ZERO, 10.0, Quat::IDENTITY)));
+        assert_eq!(view_at(&views, 9.0), Some((Vec3::new(4.0, 0.0, 0.0), 2.5, turned)));
+        // Halfway: half the turn, half the way, the zoom evenly between.
+        let (target, distance, orientation) = view_at(&views, 4.0).unwrap();
+        assert!((target - Vec3::new(2.0, 0.0, 0.0)).length() < 1e-5);
+        assert!((distance - 5.0).abs() < 1e-4);
+        assert!(orientation.angle_between(Quat::from_rotation_y(0.5)) < 1e-4);
+        // Eased: a quarter of the way along is less than a quarter turned.
+        let (_, _, early) = view_at(&views, 3.0).unwrap();
+        assert!(early.angle_between(Quat::IDENTITY) < 0.25 * 1.0 - 0.05);
+        // The shortest way, even when a quaternion is written the other sign.
+        let flipped = [views[0], KeptView { orientation: -turned, ..views[1] }];
+        assert!(view_at(&flipped, 4.0).unwrap().2.angle_between(Quat::from_rotation_y(0.5)) < 1e-4);
+    }
+
+    #[test]
+    fn a_view_kept_in_the_same_place_replaces_the_one_there() {
+        let frame = apost3dview_core::XyzFrame { atomic_numbers: vec![1, 1], positions: vec![Vec3::ZERO, Vec3::X], comment: String::new() };
+        let mut frames = Frames::new(Trajectory::from_frames(&vec![frame; 3]).unwrap(), 1);
+        let view = |position, distance| KeptView { position, target: Vec3::ZERO, distance, orientation: Quat::IDENTITY };
+        frames.add_view(view(2.0, 1.0));
+        frames.add_view(view(0.0, 1.0));
+        frames.add_view(view(2.0, 3.0));
+        assert_eq!(frames.views.iter().map(|v| (v.position, v.distance)).collect::<Vec<_>>(), vec![(0.0, 1.0), (2.0, 3.0)]);
+        assert_eq!(place_text(10.0), "11");
+        assert_eq!(place_text(10.5), "11.5");
     }
 
     #[test]

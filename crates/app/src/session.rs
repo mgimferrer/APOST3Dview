@@ -235,6 +235,31 @@ struct FramesState {
     line_up_atoms: Vec<usize>,
     #[serde(default)]
     player: crate::frames::PlayerSettings,
+    /// Views kept along the frames (2026-11-24; absent = none).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    views: Vec<KeptViewState>,
+    /// Whether the camera follows them while the frames play.
+    #[serde(default = "follow_views_default", skip_serializing_if = "is_true")]
+    follow_views: bool,
+}
+
+fn follow_views_default() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
+/// A view kept at a place along the frames.
+#[derive(Serialize, Deserialize)]
+struct KeptViewState {
+    /// 1 = the first frame.
+    frame: f32,
+    target: [f32; 3],
+    distance: f32,
+    /// Quaternion, x y z w.
+    orientation: [f32; 4],
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Copy, PartialEq)]
@@ -511,7 +536,12 @@ impl App {
                             FrameAlignment::Atoms(atoms) => (LineUp::Atoms, atoms.iter().map(|a| a + 1).collect()),
                             FrameAlignment::File => (LineUp::File, Vec::new()),
                         };
-                        FramesState { frame: f.position + 1.0, line_up, line_up_atoms, player: f.player }
+                        let views = f
+                            .views
+                            .iter()
+                            .map(|v| KeptViewState { frame: v.position + 1.0, target: v.target.to_array(), distance: v.distance, orientation: v.orientation.to_array() })
+                            .collect();
+                        FramesState { frame: f.position + 1.0, line_up, line_up_atoms, player: f.player, views, follow_views: f.follow_views }
                     }),
                 })
             })
@@ -808,6 +838,18 @@ impl App {
                 LineUp::File => FrameAlignment::File,
             };
             frames.realign();
+            // Saved in the coordinates of the frames as lined up then: added
+            // after lining up, so they aren't carried.
+            frames.follow_views = saved.follow_views;
+            for v in saved.views.iter().filter(|v| v.distance > 0.0 && v.frame >= 1.0) {
+                let orientation = Quat::from_array(v.orientation);
+                frames.add_view(crate::frames::KeptView {
+                    position: (v.frame - 1.0).min(frames.last()),
+                    target: Vec3::from_array(v.target),
+                    distance: v.distance,
+                    orientation: if orientation.is_normalized() { orientation } else { orientation.normalize() },
+                });
+            }
             let position = saved.frame - 1.0;
             self.show_frame_position(index, position);
         }

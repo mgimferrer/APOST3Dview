@@ -353,8 +353,10 @@ impl App {
         }
     }
 
-    /// The frames GIF written to `path`; the number of pictures in it. The
-    /// frames and the view are left as they were — public for tests.
+    /// The frames GIF written to `path`; the number of pictures in it. Seen
+    /// from the kept views when the frames follow them, else from the
+    /// current view (turning if Spin is on). The frames and the view are
+    /// left as they were — public for tests.
     pub fn save_frames_gif(&mut self, path: &std::path::Path) -> Result<usize, String> {
         let active = self.active_structure.ok_or("Open a structure first.")?;
         let frames = self.structures[active].frames.as_ref().ok_or("This structure has no frames.")?;
@@ -367,12 +369,17 @@ impl App {
         let file = std::fs::File::create(path).map_err(|err| format!("Could not create {}: {err}", path.display()))?;
         let settings = self.gif_export_settings();
         let camera = self.camera;
-        let spin = self.auto_spin.then_some((self.spin_direction, self.auto_spin_speed));
+        // Kept views turn the molecule when followed; Spin only without them.
+        let follow = frames.following();
+        let spin = (self.auto_spin && !follow).then_some((self.spin_direction, self.auto_spin_speed));
         let mut gif = GifWriter::new(GIF_QUALITY, std::io::BufWriter::new(file))?;
         let mut seconds = 0.0_f64;
         let mut result = Ok(steps.len());
         for step in &steps {
             self.show_frame_position(active, step.position);
+            if follow {
+                self.follow_kept_views(active);
+            }
             if let Some((direction, speed)) = spin {
                 self.camera = camera;
                 self.camera.orbit_along(direction, speed * seconds as f32);
