@@ -81,7 +81,7 @@ In `apost3dview-render`, checks of the rendering, most of them on a real GPU dev
 `.github/workflows/release.yml` builds the downloadable packages:
 
 - `scripts/package-macos.sh`: universal `APOST-3Dview.app` (Apple Silicon + Intel), ad-hoc signed, in a `.dmg`. Runs the same on a Mac by hand.
-- `scripts/package-linux.sh`: a `.tar.gz` with the executable, its menu entry and `install.sh`.
+- `scripts/package-linux.sh`: a `.tar.gz` with the executable, its menu entry and `install.sh`. The executable is built with [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) against glibc 2.17 (`pip install ziglang cargo-zigbuild`), so it runs on older systems than the build machine (a program needs a glibc at least as new as the one it was built against). The script checks the glibc the executable asks for, and the workflow's `linux-check` job renders an example session with the package on Rocky Linux 8.
 - Windows: the `.exe` in a `.zip`, built in the workflow itself.
 
 Every package also holds `examples/` and the guide (`guide/`, built by the workflow's guide job; to run the packaging scripts by hand, run `mdbook build docs` first). Starting the workflow by hand (Actions, Release, Run workflow) only builds; the packages are under the run's Artifacts. To publish a release:

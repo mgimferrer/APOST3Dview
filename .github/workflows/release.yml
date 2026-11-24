@@ -91,9 +91,11 @@ jobs:
           name: macos
           path: dist/*.dmg
 
+  # Built against glibc 2.17 with zig (see scripts/package-linux.sh), so the
+  # runner's own Ubuntu version doesn't matter.
   linux:
     needs: [version, guide]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
@@ -102,15 +104,39 @@ jobs:
           path: docs/book
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+      - run: pip install ziglang==0.17.1 cargo-zigbuild==0.24.1
       - run: scripts/package-linux.sh
       - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: dist/*.tar.gz
 
+  # The Linux package on an older system than the build machine (Rocky
+  # Linux 8, glibc 2.28): it starts and renders an example session on the
+  # software renderer.
+  linux-check:
+    needs: linux
+    runs-on: ubuntu-latest
+    container: rockylinux:8
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux
+      - run: dnf install -y mesa-vulkan-drivers vulkan-loader mesa-libEGL mesa-dri-drivers
+      - run: tar xzf APOST3Dview-linux.tar.gz
+      - name: Render an example session
+        run: |
+          cd APOST3Dview-*/
+          ldd --version | head -1
+          ./apost3dview --render examples/FeCp2-IQA-ALLPAIRS/ferrocene-iqa-fragments.a3dview ferrocene.png --size 640x400
+          test -s ferrocene.png
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-check-picture
+          path: APOST3Dview-*/ferrocene.png
+
   publish:
-    needs: [version, windows, macos, linux]
+    needs: [version, windows, macos, linux, linux-check]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:

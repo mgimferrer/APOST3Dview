@@ -30,6 +30,8 @@ The first time you open it, Windows and macOS ask once whether to trust it. That
 2. In the unpacked folder, run `./install.sh` to add APOST-3Dview to your applications menu (for your user only, no root needed), or start `./apost3dview` directly.
 3. A Vulkan driver for your graphics card is needed (Mesa's `mesa-vulkan-drivers`, or your card maker's driver). Most desktops have one already.
 
+The program runs on 64-bit Linux systems with glibc 2.17 or later, which covers every distribution of the last ten years: RHEL, CentOS, Rocky and AlmaLinux 7 and later, Ubuntu 14.04 and later, Debian 8 and later. `ldd --version` tells which glibc a system has.
+
 If it doesn't start, see [Troubleshooting](troubleshooting.md).
 
 ## The window
