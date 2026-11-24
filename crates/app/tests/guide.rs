@@ -636,3 +636,84 @@ fn panels_of_orbitals() {
         save(&dir, "panels-oslos", &image);
     }
 }
+
+/// figures.md, "Several surfaces in one panel": ferrocene's Fe d EFOs each
+/// drawn with a Cp π EFO, as in the bonding papers' figures, the Cp ones
+/// recolored by hand so the two read apart.
+#[test]
+fn panels_that_overlay_surfaces() {
+    let job = "FeCp2-EOS-OSLO";
+    let mut guide = open_example(job);
+    click(&mut guide, "Surfaces");
+    choose(&mut guide, "SCF orbitals", "EOS EFOs");
+    // One at a time, so the list (and each overlay) has Fe first.
+    for row in [42, 40, 43, 45] {
+        guide.state_mut().select_set_orbitals(&[row - 1], &[]);
+        guide.run_steps(2);
+        click(&mut guide, "Generate 1 orbital(s)");
+    }
+    let labels: Vec<String> = guide.state().surface_labels().into_iter().map(|(l, _)| l).collect();
+    assert_eq!(labels.len(), 4);
+    assert!(labels[0].starts_with("EFO 42 ") && labels[1].starts_with("EFO 40 "), "{labels:?}");
+    for cp in [&labels[1], &labels[3]] {
+        guide.state_mut().set_surface_colors(cp, [0, 120, 120], [220, 140, 30]);
+    }
+    sees(&guide, "Positive:");
+    sees(&guide, "Negative:");
+
+    let text = std::fs::read_to_string(example(job).join(format!("{job}.apost.json"))).unwrap();
+    let results = apost3dview_core::parse_apost_results(&text).unwrap();
+    let molecule = results.molecule.as_ref().unwrap();
+    let at = |i: usize| glam::Vec3::from_array(molecule.coordinates_bohr[i].map(|c| c as f32));
+    let centroid = |f: usize| results.fragments()[f].atoms.iter().map(|&a| at(a - 1)).sum::<glam::Vec3>() / results.fragments()[f].atoms.len() as f32;
+    let up = centroid(1) - centroid(2);
+    let front = results.fragments()[2].atoms.iter().map(|&a| a - 1).find(|&a| molecule.symbols[a] == "C").unwrap();
+    let toward = at(front) - centroid(2);
+    guide.state_mut().set_view_orientation(orientation(up, toward.cross(up), 0.33, std::f32::consts::PI / 5.0));
+    guide.state_mut().zoom_view(0.62);
+    guide.run_steps(2);
+
+    click(&mut guide, "Export");
+    click(&mut guide, "Panels");
+    // Only the Export window: its crosses are then the only ones.
+    for window in ["Molecule", "Surfaces", "APOST-3D"] {
+        let ctx = guide.ctx.clone();
+        guide.state().set_window_collapsed(&ctx, window, true);
+    }
+    guide.run_steps(3);
+    sees(&guide, "Panels (4)");
+    // The shown surfaces together, then the other pair grown from its panel.
+    guide.state_mut().show_surfaces(&[&labels[0], &labels[1]]);
+    guide.run_steps(2);
+    choose(&mut guide, "Add a panel", "The shown surfaces together (2)");
+    guide.key_press(egui::Key::Escape);
+    guide.run_steps(2);
+    // The "+" of the third panel (EFO 43).
+    guide.get_all(By::new().role(Role::ComboBox)).filter(|n| n.value().as_deref() == Some("+")).nth(2).expect("the + of EFO 43's panel").click_accesskit();
+    guide.run_steps(2);
+    guide.query_all_by_label(&labels[3]).last().unwrap().click_accesskit();
+    guide.run_steps(3);
+    guide.key_press(egui::Key::Escape);
+    guide.run_steps(2);
+    sees(&guide, &format!("{} + {}", labels[2], labels[3]));
+    // The one-surface panels of EFO 42, 40 and 45 go (the first cross of
+    // the list each time, panel 43 + 45 being second by then).
+    for _ in 0..2 {
+        click(&mut guide, "\u{d7}");
+    }
+    let crosses: Vec<_> = guide.query_all_by_label("\u{d7}").collect();
+    crosses[3].click_accesskit();
+    guide.run_steps(3);
+    let panels = guide.state().panel_surfaces();
+    assert_eq!(panels, vec![vec![labels[2].clone(), labels[3].clone()], vec![labels[0].clone(), labels[1].clone()]], "{panels:?}");
+    click(&mut guide, "\u{2b07}");
+    click(&mut guide, "Value and fragment");
+    let captions = guide.state().panel_captions();
+    assert_eq!(captions[0], "0.890 (Fe) + 0.899 (C5H5)");
+    assert_eq!(captions[1], "0.817 (Fe) + 0.795 (C5H5)");
+    if let Some(dir) = images_dir() {
+        guide.state_mut().set_panel_figure(600, true, true);
+        let (w, h, pixels) = guide.state_mut().render_panel_figure().expect("the figure");
+        save(&dir, "panels-overlays", &image::RgbaImage::from_raw(w, h, pixels).unwrap());
+    }
+}

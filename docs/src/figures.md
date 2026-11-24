@@ -17,7 +17,7 @@ The window shows the size of the image that will be made. Click **Render and sav
 
 ## Panels: several orbitals in one figure
 
-Most figures of bonding analyses are grids of orbitals, all seen the same way, each with a caption: the OSLOs of a molecule with their FOLI, the effective fragment orbitals of a metal with their occupations. **Panels** makes such a figure in one step. Every panel is the current view with one surface shown alone, rendered exactly as a single image would be, so all the panels share the same orientation, zoom and look.
+Most figures of bonding analyses are grids of orbitals, all seen the same way, each with a caption: the OSLOs of a molecule with their FOLI, the effective fragment orbitals of a metal with their occupations. **Panels** makes such a figure in one step. Every panel is the current view with one surface shown alone (or a few drawn together, see below), rendered exactly as a single image would be, so all the panels share the same orientation, zoom and look.
 
 <img src="images/panels-oslos.png" alt="The nine OSLOs of ethane as a 3 by 3 grid, each with its caption">
 
@@ -35,6 +35,19 @@ Most figures of bonding analyses are grids of orbitals, all seen the same way, e
 The preview at the top of the window shows the figure as it will be saved, and follows every change: rotate the molecule, edit a caption, change the layout, and it is drawn again a moment later. Click it to see it larger in **Figure preview**. Then click **Render and save panels...** and choose where to save it. A large figure takes a few seconds: every panel is rendered at full size with ambient occlusion.
 
 When a value of the APOST-3D results is shown on the molecule, its legend is drawn once below the panels if it is the same in all of them, and in each panel otherwise.
+
+### Several surfaces in one panel
+
+Bonding papers often draw two orbitals in one picture: a metal d EFO together with the ligand EFO it interacts with, say. A panel can hold several surfaces of one structure, drawn over each other in their own colors.
+
+<img src="images/panels-overlays.png" alt="Two panels of ferrocene, each with an Fe d EFO in blue and red and a Cp EFO in teal and amber">
+
+- Tick the surfaces to draw together in the **Surfaces** window, then pick **The shown surfaces together (2)** in **Add a panel** (the number is how many are ticked).
+- Or grow a panel from its row in the list: the **+** menu next to it adds another surface of the same structure. Each surface of a panel with several has its own cross below the panel's name, to take it out again.
+
+Each surface keeps the colors it has in the **Surfaces** window, and nothing is recolored for you. Two orbitals in the same blue and red are hard to tell apart, so give one of them other colors there (**Positive:** and **Negative:**) before making the figure, as with the Cp EFOs in teal and amber above. The colors then apply wherever that surface is drawn. A translucent surface (a lower opacity) lets the lobes behind it show through, and crossing lobes are drawn in the right order.
+
+The automatic caption joins the captions of the surfaces with a plus: "0.890 (Fe) + 0.899 (C5H5)" with **Value and fragment**, the full names and numbers with **Full**. Panels with one surface and panels with several can be mixed in one figure. If a surface of a panel is closed, that panel is left out of the figure (half an overlay would mislead).
 
 ### Panels of several structures
 

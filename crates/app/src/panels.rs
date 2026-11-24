@@ -3,9 +3,13 @@
 //! caption, laid out in a grid ready for a paper. The single image can
 //! get a caption the same way (a figure of one panel).
 //!
+//! A panel holds one surface, several surfaces of one structure drawn
+//! together (an overlay: say an Fe d EFO with a Cp π EFO, each in its own
+//! colors), or the structure as it is shown.
+//!
 //! Every panel goes through the same offscreen render as a single PNG
 //! (labels, ambient occlusion, depth of field, the results display), with
-//! only its surface shown; the panels are then put together on the CPU
+//! only its surfaces shown; the panels are then put together on the CPU
 //! (`apost3dview_render::compose_figure`), so the figure is the same byte
 //! for byte each time. The live view and the shown surfaces are put back
 //! afterwards. A small preview of the figure is kept up to date in the
@@ -133,15 +137,30 @@ impl Default for FigureSettings {
     }
 }
 
-/// One panel: a surface of a structure shown alone, or the structure as
-/// it is shown (`surface` `None`), with its caption (empty: automatic).
+/// One panel: surfaces of a structure shown together (one, or several
+/// drawn over each other in their own colors), or the structure as it is
+/// shown (`surfaces` empty), with its caption (empty: automatic).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Panel {
     pub(crate) structure: usize,
-    /// The surface's name in the structure's list.
-    pub(crate) surface: Option<String>,
+    /// The surfaces' names in the structure's list, in the panel's order.
+    pub(crate) surfaces: Vec<String>,
     pub(crate) caption: String,
 }
+
+impl Panel {
+    pub(crate) fn of_surface(structure: usize, label: String) -> Self {
+        Self { structure, surfaces: vec![label], caption: String::new() }
+    }
+
+    pub(crate) fn as_shown(structure: usize) -> Self {
+        Self { structure, surfaces: Vec::new(), caption: String::new() }
+    }
+}
+
+/// Between the captions of the surfaces of one panel: "0.890 (Fe) + 0.899
+/// (Cp)".
+const OVERLAY_SEPARATOR: &str = " + ";
 
 /// What a surface's caption says beside its name: "FOLI 2.001",
 /// "occ. 0.890", the number alone ("2.001") and its fragments' formulas
@@ -220,19 +239,19 @@ pub(crate) struct PanelExportState {
     pub(crate) preview: FigurePreview,
 }
 
-/// A panel ready to render: its structure, its surface (index; `None`:
+/// A panel ready to render: its structure, its surfaces (indices; `None`:
 /// as shown), camera, caption, and whether the legend goes into it.
 struct PanelJob {
     structure: usize,
-    surface: Option<usize>,
+    surfaces: Option<Vec<usize>>,
     camera: OrbitCamera,
     caption: String,
     legend: bool,
 }
 
 /// A panel that can be drawn: its position in the list, its structure,
-/// and its surface (index; `None`: the structure as shown).
-type ResolvedPanel = (usize, usize, Option<usize>);
+/// and its surfaces (indices; `None`: the structure as shown).
+type ResolvedPanel = (usize, usize, Option<Vec<usize>>);
 
 /// Everything a figure is made from.
 struct FigureJob {
@@ -318,10 +337,20 @@ impl App {
         structure.source_path.as_ref().and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| structure.label.clone())
     }
 
-    /// The automatic caption of a panel.
-    pub(crate) fn default_caption(&self, structure: usize, surface: Option<&str>) -> String {
-        let Some(found) = surface.and_then(|label| self.structures[structure].surfaces.iter().find(|s| s.label == label)) else {
+    /// The automatic caption of a panel: its surfaces' captions joined
+    /// ("0.890 (Fe) + 0.899 (Cp)"), or the structure's name when it shows
+    /// the structure as it is.
+    pub(crate) fn default_caption(&self, structure: usize, surfaces: &[String]) -> String {
+        if surfaces.is_empty() {
             return self.structure_caption(structure);
+        }
+        surfaces.iter().map(|label| self.surface_caption(structure, label)).collect::<Vec<_>>().join(OVERLAY_SEPARATOR)
+    }
+
+    /// One surface's automatic caption.
+    fn surface_caption(&self, structure: usize, label: &str) -> String {
+        let Some(found) = self.structures[structure].surfaces.iter().find(|s| s.label == label) else {
+            return label.to_string();
         };
         let name = match &found.source {
             crate::isosurfaces::SurfaceSource::Cube(path) => path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| found.label.clone()),
@@ -338,15 +367,20 @@ impl App {
 
     /// The caption a panel gets: its own text, or the automatic one.
     pub(crate) fn panel_caption(&self, panel: &Panel) -> String {
-        if panel.caption.trim().is_empty() { self.default_caption(panel.structure, panel.surface.as_deref()) } else { panel.caption.clone() }
+        if panel.caption.trim().is_empty() { self.default_caption(panel.structure, &panel.surfaces) } else { panel.caption.clone() }
     }
 
     /// The single image's automatic caption: the surface shown (when one
     /// is), else the structure.
     pub(crate) fn default_single_caption(&self) -> String {
         let Some(active) = self.active_structure else { return String::new() };
-        let shown: Vec<&str> = self.structures[active].surfaces.iter().filter(|s| s.visible).map(|s| s.label.as_str()).collect();
-        self.default_caption(active, if shown.len() == 1 { Some(shown[0]) } else { None })
+        let shown = self.shown_surfaces(active);
+        self.default_caption(active, if shown.len() == 1 { &shown } else { &[] })
+    }
+
+    /// The names of a structure's surfaces ticked in the Surfaces window.
+    pub(crate) fn shown_surfaces(&self, structure: usize) -> Vec<String> {
+        self.structures.get(structure).map(|s| s.surfaces.iter().filter(|x| x.visible).map(|x| x.label.clone()).collect()).unwrap_or_default()
     }
 
     /// Fills an empty panel list with the active structure's surfaces (or
@@ -358,11 +392,7 @@ impl App {
         }
         let Some(active) = self.active_structure else { return };
         let surfaces: Vec<String> = self.structures[active].surfaces.iter().map(|s| s.label.clone()).collect();
-        let panels = if surfaces.is_empty() {
-            vec![Panel { structure: active, surface: None, caption: String::new() }]
-        } else {
-            surfaces.into_iter().map(|label| Panel { structure: active, surface: Some(label), caption: String::new() }).collect()
-        };
+        let panels = if surfaces.is_empty() { vec![Panel::as_shown(active)] } else { surfaces.into_iter().map(|label| Panel::of_surface(active, label)).collect() };
         self.render_export.figure.panels = panels;
     }
 
@@ -375,18 +405,23 @@ impl App {
         }
     }
 
-    /// The panels that can be drawn, and the names of those that can't.
+    /// The panels that can be drawn, and the names of surfaces that are
+    /// gone (a panel missing any of its surfaces isn't drawn: half an
+    /// overlay would mislead).
     fn resolved_panels(&self) -> (Vec<ResolvedPanel>, Vec<String>) {
         let mut found = Vec::new();
         let mut missing = Vec::new();
         for (k, panel) in self.render_export.figure.panels.iter().enumerate() {
             let Some(structure) = self.structures.get(panel.structure) else { continue };
-            match &panel.surface {
-                None => found.push((k, panel.structure, None)),
-                Some(label) => match structure.surfaces.iter().position(|s| &s.label == label) {
-                    Some(i) => found.push((k, panel.structure, Some(i))),
-                    None => missing.push(label.clone()),
-                },
+            if panel.surfaces.is_empty() {
+                found.push((k, panel.structure, None));
+                continue;
+            }
+            let indices: Vec<Option<usize>> = panel.surfaces.iter().map(|label| structure.surfaces.iter().position(|s| &s.label == label)).collect();
+            if indices.iter().all(Option::is_some) {
+                found.push((k, panel.structure, Some(indices.into_iter().flatten().collect())));
+            } else {
+                missing.extend(panel.surfaces.iter().zip(&indices).filter(|(_, i)| i.is_none()).map(|(label, _)| label.clone()));
             }
         }
         (found, missing)
@@ -430,7 +465,7 @@ impl App {
         let (mut panels, layout_grid, panel_width, panel_height, background, captions, letters) = match settings.mode {
             ImageMode::Single => {
                 let caption = if settings.single_caption_text.trim().is_empty() { self.default_single_caption() } else { settings.single_caption_text.clone() };
-                let job = PanelJob { structure: active, surface: None, camera: self.camera, caption, legend: false };
+                let job = PanelJob { structure: active, surfaces: None, camera: self.camera, caption, legend: false };
                 let single = self.resolve_export_settings();
                 let width = single.width as f32 * scale / (1.0 + 2.0 * gap_fraction);
                 let height = width * single.height as f32 / single.width.max(1) as f32;
@@ -444,11 +479,11 @@ impl App {
                 }
                 let jobs: Vec<PanelJob> = found
                     .iter()
-                    .map(|&(k, structure, surface)| PanelJob {
-                        structure,
-                        surface,
-                        camera: self.view_for(structure),
-                        caption: self.panel_caption(&figure.panels[k]),
+                    .map(|(k, structure, surfaces)| PanelJob {
+                        structure: *structure,
+                        surfaces: surfaces.clone(),
+                        camera: self.view_for(*structure),
+                        caption: self.panel_caption(&figure.panels[*k]),
                         legend: false,
                     })
                     .collect();
@@ -536,10 +571,10 @@ impl App {
                 loaded = Some(panel.structure);
             }
             self.camera = panel.camera;
-            if let Some(surface) = panel.surface {
+            if let Some(surfaces) = &panel.surfaces {
                 let structure = &mut self.structures[panel.structure];
                 for (i, s) in structure.surfaces.iter_mut().enumerate() {
-                    s.visible = i == surface;
+                    s.visible = surfaces.contains(&i);
                 }
             } else {
                 for (s, &visible) in self.structures[panel.structure].surfaces.iter_mut().zip(&visibility[panel.structure]) {
@@ -662,7 +697,7 @@ impl App {
             key.push_str(&format!(
                 "|{}:{:?}:{:?}:{:?}:{:?}:{:?}:{:?}:{:?}:{:?}:{:?}:{}",
                 panel.structure,
-                panel.surface,
+                panel.surfaces,
                 panel.camera,
                 panel.legend,
                 hidden,
@@ -762,6 +797,12 @@ impl App {
     /// The panels' captions, as they would be drawn — for tests.
     pub fn panel_captions(&self) -> Vec<String> {
         self.render_export.figure.panels.iter().map(|p| self.panel_caption(p)).collect()
+    }
+
+    /// The surfaces of every panel (empty: the structure as shown) — for
+    /// tests.
+    pub fn panel_surfaces(&self) -> Vec<Vec<String>> {
+        self.render_export.figure.panels.iter().map(|p| p.surfaces.clone()).collect()
     }
 
     /// Gives panel `index` its own caption (empty: automatic) — for tests.

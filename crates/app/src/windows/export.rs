@@ -15,6 +15,10 @@ enum PanelAction {
     Remove(usize),
     Add(Panel),
     AddAll,
+    /// Another surface into panel k, drawn with the others.
+    AddSurface(usize, String),
+    /// Surface j out of panel k.
+    RemoveSurface(usize, usize),
 }
 
 impl App {
@@ -37,7 +41,7 @@ impl App {
                     let mode = &mut self.render_export.figure.settings.mode;
                     ui.selectable_value(mode, ImageMode::Single, "Single image");
                     ui.selectable_value(mode, ImageMode::Panels, "Panels")
-                        .on_hover_text("Several surfaces side by side in one picture, same view, each with a caption");
+                        .on_hover_text("Several surfaces side by side in one picture, same view, each with a caption. A panel can also draw several surfaces together.");
                 });
                 if mode_before != ImageMode::Panels && self.render_export.figure.settings.mode == ImageMode::Panels {
                     self.fill_panels_if_empty();
@@ -258,22 +262,35 @@ impl App {
         }
     }
 
-    /// The panels in order, each with its caption field, and the menu to
-    /// add more.
+    /// The panels in order, each with its caption field, and the menus to
+    /// add more panels, or more surfaces to a panel (drawn together).
     fn show_panel_list(&mut self, ui: &mut egui::Ui) {
         let Some(active) = self.active_structure else { return };
         let panels = self.render_export.figure.panels.clone();
-        let defaults: Vec<String> = panels.iter().map(|p| self.default_caption(p.structure, p.surface.as_deref())).collect();
+        let defaults: Vec<String> = panels.iter().map(|p| self.default_caption(p.structure, &p.surfaces)).collect();
         let several = self.structures.len() > 1;
+        let structure_name = |app: &App, structure: usize| app.structures.get(structure).map(|s| s.label.clone()).unwrap_or_else(|| "?".to_string());
         let name = |app: &App, panel: &Panel| {
-            let structure = app.structures.get(panel.structure).map(|s| s.label.as_str()).unwrap_or("?");
-            match (&panel.surface, several) {
-                (Some(surface), false) => surface.clone(),
-                (Some(surface), true) => format!("{structure}: {surface}"),
-                (None, _) => format!("{structure} (as shown)"),
+            let structure = structure_name(app, panel.structure);
+            match (panel.surfaces.is_empty(), several) {
+                (true, _) => format!("{structure} (as shown)"),
+                (false, false) => panel.surfaces.join(" + "),
+                (false, true) => format!("{structure}: {}", panel.surfaces.join(" + ")),
             }
         };
         let names: Vec<String> = panels.iter().map(|p| name(self, p)).collect();
+        // The surfaces each panel could still take: the others of its
+        // structure.
+        let addable: Vec<Vec<String>> = panels
+            .iter()
+            .map(|p| {
+                if p.surfaces.is_empty() {
+                    return Vec::new();
+                }
+                let all = self.structures.get(p.structure).map(|s| s.surfaces.iter().map(|x| x.label.clone()).collect::<Vec<_>>()).unwrap_or_default();
+                all.into_iter().filter(|label| !p.surfaces.contains(label)).collect()
+            })
+            .collect();
 
         ui.label(RichText::new(format!("Panels ({})", panels.len())).strong());
         let mut action = None;
@@ -291,36 +308,71 @@ impl App {
                     if ui.small_button("\u{d7}").on_hover_text("Remove this panel").clicked() {
                         action = Some(PanelAction::Remove(k));
                     }
+                    if !addable[k].is_empty() {
+                        egui::ComboBox::from_id_salt(("add_to_panel", k)).selected_text("+").width(24.0).show_ui(ui, |ui| {
+                            for label in &addable[k] {
+                                if ui.selectable_label(false, label).clicked() {
+                                    action = Some(PanelAction::AddSurface(k, label.clone()));
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text("Add another surface to this panel: drawn together, each in its own colors");
+                    }
                     ui.label(&names[k]);
                 });
+                // An overlay: each surface with its own button to take it out.
+                if panel.surfaces.len() > 1 {
+                    for (j, label) in panel.surfaces.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.add_space(24.0);
+                            if ui.small_button("\u{d7}").on_hover_text("Take this surface out of the panel").clicked() {
+                                action = Some(PanelAction::RemoveSurface(k, j));
+                            }
+                            ui.label(RichText::new(label).small());
+                        });
+                    }
+                }
                 ui.add(egui::TextEdit::singleline(&mut panel.caption).hint_text(defaults[k].as_str()).desired_width(f32::INFINITY))
                     .on_hover_text("Caption: leave empty for the automatic one");
             }
         });
 
-        // What can still be added: surfaces not yet in a panel, and each
+        // What can still be added: surfaces not yet in a panel of their own,
+        // the surfaces ticked in the Surfaces window together, and each
         // structure as it is shown; the active structure first.
         let mut order: Vec<usize> = vec![active];
         order.extend((0..self.structures.len()).filter(|&s| s != active));
-        let mut candidates: Vec<Panel> = Vec::new();
+        let mut candidates: Vec<(String, Panel)> = Vec::new();
         for s in order {
-            let has = |surface: &Option<String>| panels.iter().any(|p| p.structure == s && &p.surface == surface);
-            for label in self.structures[s].surfaces.iter().map(|x| Some(x.label.clone())).chain(std::iter::once(None)) {
-                if !has(&label) {
-                    candidates.push(Panel { structure: s, surface: label, caption: String::new() });
+            let has = |surfaces: &[String]| panels.iter().any(|p| p.structure == s && p.surfaces == surfaces);
+            for label in self.structures[s].surfaces.iter().map(|x| x.label.clone()) {
+                if !has(std::slice::from_ref(&label)) {
+                    let panel = Panel::of_surface(s, label);
+                    candidates.push((name(self, &panel), panel));
                 }
+            }
+            let shown = self.shown_surfaces(s);
+            if shown.len() > 1 && !has(&shown) {
+                let together = format!("The shown surfaces together ({})", shown.len());
+                let label = if several { format!("{}: {together}", structure_name(self, s)) } else { together };
+                candidates.push((label, Panel { structure: s, surfaces: shown, caption: String::new() }));
+            }
+            if !has(&[]) {
+                let panel = Panel::as_shown(s);
+                candidates.push((name(self, &panel), panel));
             }
         }
         ui.horizontal(|ui| {
             egui::ComboBox::from_id_salt("add_panel").selected_text("Add a panel").width(200.0).show_ui(ui, |ui| {
-                for candidate in &candidates {
-                    if ui.selectable_label(false, name(self, candidate)).clicked() {
+                for (label, candidate) in &candidates {
+                    if ui.selectable_label(false, label).clicked() {
                         action = Some(PanelAction::Add(candidate.clone()));
                     }
                 }
             });
-            let missing = self.structures[active].surfaces.iter().any(|x| !panels.iter().any(|p| p.structure == active && p.surface.as_deref() == Some(x.label.as_str())));
-            if ui.add_enabled(missing, egui::Button::new("All surfaces")).on_hover_text("Adds every surface of the active structure not in a panel yet").clicked() {
+            let missing = self.structures[active].surfaces.iter().any(|x| !panels.iter().any(|p| p.structure == active && p.surfaces == std::slice::from_ref(&x.label)));
+            if ui.add_enabled(missing, egui::Button::new("All surfaces")).on_hover_text("Adds every surface of the active structure not in a panel of its own yet").clicked() {
                 action = Some(PanelAction::AddAll);
             }
         });
@@ -335,10 +387,14 @@ impl App {
             Some(PanelAction::Add(panel)) => figure.panels.push(panel),
             Some(PanelAction::AddAll) => {
                 for label in self.structures[active].surfaces.iter().map(|x| x.label.clone()) {
-                    if !figure.panels.iter().any(|p| p.structure == active && p.surface.as_deref() == Some(label.as_str())) {
-                        figure.panels.push(Panel { structure: active, surface: Some(label), caption: String::new() });
+                    if !figure.panels.iter().any(|p| p.structure == active && p.surfaces == std::slice::from_ref(&label)) {
+                        figure.panels.push(Panel::of_surface(active, label));
                     }
                 }
+            }
+            Some(PanelAction::AddSurface(k, label)) => figure.panels[k].surfaces.push(label),
+            Some(PanelAction::RemoveSurface(k, j)) => {
+                figure.panels[k].surfaces.remove(j);
             }
             None => {}
         }

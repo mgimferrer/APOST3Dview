@@ -67,13 +67,17 @@ struct FigureState {
 }
 
 /// A panel: a structure (1-based position in `structures`), the surface
-/// shown alone in it (absent: the structure as shown), its own caption
-/// (absent: automatic).
+/// shown alone in it, or the surfaces drawn together (`surfaces`, two or
+/// more; written only then, so a one-surface panel is saved as before and
+/// an older APOST3Dview reads an overlay as the structure as shown), or
+/// neither (the structure as shown), its own caption (absent: automatic).
 #[derive(Serialize, Deserialize)]
 struct PanelState {
     structure: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     surface: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    surfaces: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     caption: String,
 }
@@ -565,7 +569,11 @@ impl App {
                 .panels
                 .iter()
                 .filter_map(|p| {
-                    Some(PanelState { structure: (*positions.get(p.structure)?)?, surface: p.surface.clone(), caption: p.caption.clone() })
+                    let (surface, surfaces) = match p.surfaces.as_slice() {
+                        [one] => (Some(one.clone()), Vec::new()),
+                        several => (None, several.to_vec()),
+                    };
+                    Some(PanelState { structure: (*positions.get(p.structure)?)?, surface, surfaces, caption: p.caption.clone() })
                 })
                 .collect(),
         };
@@ -747,7 +755,8 @@ impl App {
                     .iter()
                     .filter_map(|p| {
                         let index = *opened.get(&p.structure.checked_sub(1)?)?;
-                        Some(crate::panels::Panel { structure: index, surface: p.surface.clone(), caption: p.caption.clone() })
+                        let surfaces = if p.surfaces.is_empty() { p.surface.iter().cloned().collect() } else { p.surfaces.clone() };
+                        Some(crate::panels::Panel { structure: index, surfaces, caption: p.caption.clone() })
                     })
                     .collect();
             }

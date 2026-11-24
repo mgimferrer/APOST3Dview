@@ -228,3 +228,103 @@ fn panels_of_two_structures_and_their_session() {
     let again = harness.state_mut().render_panel_figure().unwrap();
     assert!(again.2 == figure.2, "the same two-structure figure from the session");
 }
+
+/// Picks `option` in the `nth` combo box showing `value`, clicking the last
+/// node of that name (the menu entry: a surface's name is also in the
+/// Surfaces window's list).
+fn choose_nth(harness: &mut Ui, value: &str, nth: usize, option: &str) {
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    harness.get_all(By::new().role(Role::ComboBox)).filter(|n| n.value().as_deref() == Some(value)).nth(nth).unwrap_or_else(|| panic!("no menu {nth} showing \"{value}\"")).click_accesskit();
+    harness.run_steps(2);
+    harness.query_all_by_label(option).last().unwrap_or_else(|| panic!("no \"{option}\" in the menu")).click_accesskit();
+    harness.run_steps(3);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+}
+
+/// Panel `index` (row-major) of a figure of `size` x `size` panels with a
+/// 2% gap, no captions.
+fn panel_pixels(figure: &(u32, u32, Vec<u8>), index: u32, columns: u32, size: u32) -> Vec<u8> {
+    let gap = (size as f32 * 0.02).round() as u32;
+    let (x0, y0) = (gap + (index % columns) * (size + gap), gap + (index / columns) * (size + gap));
+    let mut pixels = Vec::with_capacity((size * size * 4) as usize);
+    for row in 0..size {
+        let start = (((y0 + row) * figure.0 + x0) * 4) as usize;
+        pixels.extend_from_slice(&figure.2[start..start + (size * 4) as usize]);
+    }
+    pixels
+}
+
+#[test]
+fn panels_that_draw_several_surfaces_together() {
+    let one = "OSLO 1 \u{b7} 1 CH3";
+    let five = "OSLO 5 \u{b7} 1 CH3";
+    let nine = "OSLO 9 \u{b7} 1 CH3 + 2 CH3";
+    let dir = scratch_dir("panels-overlays");
+    let session = dir.join("overlays.a3dview");
+    let (figure, captions) = {
+        let mut harness = ethane_panels(&[0, 4, 8]);
+        assert_eq!(harness.state().panel_surfaces(), vec![vec![one.to_string()], vec![five.to_string()], vec![nine.to_string()]]);
+        // The surfaces ticked in the Surfaces window, as one panel.
+        harness.state_mut().show_surfaces(&[one, nine]);
+        harness.run_steps(2);
+        choose_nth(&mut harness, "Add a panel", 0, "The shown surfaces together (2)");
+        // A one-surface panel grown from its row in the list.
+        choose_nth(&mut harness, "+", 0, five);
+        let surfaces = harness.state().panel_surfaces();
+        assert_eq!(surfaces[0], [one, five]);
+        assert_eq!(surfaces[3], [one, nine]);
+        harness.get_by_label(&format!("{one} + {five}"));
+        click(&mut harness, "Value and fragment");
+        let captions = harness.state().panel_captions();
+        assert_eq!(captions[0], "1.000 (CH3) + 1.039 (CH3)");
+        assert_eq!(captions[3], "1.000 (CH3) + 2.001 (CH3 + CH3)");
+        click(&mut harness, "Full");
+        assert_eq!(harness.state().panel_captions()[3], format!("{one} \u{b7} FOLI 1.000 + {nine} \u{b7} FOLI 2.001"));
+        click(&mut harness, "Value and fragment");
+
+        // The overlay is exactly the single export with both surfaces shown,
+        // and differs from each surface alone.
+        harness.state_mut().set_panel_figure(160, false, false);
+        let figure = harness.state_mut().render_panel_figure().unwrap();
+        let single = harness.state_mut().render_image_supersampled(160, 160, 2).unwrap();
+        assert!(panel_pixels(&figure, 3, 2, 160) == single, "the overlay panel is the single export of both surfaces");
+        harness.state_mut().show_surfaces(&[nine]);
+        let nine_alone = harness.state_mut().render_image_supersampled(160, 160, 2).unwrap();
+        assert!(panel_pixels(&figure, 2, 2, 160) == nine_alone, "a one-surface panel as before");
+        assert!(nine_alone != single, "the overlay draws OSLO 1 as well");
+        assert!(panel_pixels(&figure, 0, 2, 160) != panel_pixels(&figure, 3, 2, 160));
+
+        harness.state_mut().set_panel_figure(150, true, true);
+        let figure = harness.state_mut().render_panel_figure().unwrap();
+        harness.state().save_session_to(&session).unwrap();
+        (figure, harness.state().panel_captions())
+    };
+    // One-surface panels are saved as before, overlays with their list.
+    let text = std::fs::read_to_string(&session).unwrap();
+    assert_eq!(text.matches("surfaces = [").count(), 2, "{text}");
+    assert_eq!(text.matches(&format!("surface = \"{nine}\"")).count(), 1, "{text}");
+
+    let mut harness = app_with(vec![session]);
+    harness.run_steps(6);
+    assert_eq!(harness.state().panel_captions(), captions);
+    let again = harness.state_mut().render_panel_figure().unwrap();
+    assert!(again == figure, "the reopened session gives the same figure, pixel for pixel");
+
+    // Taking a surface out of an overlay leaves a one-surface panel, the same
+    // as the panel of that surface alone. The last "×" buttons are those of
+    // the last panel's surfaces (after its own "Remove this panel").
+    let ctx = harness.ctx.clone();
+    if !harness.state().window_expanded(&ctx, "Export") {
+        click(&mut harness, "Export");
+    }
+    harness.get_by_label("Panels (4)");
+    let crosses = harness.query_all_by_label("\u{d7}").count();
+    harness.query_all_by_label("\u{d7}").nth(crosses - 2).unwrap().click_accesskit();
+    harness.run_steps(3);
+    assert_eq!(harness.state().panel_surfaces()[3], [nine]);
+    harness.state_mut().set_panel_figure(160, false, false);
+    let figure = harness.state_mut().render_panel_figure().unwrap();
+    assert!(panel_pixels(&figure, 3, 2, 160) == panel_pixels(&figure, 2, 2, 160), "OSLO 9 alone either way");
+}
