@@ -2,6 +2,8 @@
 //! `.fchk`, from a few choices with APOST-3D's defaults (see
 //! `input_generator`). Kept small on purpose (Martí, 2026-10-21): it is for
 //! users who don't write inputs by hand.
+//!
+//! Area: APOST-3D (see `areas.rs`).
 
 use apost3dview_core::{fragments_around, hill_formula, orca_functional, separate_molecules, AimScheme, EnpartMethod, EnpartOptions, FchkProgram, OxidationStates, ENPART_FUNCTIONALS, ORCA_FUNCTIONALS};
 use egui::{Color32, RichText};

@@ -14,6 +14,8 @@
 //! for byte each time. The live view and the shown surfaces are put back
 //! afterwards. A small preview of the figure is kept up to date in the
 //! Export window.
+//!
+//! Area: Figures (see `areas.rs`).
 
 use std::time::{Duration, Instant};
 

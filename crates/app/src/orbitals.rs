@@ -1,4 +1,6 @@
 //! Orbital generation from a wavefunction (.fchk/.molden).
+//!
+//! Area: Surfaces (see `areas.rs`).
 
 use std::collections::{BTreeMap, HashSet};
 

@@ -8,6 +8,8 @@
 //! natural orbitals, computed once on opening: they give that density
 //! exactly as a sum of squares (and its spin density, from the spin
 //! block), and are drawable as an orbital set of their own.
+//!
+//! Area: Surfaces (see `areas.rs`).
 
 use std::path::Path;
 

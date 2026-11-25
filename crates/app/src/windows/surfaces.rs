@@ -2,6 +2,8 @@
 //! wavefunction, and its list of isosurfaces (opened `.cube` files and
 //! generated orbitals), each shown or hidden on its own, with the settings
 //! of the selected one.
+//!
+//! Area: Surfaces (see `areas.rs`).
 
 use egui::{RichText, Slider};
 

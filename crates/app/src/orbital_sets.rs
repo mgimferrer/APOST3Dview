@@ -3,6 +3,8 @@
 //! one. Each orbital is labeled from its row in the results tables
 //! (fragment or fragments, occupation or FOLI, electrons assigned), and
 //! its surface is colored by fragment.
+//!
+//! Area: APOST-3D (see `areas.rs`).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

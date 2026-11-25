@@ -1,10 +1,18 @@
-//! The feature areas' app-wide state. Each area also keeps a part of every
-//! structure (`LoadedStructure::surfaces`, `::apost`, `::frames`), and its
-//! code is in its own files (`impl App` blocks and `windows/`). The core
+//! The feature areas. Each one keeps its app-wide state here, a part of
+//! every structure (`LoadedStructure::surfaces`, `::apost`, `::frames`), its
+//! part of sessions (`session/<area>.rs`), and its code in its own files
+//! (`impl App` blocks and `windows/`, each file marked "Area: ..."). The core
 //! (camera, look, structures, windows, export) stays in `App` itself.
 //!
+//! - Surfaces: orbitals, densities, cube files (always on).
+//! - APOST-3D: results on the molecule, tables, the input generator (always
+//!   on).
+//! - Figures: panel figures (always on, in the Export window).
+//! - Frames: reaction paths, shown when a multi-frame file is opened.
+//!
 //! An area may read another area's state; it changes it only through that
-//! area's methods.
+//! area's methods. A new area adds its per-frame work and windows to the
+//! lists below, and its click (if any) to `atom_click`.
 
 use crate::app::App;
 use crate::isosurfaces::SurfaceSettings;

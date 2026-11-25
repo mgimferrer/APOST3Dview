@@ -6,6 +6,8 @@
 //! fragment energies, as numbers (they are dominated by the core, so as
 //! colors they would only tell the elements apart). The pair terms are
 //! shown on the molecule (On the molecule, Energy partitioning).
+//!
+//! Area: APOST-3D (see `areas.rs`).
 
 use apost3dview_core::{ApostResults, Enpart, Quantity};
 use apost3dview_render::format_signed;

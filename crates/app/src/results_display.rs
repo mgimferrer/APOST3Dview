@@ -1,5 +1,7 @@
 //! Drawing the APOST-3D results on the molecule: envelopes, halos, value
 //! labels, legend, bond thickness (see `results_view` for what is shown).
+//!
+//! Area: APOST-3D (see `areas.rs`).
 
 use apost3dview_core::Quantity;
 use apost3dview_render::Legend;

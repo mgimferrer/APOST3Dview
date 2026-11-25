@@ -2,6 +2,8 @@
 //! part): the user's choices, what the `.fchk` decides by itself, and
 //! saving (`<job>.inp`, or another job name with the `.fchk` linked under
 //! it). The model and the reader/writer are `apost3dview_core::apost_input`.
+//!
+//! Area: APOST-3D (see `areas.rs`).
 
 use std::path::{Path, PathBuf};
 

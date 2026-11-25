@@ -3,6 +3,8 @@
 //! index R of EOS) and its tables (EFOs, OSLOs, frontier occupations), one
 //! at a time, with a Draw button on each orbital row that has its orbital
 //! in an orbital file.
+//!
+//! Area: APOST-3D (see `areas.rs`).
 
 use apost3dview_core::{ApostResults, IndexEntry, Molecule, Quantity, QuantityKind, TableCell, TableColumn, TableObject};
 use apost3dview_render::format_signed;

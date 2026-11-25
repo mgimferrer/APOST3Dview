@@ -8,6 +8,8 @@
 //! atom values by translucent halos, in the value's color, with the values
 //! printed beside them and a legend. Fragment values are read from the
 //! file, never summed from atoms.
+//!
+//! Area: APOST-3D (see `areas.rs`).
 
 use std::collections::BTreeMap;
 

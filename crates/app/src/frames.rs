@@ -19,6 +19,8 @@
 //! eased in and out, and stays on the first before it and on the last
 //! after it. Each view belongs to a place along the frames, not to a
 //! moment, so going back retraces the turn.
+//!
+//! Area: Frames (see `areas.rs`).
 
 use std::collections::HashSet;
 

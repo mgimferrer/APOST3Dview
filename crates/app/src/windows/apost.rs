@@ -1,5 +1,7 @@
 //! APOST-3D window: what was computed and how (run information), then the
 //! results themselves, for the active structure.
+//!
+//! Area: APOST-3D (see `areas.rs`).
 
 use apost3dview_core::{fragment_coverage, hill_formula, ApostResults};
 use egui::{Color32, RichText};

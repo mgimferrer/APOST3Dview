@@ -1,5 +1,7 @@
 //! APOST-3D results attached to a structure (see `apost3dview_core::apost`
 //! for the file itself).
+//!
+//! Area: APOST-3D (see `areas.rs`).
 
 use std::path::{Path, PathBuf};
 

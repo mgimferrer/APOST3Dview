@@ -1,6 +1,8 @@
 //! The APOST-3D window's results sections: what to show on the molecule
 //! (M3-M5) and the values themselves, as a table, or for a pair quantity
 //! a heat map and the strongest pairs.
+//!
+//! Area: APOST-3D (see `areas.rs`).
 
 use apost3dview_core::{ApostResults, MatrixObject, Quantity};
 use apost3dview_render::{format_signed, ColorScale};
