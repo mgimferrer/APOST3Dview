@@ -75,7 +75,7 @@ pub use interpolation::refine_grid;
 pub use isosurface::{extract_isosurface, IsosurfaceMesh};
 pub use measurement::{measure, MeasurementKind};
 pub use molden::{parse_molden_geometry, parse_molden_wavefunction};
-pub use molecule::{bond_cutoff, Bond, Molecule};
+pub use molecule::{bond_cutoff, perceive_bonds, Bond, Molecule};
 pub use superpose::{superpose, Superposition};
 pub use units::LengthUnit;
 pub use wavefunction::{parse_fchk_wavefunction, BasisSet, MolecularOrbitals, Shell, Wavefunction};

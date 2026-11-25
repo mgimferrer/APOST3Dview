@@ -32,7 +32,9 @@ pub fn bond_cutoff(a: u32, b: u32) -> f32 {
     (element_data(a).covalent_radius + element_data(b).covalent_radius) * BOND_TOLERANCE
 }
 
-fn perceive_bonds(atomic_numbers: &[u32], positions: &[Vec3]) -> Vec<Bond> {
+/// The bonds of atoms at these positions, by distance: every pair closer
+/// than `bond_cutoff` (and farther than 0.1 angstrom).
+pub fn perceive_bonds(atomic_numbers: &[u32], positions: &[Vec3]) -> Vec<Bond> {
     let mut bonds = Vec::new();
     for i in 0..positions.len() {
         for j in (i + 1)..positions.len() {

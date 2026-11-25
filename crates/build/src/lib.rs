@@ -1,0 +1,18 @@
+//! Editing molecular geometries, for the Build window of APOST-3Dview:
+//! which atoms move when a distance, angle or dihedral is set (`sides`),
+//! the edits themselves (`internal`), and changes to the atoms (`atoms`).
+//! No UI and no GPU, so every edit is tested here on its own.
+//!
+//! Positions are angstrom, as in `apost3dview_core::Molecule`. They are
+//! stored as `f32`, but every edit is computed in `f64` and rounded once at
+//! the end, so setting a value gives it to the precision of the storage.
+
+pub mod atoms;
+pub mod internal;
+pub mod sides;
+
+pub use atoms::{change_element, delete_atoms, Deleted};
+pub use internal::{
+    angle_degrees, dihedral_degrees, distance, rotate_about_bond, set_angle, set_dihedral, set_distance, translate, EditError, Moves,
+};
+pub use sides::{moving_atoms, Graph, Which};
