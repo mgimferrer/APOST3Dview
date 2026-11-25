@@ -182,10 +182,12 @@ impl App {
             };
 
             if let Some(index) = atom_hit {
-                // With a pair quantity shown, a click chooses the focus.
-                if !self.focus_on_clicked_atom(index) {
-                    toggle_selected(&mut self.structures[active].selected_atoms, index);
-                    self.rebuild_highlights();
+                match self.atom_click(index) {
+                    crate::areas::AtomClick::Focus(focus) => self.set_results_focus(focus),
+                    crate::areas::AtomClick::Select => {
+                        toggle_selected(&mut self.structures[active].selected_atoms, index);
+                        self.rebuild_highlights();
+                    }
                 }
             } else if let Some(index) = bond_hit {
                 toggle_selected(&mut self.structures[active].selected_bonds, index);

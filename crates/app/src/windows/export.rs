@@ -23,7 +23,7 @@ enum PanelAction {
 
 impl App {
     pub(crate) fn show_export_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_export;
+        let mut open = self.window_open(ToolWindow::Export);
         let response = self
             .column_window(ctx, ToolWindow::Export, &mut open)
             .show(ctx, |ui| {
@@ -58,7 +58,7 @@ impl App {
                 self.show_gif_export(ui);
             });
         self.record_column_window(ctx, ToolWindow::Export, response.map(|r| r.response));
-        self.show_export = open;
+        self.set_window_open(ToolWindow::Export, open);
     }
 
     fn show_single_image_export(&mut self, ui: &mut egui::Ui) {
@@ -425,8 +425,9 @@ impl App {
 
     /// The preview, larger, in a window of its own.
     pub(crate) fn show_figure_preview_window(&mut self, ctx: &egui::Context) {
+        let export_open = self.window_open(ToolWindow::Export);
         let preview = &mut self.render_export.figure.preview;
-        if !preview.large || !self.show_export {
+        if !preview.large || !export_open {
             return;
         }
         let Some(texture) = preview.texture.clone() else { return };

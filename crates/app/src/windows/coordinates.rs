@@ -22,7 +22,7 @@ impl App {
     }
 
     pub(crate) fn show_coordinates_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_coordinates;
+        let mut open = self.window_open(ToolWindow::Coordinates);
         let response = self
             .column_window(ctx, ToolWindow::Coordinates, &mut open)
             .show(ctx, |ui| {
@@ -78,6 +78,6 @@ impl App {
                 }
             });
         self.record_column_window(ctx, ToolWindow::Coordinates, response.map(|r| r.response));
-        self.show_coordinates = open;
+        self.set_window_open(ToolWindow::Coordinates, open);
     }
 }

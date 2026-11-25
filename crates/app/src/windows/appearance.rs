@@ -13,7 +13,7 @@ use crate::windows::ToolWindow;
 
 impl App {
     pub(crate) fn show_appearance_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_appearance;
+        let mut open = self.window_open(ToolWindow::Appearance);
         let response = self
             .column_window(ctx, ToolWindow::Appearance, &mut open)
             .show(ctx, |ui| {
@@ -52,7 +52,7 @@ impl App {
                 egui::CollapsingHeader::new("Advanced").id_salt("appearance_advanced").show(ui, |ui| self.show_advanced_appearance(ui));
             });
         self.record_column_window(ctx, ToolWindow::Appearance, response.map(|r| r.response));
-        self.show_appearance = open;
+        self.set_window_open(ToolWindow::Appearance, open);
     }
 
     /// Orbital colors: the pair new orbital lobes and spin densities are

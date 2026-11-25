@@ -91,13 +91,8 @@ pub struct App {
     // from the Molecule window), grouped by task: what the molecule looks
     // like, its surfaces, measuring, APOST-3D results, the look of the
     // scene, exporting.
-    pub(crate) show_molecule: bool,
-    pub(crate) show_surfaces: bool,
-    pub(crate) show_measure: bool,
-    pub(crate) show_apost: bool,
-    pub(crate) show_appearance: bool,
-    pub(crate) show_export: bool,
-    pub(crate) show_coordinates: bool,
+    /// The tool windows open (`windows/mod.rs`).
+    pub(crate) open_windows: std::collections::BTreeSet<crate::windows::ToolWindow>,
     pub(crate) show_about: bool,
 
     pub(crate) coordinate_unit: LengthUnit,
@@ -235,13 +230,7 @@ impl App {
             splash: options.splash,
             pending_files: options.files,
             render_state,
-            show_molecule: true,
-            show_surfaces: false,
-            show_measure: false,
-            show_apost: false,
-            show_appearance: false,
-            show_export: false,
-            show_coordinates: false,
+            open_windows: [ToolWindow::Molecule].into(),
             show_about: false,
             coordinate_unit: LengthUnit::Angstrom,
             coordinate_format: CoordinateFormat::AtomicNumberTable,
@@ -696,7 +685,7 @@ impl App {
                     let open = self.window_open(window);
                     if ui.selectable_label(open, window.title()).clicked() {
                         if open {
-                            *self.window_flag(window) = false;
+                            self.set_window_open(window, false);
                         } else {
                             self.open_window(window);
                         }
@@ -838,29 +827,15 @@ impl eframe::App for App {
             self.save_session(false);
         }
         self.update_title(&ctx);
-        let dt = ctx.input(|i| i.stable_dt.min(0.1));
-        if self.advance_playback(dt) {
-            ctx.request_repaint();
-        }
         self.handle_dropped_files(&ctx);
-        self.update_surfaces(&ctx);
-        self.update_results_display(&ctx);
-        self.update_figure_preview(&ctx);
+        self.update_areas(&ctx);
 
         self.expand_requested_windows(&ctx);
         self.show_toolbar(ui);
         self.show_status_bar(ui);
         self.show_frames_bar(ui);
         self.plan_window_column(&ctx);
-        self.show_molecule_window(&ctx);
-        self.show_surfaces_window(&ctx);
-        self.show_measure_window(&ctx);
-        self.show_apost_window(&ctx);
-        self.show_appearance_window(&ctx);
-        self.show_export_window(&ctx);
-        self.show_figure_preview_window(&ctx);
-        self.show_coordinates_window(&ctx);
-        self.show_about_window(&ctx);
+        self.show_windows(&ctx);
 
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)

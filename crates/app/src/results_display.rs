@@ -132,7 +132,7 @@ impl App {
     /// Whether the input generator is on screen (its fragments are then
     /// drawn instead of the results).
     pub(crate) fn editing_input(&self) -> bool {
-        self.show_apost && self.apost_tab_shown() == crate::input_generator::ApostTab::Input
+        self.window_open(crate::windows::ToolWindow::Apost) && self.apost_tab_shown() == crate::input_generator::ApostTab::Input
     }
 
     /// Value labels for the active structure, sized for a view
@@ -186,30 +186,25 @@ impl App {
         painter.text(Pos2::new(origin.x + bar_w, y), egui::Align2::RIGHT_TOP, hi, font, ink);
     }
 
-    /// When a pair quantity is shown, a click on an atom focuses on it (or
-    /// on its fragment) instead of selecting it. Returns whether the click
-    /// was used that way.
-    pub(crate) fn focus_on_clicked_atom(&mut self, atom: usize) -> bool {
-        if self.editing_input() {
-            return false;
+    /// When a pair quantity is shown, the focus a click on `atom` gives:
+    /// the atom, or its fragment for a fragment quantity. `None` when no
+    /// pair quantity is shown or the atom is in no fragment.
+    pub(crate) fn focus_for_atom(&self, atom: usize) -> Option<usize> {
+        let structure = self.structures.get(self.active_structure?)?;
+        let attachment = structure.apost.results.as_ref()?;
+        let Ok(results) = &attachment.results else { return None };
+        let view = attachment.view.as_ref()?;
+        match focus_target(results, view)? {
+            true => results.fragments().iter().position(|f| f.atoms.contains(&(atom + 1))),
+            false => Some(atom),
         }
-        let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return false };
-        let Some(attachment) = structure.apost.results.as_mut() else { return false };
-        let Ok(results) = &attachment.results else { return false };
-        let Some(view) = attachment.view.as_mut() else { return false };
-        match focus_target(results, view) {
-            Some(true) => match results.fragments().iter().position(|f| f.atoms.contains(&(atom + 1))) {
-                Some(fragment) => {
-                    view.focus = fragment;
-                    true
-                }
-                None => false,
-            },
-            Some(false) => {
-                view.focus = atom;
-                true
-            }
-            None => false,
+    }
+
+    /// Sets the focus of the pair quantity shown (see `focus_for_atom`).
+    pub(crate) fn set_results_focus(&mut self, focus: usize) {
+        let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
+        if let Some(view) = structure.apost.results.as_mut().and_then(|a| a.view.as_mut()) {
+            view.focus = focus;
         }
     }
 

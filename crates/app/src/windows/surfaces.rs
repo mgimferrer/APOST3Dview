@@ -22,10 +22,10 @@ enum ListAction {
 
 impl App {
     pub(crate) fn show_surfaces_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_surfaces;
+        let mut open = self.window_open(ToolWindow::Surfaces);
         let response = self.column_window(ctx, ToolWindow::Surfaces, &mut open).show(ctx, |ui| self.show_surfaces_content(ui));
         self.record_column_window(ctx, ToolWindow::Surfaces, response.map(|r| r.response));
-        self.show_surfaces = open;
+        self.set_window_open(ToolWindow::Surfaces, open);
     }
 
     fn show_surfaces_content(&mut self, ui: &mut egui::Ui) {

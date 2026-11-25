@@ -13,7 +13,7 @@ use crate::windows::ToolWindow;
 
 impl App {
     pub(crate) fn show_molecule_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_molecule;
+        let mut open = self.window_open(ToolWindow::Molecule);
         let response = self
             .column_window(ctx, ToolWindow::Molecule, &mut open)
             .show(ctx, |ui| {
@@ -40,7 +40,7 @@ impl App {
                 }
             });
         self.record_column_window(ctx, ToolWindow::Molecule, response.map(|r| r.response));
-        self.show_molecule = open;
+        self.set_window_open(ToolWindow::Molecule, open);
     }
 
     /// Aligning the active structure onto another on selected atoms, or

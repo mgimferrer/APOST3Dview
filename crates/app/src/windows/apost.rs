@@ -260,7 +260,7 @@ fn show_report(ui: &mut egui::Ui, attachment: &mut ApostAttachment) {
 
 impl App {
     pub(crate) fn show_apost_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_apost;
+        let mut open = self.window_open(ToolWindow::Apost);
         let mut fragment_action = None;
         // Its size stays as the user leaves it, whatever is shown (the
         // content scrolls inside): see `column.rs`.
@@ -297,7 +297,7 @@ impl App {
                 show_report(ui, attachment);
             });
         self.record_column_window(ctx, ToolWindow::Apost, response.map(|r| r.response));
-        self.show_apost = open;
+        self.set_window_open(ToolWindow::Apost, open);
         self.apply_fragment_action(fragment_action);
     }
 

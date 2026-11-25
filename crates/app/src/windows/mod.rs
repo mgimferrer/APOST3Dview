@@ -18,7 +18,7 @@ mod surfaces;
 use crate::app::App;
 
 /// The tool windows, in toolbar order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum ToolWindow {
     Molecule,
     Surfaces,
@@ -72,26 +72,14 @@ impl ToolWindow {
 
 impl App {
     pub(crate) fn window_open(&self, window: ToolWindow) -> bool {
-        match window {
-            ToolWindow::Molecule => self.show_molecule,
-            ToolWindow::Surfaces => self.show_surfaces,
-            ToolWindow::Measure => self.show_measure,
-            ToolWindow::Apost => self.show_apost,
-            ToolWindow::Appearance => self.show_appearance,
-            ToolWindow::Export => self.show_export,
-            ToolWindow::Coordinates => self.show_coordinates,
-        }
+        self.open_windows.contains(&window)
     }
 
-    pub(crate) fn window_flag(&mut self, window: ToolWindow) -> &mut bool {
-        match window {
-            ToolWindow::Molecule => &mut self.show_molecule,
-            ToolWindow::Surfaces => &mut self.show_surfaces,
-            ToolWindow::Measure => &mut self.show_measure,
-            ToolWindow::Apost => &mut self.show_apost,
-            ToolWindow::Appearance => &mut self.show_appearance,
-            ToolWindow::Export => &mut self.show_export,
-            ToolWindow::Coordinates => &mut self.show_coordinates,
+    pub(crate) fn set_window_open(&mut self, window: ToolWindow, open: bool) {
+        if open {
+            self.open_windows.insert(window);
+        } else {
+            self.open_windows.remove(&window);
         }
     }
 
@@ -100,7 +88,7 @@ impl App {
     /// (Martí, 2026-10-19). Takes effect at the start of the next frame
     /// (`expand_requested_windows`), so callers need no `egui::Context`.
     pub(crate) fn open_window(&mut self, window: ToolWindow) {
-        *self.window_flag(window) = true;
+        self.set_window_open(window, true);
         if !self.windows_to_expand.contains(&window) {
             self.windows_to_expand.push(window);
         }

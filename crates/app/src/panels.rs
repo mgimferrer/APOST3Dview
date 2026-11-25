@@ -664,7 +664,7 @@ impl App {
     /// Whether the Export window shows a figure preview.
     pub(crate) fn figure_preview_wanted(&self) -> bool {
         let settings = &self.render_export.figure.settings;
-        self.show_export && self.active_structure.is_some() && (settings.mode == ImageMode::Panels || settings.single_caption)
+        self.window_open(crate::windows::ToolWindow::Export) && self.active_structure.is_some() && (settings.mode == ImageMode::Panels || settings.single_caption)
     }
 
     /// Everything the panels' pictures depend on, as text: the preview is
@@ -778,7 +778,7 @@ impl App {
     /// view around what a panel will hold (the middle of a wide view).
     pub(crate) fn paint_panel_frame(&self, ui: &egui::Ui, rect: egui::Rect) {
         let settings = &self.render_export.figure.settings;
-        if !self.show_export || settings.mode != ImageMode::Panels || settings.panel_shape != PanelShape::Square || rect.width() <= rect.height() * 1.01 {
+        if !self.window_open(crate::windows::ToolWindow::Export) || settings.mode != ImageMode::Panels || settings.panel_shape != PanelShape::Square || rect.width() <= rect.height() * 1.01 {
             return;
         }
         let frame = egui::Rect::from_center_size(rect.center(), egui::vec2(rect.height(), rect.height())).shrink(1.0);

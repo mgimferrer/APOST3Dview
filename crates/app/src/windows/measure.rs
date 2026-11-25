@@ -23,7 +23,7 @@ impl App {
     }
 
     pub(crate) fn show_measure_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_measure;
+        let mut open = self.window_open(ToolWindow::Measure);
         let response = self
             .column_window(ctx, ToolWindow::Measure, &mut open)
             .show(ctx, |ui| {
@@ -109,6 +109,6 @@ impl App {
                 });
             });
         self.record_column_window(ctx, ToolWindow::Measure, response.map(|r| r.response));
-        self.show_measure = open;
+        self.set_window_open(ToolWindow::Measure, open);
     }
 }
