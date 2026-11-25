@@ -31,6 +31,17 @@ impl App {
 
     /// The 3D viewport (central panel): camera input, picking, labels, and
     /// the wgpu paint callback.
+    /// The atom of the active structure under the point `at` of the view
+    /// `rect`, if any.
+    pub(crate) fn atom_under(&self, rect: egui::Rect, at: egui::Pos2) -> Option<usize> {
+        let structure = self.structures.get(self.active_structure?)?;
+        let aspect_ratio = if rect.height() > 0.0 { rect.width() / rect.height() } else { 1.0 };
+        let ndc_x = ((at.x - rect.left()) / rect.width()) * 2.0 - 1.0;
+        let ndc_y = 1.0 - ((at.y - rect.top()) / rect.height()) * 2.0;
+        let (origin, direction) = ray_from_ndc(&self.camera, aspect_ratio, ndc_x, ndc_y);
+        pick_atom(&structure.molecule, origin, direction, &self.drawn_sizes(structure), &structure.hidden_atoms)
+    }
+
     pub(crate) fn show_viewport(&mut self, ui: &mut egui::Ui) {
         let rect = ui.max_rect();
 
@@ -38,10 +49,10 @@ impl App {
         let bg_color = crate::util::rgb_to_color32(background);
         ui.painter().rect_filled(rect, 0.0, bg_color);
 
-        let Some(active) = self.active_structure else {
+        if self.active_structure.is_none() {
             self.show_empty_state(ui, rect);
             return;
-        };
+        }
 
         let response = ui.interact(
             rect,
@@ -62,8 +73,44 @@ impl App {
         if response.drag_started() && ui.input(|i| i.modifiers.alt) {
             self.box_select_start = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos());
         }
-        let camera_dragging =
-            self.box_select_start.is_none() && (response.dragged_by(egui::PointerButton::Primary) || response.dragged_by(egui::PointerButton::Secondary));
+        // Dragging atoms (Build mode with Drag atoms on): a drag that starts
+        // on an atom moves atoms; one from empty space turns the view.
+        let drag_atoms = self.building() && self.build.drag_atoms;
+        if drag_atoms
+            && self.box_select_start.is_none()
+            && self.build.drag.is_none()
+            && response.drag_started_by(egui::PointerButton::Primary)
+            && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+            && let Some(atom) = self.atom_under(rect, origin)
+        {
+            let modifiers = ui.input(|i| i.modifiers);
+            let kind = if modifiers.command {
+                crate::build::DragKind::Turn
+            } else if modifiers.shift {
+                crate::build::DragKind::Depth
+            } else {
+                crate::build::DragKind::Move
+            };
+            self.start_atom_drag(atom, kind, origin);
+        }
+        if self.build.drag.is_some() {
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.cancel_atom_drag();
+            } else if let Some(now) = ui.input(|i| i.pointer.interact_pos()) {
+                self.update_atom_drag(now, rect.height());
+            }
+            if response.drag_stopped() || !ui.input(|i| i.pointer.any_down()) {
+                self.finish_atom_drag();
+            }
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        } else if drag_atoms && ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| rect.contains(p) && self.atom_under(rect, p).is_some()) {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+        let Some(active) = self.active_structure else { return };
+        let atom_dragging = self.build.drag.is_some() || response.drag_stopped() && drag_atoms;
+        let camera_dragging = !atom_dragging
+            && self.box_select_start.is_none()
+            && (response.dragged_by(egui::PointerButton::Primary) || response.dragged_by(egui::PointerButton::Secondary));
         let drag_delta = response.drag_delta();
         if camera_dragging {
             if ui.input(|i| i.modifiers.shift) {
@@ -137,13 +184,14 @@ impl App {
             self.camera.orbit_along(self.spin_direction, self.auto_spin_speed * dt);
         }
 
-        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) && !atom_dragging {
             self.clear_selection();
         }
 
         let aspect_ratio = if rect.height() > 0.0 { rect.width() / rect.height() } else { 1.0 };
         self.last_aspect_ratio = aspect_ratio;
         self.last_viewport_height = rect.height();
+        self.last_viewport_rect = rect;
 
         let mut selection_box = None;
         if let Some(start) = self.box_select_start {

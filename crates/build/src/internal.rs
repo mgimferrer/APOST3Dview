@@ -227,6 +227,29 @@ pub fn rotate_about_bond(positions: &[Vec3], graph: &Graph, a: usize, b: usize, 
     Ok(finish(p))
 }
 
+/// The positions with `atoms` turned by `rotation` about `pivot`, then
+/// moved by `shift` (angstrom): a rigid motion of the group, for dragging.
+pub fn transform_atoms(positions: &[Vec3], atoms: &[usize], rotation: DQuat, pivot: DVec3, shift: DVec3) -> Result<Vec<Vec3>, EditError> {
+    in_range(positions, atoms)?;
+    let mut p: Vec<DVec3> = positions.iter().map(|&v| d(v)).collect();
+    let mut unique = atoms.to_vec();
+    unique.sort_unstable();
+    unique.dedup();
+    let rotation = rotation.normalize();
+    for &i in &unique {
+        p[i] = pivot + rotation * (p[i] - pivot) + shift;
+    }
+    Ok(finish(p))
+}
+
+/// The center (mean position) of `atoms`, angstrom.
+pub fn center(positions: &[Vec3], atoms: &[usize]) -> DVec3 {
+    if atoms.is_empty() {
+        return DVec3::ZERO;
+    }
+    atoms.iter().map(|&i| d(positions[i])).sum::<DVec3>() / atoms.len() as f64
+}
+
 /// The positions with `atoms` moved by `shift` angstrom.
 pub fn translate(positions: &[Vec3], atoms: &[usize], shift: [f64; 3]) -> Result<Vec<Vec3>, EditError> {
     in_range(positions, atoms)?;
@@ -361,6 +384,18 @@ mod tests {
         let q = translate(&p, &[3, 5], [1.0, -2.0, 0.5]).unwrap();
         assert!((q[3] - p[3] - Vec3::new(1.0, -2.0, 0.5)).length() < 1e-6);
         assert!(unmoved(&p, &q, &[0, 1, 2, 4]));
+    }
+
+    #[test]
+    fn a_group_turns_rigidly_about_its_center() {
+        let (p, _) = butane();
+        let group = [2, 3, 5];
+        let pivot = center(&p, &group);
+        let q = transform_atoms(&p, &group, DQuat::from_rotation_y(0.7) * DQuat::from_rotation_x(-0.3), pivot, DVec3::new(0.5, 0.0, -0.2)).unwrap();
+        assert!(rigid(&p, &q, &group));
+        assert!(unmoved(&p, &q, &[0, 1, 4]));
+        // The center moved by the shift only.
+        assert!((center(&q, &group) - pivot - DVec3::new(0.5, 0.0, -0.2)).length() < 1e-5);
     }
 
     #[test]

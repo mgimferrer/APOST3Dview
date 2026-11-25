@@ -27,6 +27,27 @@ impl Graph {
         Self { neighbors }
     }
 
+    /// The atoms bonded to `atom`, directly or through others (its piece:
+    /// a ligand, a solvent molecule), with `atom`, sorted.
+    pub fn piece(&self, atom: usize) -> Vec<usize> {
+        let n = self.neighbors.len();
+        if atom >= n {
+            return Vec::new();
+        }
+        let mut seen = vec![false; n];
+        seen[atom] = true;
+        let mut stack = vec![atom];
+        while let Some(u) = stack.pop() {
+            for &v in &self.neighbors[u] {
+                if !seen[v] {
+                    seen[v] = true;
+                    stack.push(v);
+                }
+            }
+        }
+        (0..n).filter(|&i| seen[i]).collect()
+    }
+
     /// The atoms on `from`'s side of `other`: `from` and everything
     /// reachable from it without passing through `other`, sorted. `None`
     /// when `other` is reached anyway (the two are in one ring, or joined
@@ -107,6 +128,14 @@ mod tests {
         assert_eq!(g.side(2, 1), Some(vec![0, 1, 4]));
         // Not bonded: the whole molecule, unless it holds the other atom.
         assert_eq!(g.side(0, 3), None);
+    }
+
+    #[test]
+    fn a_piece_is_everything_bonded_together() {
+        let g = Graph::new(6, [(0, 1), (0, 2), (3, 4), (3, 5)]);
+        assert_eq!(g.piece(4), vec![3, 4, 5]);
+        assert_eq!(g.piece(0), vec![0, 1, 2]);
+        assert_eq!(g.piece(9), Vec::<usize>::new());
     }
 
     #[test]

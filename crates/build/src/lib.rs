@@ -13,6 +13,6 @@ pub mod sides;
 
 pub use atoms::{change_element, delete_atoms, Deleted};
 pub use internal::{
-    angle_degrees, dihedral_degrees, distance, rotate_about_bond, set_angle, set_dihedral, set_distance, translate, EditError, Moves,
+    angle_degrees, center, dihedral_degrees, distance, rotate_about_bond, set_angle, set_dihedral, set_distance, transform_atoms, translate, EditError, Moves,
 };
 pub use sides::{moving_atoms, Graph, Which};

@@ -113,6 +113,9 @@ pub struct App {
     /// The live view's height in points, updated with `last_aspect_ratio`:
     /// what exports scale their labels against (`scene_labels`).
     pub(crate) last_viewport_height: f32,
+    /// Where the live view was drawn last, in window points (for tests that
+    /// point at atoms).
+    pub(crate) last_viewport_rect: egui::Rect,
 
     /// Isosurface lighting response — deliberately separate from
     /// `material` (the atom/bond one), shared across every structure the
@@ -248,6 +251,7 @@ impl App {
             render_export: RenderExportState::default(),
             last_aspect_ratio: 16.0 / 9.0,
             last_viewport_height: 860.0,
+            last_viewport_rect: egui::Rect::NOTHING,
             isosurface_material: IsosurfaceMaterial::default(),
             ao_enabled: true,
             ao_settings: AoSettings::default(),
@@ -559,6 +563,10 @@ impl App {
                     let n = structure.molecule.atomic_numbers.len();
                     let name = if building { format!("Building: {}", structure.label) } else { structure.label.clone() };
                     ui.label(RichText::new(name).strong());
+                    if let Some(drag) = self.build.drag.as_ref().filter(|d| !d.text.is_empty()) {
+                        ui.separator();
+                        ui.label(RichText::new(&drag.text).strong());
+                    }
                     ui.label(RichText::new(format!("{n} atom{}", if n == 1 { "" } else { "s" })).weak());
                     let selected = structure.selected_atoms.len() + structure.selected_bonds.len();
                     if selected > 0 {

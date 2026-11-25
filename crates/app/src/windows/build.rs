@@ -36,6 +36,8 @@ impl App {
             }
             self.show_build_header(ui, active);
             ui.separator();
+            self.show_drag_switch(ui);
+            ui.separator();
             self.show_build_edits(ui, active);
         });
         self.record_column_window(ctx, ToolWindow::Build, response.map(|r| r.response));
@@ -81,6 +83,32 @@ impl App {
                 self.continue_in_new_copy();
             }
         });
+    }
+
+    /// The Drag atoms switch and what a drag moves.
+    fn show_drag_switch(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let button = egui::Button::new("Drag atoms (D)").selected(self.build.drag_atoms);
+            if ui
+                .add(button)
+                .on_hover_text("While on, a drag that starts on an atom moves atoms instead of turning the view. A drag from empty space still turns it.")
+                .clicked()
+            {
+                self.build.drag_atoms = !self.build.drag_atoms;
+            }
+            if self.build.drag_atoms {
+                ui.label(RichText::new("Drag an atom to move it, Cmd/Ctrl+drag to turn, Shift+drag up and down for depth.").small().weak());
+            }
+        });
+        if self.build.drag_atoms {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new("Drag moves:").weak());
+                ui.radio_value(&mut self.build.drag_moves, crate::build::DragMoves::Selection, "The atom (or the selection)")
+                    .on_hover_text("The atom grabbed, or every selected atom when the one grabbed is selected");
+                ui.radio_value(&mut self.build.drag_moves, crate::build::DragMoves::Piece, "Its piece")
+                    .on_hover_text("Everything bonded to the atom grabbed, such as a whole ligand. Hide a bond to cut a piece off.");
+            });
+        }
     }
 
     /// The edits on the selection.

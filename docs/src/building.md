@@ -10,7 +10,7 @@ The **Build** window changes a geometry: set a distance, an angle or a dihedral,
 
 While the Build window is open, the view has a thin blue frame and the status bar is blue, starting with "Building:" and the name of the structure. Close the window (or click **Build** in the toolbar again) and the app is exactly as before.
 
-Clicks select atoms as always, and the edits act on the selection, in the order the atoms were clicked. <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes, <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redoes and <kbd>Delete</kbd> deletes the selected atoms. These keys work only while the Build window is open, and never while you type in a field.
+Clicks select atoms as always, and the edits act on the selection, in the order the atoms were clicked. <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes, <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redoes, <kbd>Delete</kbd> deletes the selected atoms and <kbd>D</kbd> switches dragging atoms on or off. These keys work only while the Build window is open, and never while you type in a field. Every key and gesture of Build mode is also listed in [Mouse and keyboard](controls.md).
 
 ## Edits go to a copy
 
@@ -43,6 +43,25 @@ With 2 atoms selected, **Turn** turns the second atom's side about their bond by
 - **Element:** turns the selected atoms into the element clicked, or the one typed in **Other element:** and **Change**. Only the element changes: the hydrogens stay as they were.
 
 After an edit the bonds stay as they were, so a stretched bond stays drawn. **Bonds from distances** works them out again from the distances, as when a file is opened.
+
+## Dragging atoms
+
+**Drag atoms (D)** (or the <kbd>D</kbd> key) lets you move atoms with the mouse. It is off whenever the Build window opens, so a drag only moves atoms when you switched it on, and closing the Build window switches it off.
+
+While it is on:
+
+- A drag from an atom moves it in the plane of the screen, following the pointer exactly.
+- <kbd>Cmd</kbd>+drag (<kbd>Ctrl</kbd>+drag on Windows and Linux) from an atom turns what moves about its center: left and right about the screen's vertical, up and down about its horizontal.
+- <kbd>Shift</kbd>+drag up or down from an atom moves it toward you or away (down brings it closer), the one direction a plain drag can't.
+- A drag from empty space still rotates the view, and <kbd>Alt</kbd>+drag still draws a selection box. Clicks still select.
+- <kbd>Esc</kbd> before releasing puts everything back where the drag started.
+
+**Drag moves:** chooses what moves:
+
+- **The atom (or the selection)**: the atom grabbed, or every selected atom when the one grabbed is selected. Select a group first, then grab any of its atoms.
+- **Its piece**: everything bonded to the atom grabbed, directly or through other atoms, such as a whole ligand or a solvent molecule. Pieces follow the bonds drawn: hide a bond to cut a piece off.
+
+Each drag is one edit: the first one makes the copy, and **Undo** takes a whole drag back. While you drag, the status bar says how far the atoms moved or how much they turned, and measurement labels follow the atoms, so you can drag a distance close to what you want by eye and then **Set** it exactly. Over an atom, the pointer becomes a hand.
 
 ## Undo and saving
 

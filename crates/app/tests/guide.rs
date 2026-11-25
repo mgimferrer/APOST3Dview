@@ -342,6 +342,12 @@ fn editing_a_molecule() {
     guide.state_mut().pan_view(1.2, 0.0);
     settle(&mut guide);
     snap_window(&mut guide, "build-window", 1400);
+    // Dragging atoms: the switch, then what a drag moves.
+    click(&mut guide, "Drag atoms (D)");
+    for label in ["Drag moves:", "The atom (or the selection)", "Its piece"] {
+        sees(&guide, label);
+    }
+    sees_text(&guide, "Cmd/Ctrl+drag to turn");
 }
 
 /// "Looking at a molecule", Styles: an Fe d EFO of ferrocene (the

@@ -37,6 +37,51 @@ pub(crate) struct BuildArea {
     pub(crate) element_text: String,
     /// Put the keyboard in the name field at the next frame (a new copy).
     pub(crate) focus_name: bool,
+    /// The Drag atoms switch: off whenever the Build window is closed, so
+    /// a drag outside Build mode always turns the view.
+    pub(crate) drag_atoms: bool,
+    /// What a drag moves.
+    pub(crate) drag_moves: DragMoves,
+    /// The drag under way, if any.
+    pub(crate) drag: Option<AtomDrag>,
+}
+
+/// What a drag on an atom moves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum DragMoves {
+    /// The atom grabbed, or the whole selection when it is selected.
+    #[default]
+    Selection,
+    /// Everything bonded to the atom grabbed (the bonds drawn).
+    Piece,
+}
+
+/// How a drag moves its atoms, decided when it starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DragKind {
+    /// In the plane of the screen.
+    Move,
+    /// Turned about their center (Cmd/Ctrl).
+    Turn,
+    /// Toward or away from the viewer (Shift, vertical).
+    Depth,
+}
+
+/// A drag of atoms under way, in the copy `structure`.
+pub(crate) struct AtomDrag {
+    structure: usize,
+    /// The structure the drag started on, when the drag made the copy (to
+    /// take the copy away again if the drag is cancelled).
+    made_copy_of: Option<usize>,
+    grabbed: usize,
+    atoms: Vec<usize>,
+    kind: DragKind,
+    before: Snapshot,
+    start: Vec<Vec3>,
+    /// Where the pointer pressed, in points.
+    origin: egui::Pos2,
+    /// What the status bar says.
+    pub(crate) text: String,
 }
 
 /// A structure made in the Build window: where it came from, whether it is
@@ -338,6 +383,9 @@ impl App {
         } else if ctx.input_mut(|i| i.consume_shortcut(&undo)) {
             self.undo_edit();
         }
+        if ctx.input(|i| i.key_pressed(egui::Key::D) && i.modifiers.is_none()) {
+            self.build.drag_atoms = !self.build.drag_atoms;
+        }
         let delete = ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace));
         if delete && self.active_structure.is_some_and(|i| !self.structures[i].selected_atoms.is_empty()) {
             self.delete_selected_atoms();
@@ -409,6 +457,126 @@ impl App {
     }
 }
 
+/// Degrees of turn per point of pointer movement, as the view turns.
+const TURN_PER_POINT: f64 = 0.005;
+
+impl App {
+    /// Starts dragging from atom `atom` of the active structure (pressed at
+    /// `origin`): makes the copy if needed and picks the atoms that move.
+    pub(crate) fn start_atom_drag(&mut self, atom: usize, kind: DragKind, origin: egui::Pos2) {
+        let Some(active) = self.active_structure else { return };
+        if self.not_editable().is_some() {
+            return;
+        }
+        let made_copy_of = self.structures[active].build.is_none().then_some(active);
+        let index = self.edit_target(active);
+        let structure = &self.structures[index];
+        let atoms = match self.build.drag_moves {
+            DragMoves::Selection if structure.selected_atoms.contains(&atom) => structure.selected_atoms.clone(),
+            DragMoves::Selection => vec![atom],
+            DragMoves::Piece => drawn_graph(structure).piece(atom),
+        };
+        self.build.drag = Some(AtomDrag {
+            structure: index,
+            made_copy_of,
+            grabbed: atom,
+            atoms,
+            kind,
+            before: Snapshot::of(structure),
+            start: structure.molecule.positions.clone(),
+            origin,
+            text: String::new(),
+        });
+    }
+
+    /// Moves the dragged atoms for the pointer at `now` (points), in a view
+    /// `view_height` points tall.
+    pub(crate) fn update_atom_drag(&mut self, now: egui::Pos2, view_height: f32) {
+        let Some(drag) = &self.build.drag else { return };
+        let delta = now - drag.origin;
+        let (dx, dy) = (f64::from(delta.x), f64::from(delta.y));
+        let camera = self.camera;
+        let (right, up) = camera.screen_basis();
+        let (right, up, forward) = (right.as_dvec3(), up.as_dvec3(), camera.forward().as_dvec3());
+        let grabbed = drag.start[drag.grabbed].as_dvec3();
+        let depth = (grabbed - camera.eye().as_dvec3()).dot(forward) as f32;
+        let per_point = f64::from(camera.world_units_per_pixel(depth, view_height));
+        let pivot = apost3dview_build::center(&drag.start, &drag.atoms);
+        let unit = self.coordinate_unit;
+        let unit_text = if unit == LengthUnit::Angstrom { "\u{c5}" } else { "bohr" };
+        let names = {
+            let z = &self.structures[drag.structure].molecule.atomic_numbers;
+            let first = crate::names::atom_name(z, drag.grabbed);
+            match drag.atoms.len() {
+                1 => first,
+                n => format!("{first} and {} atom{}", n - 1, if n == 2 { "" } else { "s" }),
+            }
+        };
+        let (rotation, shift, text) = match drag.kind {
+            DragKind::Move => {
+                let shift = (right * dx - up * dy) * per_point;
+                (glam::DQuat::IDENTITY, shift, format!("Moving {names}: {:.2} {unit_text}", unit.from_angstrom(shift.length())))
+            }
+            DragKind::Depth => {
+                let shift = -forward * dy * per_point;
+                let toward = if dy > 0.0 { "toward you" } else { "away" };
+                (glam::DQuat::IDENTITY, shift, format!("Moving {names} {toward}: {:.2} {unit_text}", unit.from_angstrom(shift.length())))
+            }
+            DragKind::Turn => {
+                let rotation = glam::DQuat::from_axis_angle(up, dx * TURN_PER_POINT) * glam::DQuat::from_axis_angle(right, dy * TURN_PER_POINT);
+                (rotation, glam::DVec3::ZERO, format!("Turning {names}: {:.0}\u{b0}", rotation.to_axis_angle().1.to_degrees()))
+            }
+        };
+        let positions = apost3dview_build::transform_atoms(&drag.start, &drag.atoms, rotation, pivot, shift).unwrap_or_else(|_| drag.start.clone());
+        let index = drag.structure;
+        if let Some(drag) = self.build.drag.as_mut() {
+            drag.text = text;
+        }
+        if self.structures[index].molecule.positions != positions {
+            self.structures[index].molecule.positions = positions;
+            self.rebuild_geometry();
+            self.rebuild_highlights();
+            self.rebuild_measurements();
+        }
+    }
+
+    /// Ends the drag: one undoable edit, if anything moved.
+    pub(crate) fn finish_atom_drag(&mut self) {
+        let Some(drag) = self.build.drag.take() else { return };
+        let structure = &mut self.structures[drag.structure];
+        if structure.molecule.positions == drag.start {
+            return;
+        }
+        if let Some(build) = structure.build.as_mut() {
+            build.undo.push(drag.before);
+            if build.undo.len() > UNDO_LIMIT {
+                build.undo.remove(0);
+            }
+            build.redo.clear();
+            build.saved = false;
+        }
+        self.build.value_for = None;
+    }
+
+    /// Esc during a drag: the atoms go back, and a copy made by this drag
+    /// goes away again.
+    pub(crate) fn cancel_atom_drag(&mut self) {
+        let Some(drag) = self.build.drag.take() else { return };
+        self.structures[drag.structure].molecule.positions = drag.start;
+        match drag.made_copy_of {
+            Some(original) => {
+                self.close_structure(drag.structure);
+                self.set_active(original);
+            }
+            None => {
+                self.rebuild_geometry();
+                self.rebuild_highlights();
+                self.rebuild_measurements();
+            }
+        }
+    }
+}
+
 /// Applies a computed edit to a structure, carrying its per-atom and
 /// per-bond state along.
 fn apply(s: &mut LoadedStructure, edited: Edited) {
@@ -466,6 +634,25 @@ impl App {
     /// after choosing it — for tests.
     pub fn build_save_xyz(&mut self, path: &Path) -> bool {
         self.save_copy_as_xyz(path)
+    }
+
+    /// Where the active structure's atoms are in the window (points), as
+    /// last drawn — for tests that point at them.
+    pub fn atom_window_positions(&self) -> Vec<[f32; 2]> {
+        let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) else { return Vec::new() };
+        let rect = self.last_viewport_rect;
+        let aspect_ratio = rect.width() / rect.height();
+        structure
+            .molecule
+            .positions
+            .iter()
+            .map(|p| crate::util::project_to_screen(&self.camera, aspect_ratio, rect, *p).map_or([f32::NAN; 2], |q| [q.x, q.y]))
+            .collect()
+    }
+
+    /// Whether the Drag atoms switch is on — for tests.
+    pub fn drag_atoms_on(&self) -> bool {
+        self.build.drag_atoms
     }
 
     /// Renames the active copy, as typing in the Build window's Name field

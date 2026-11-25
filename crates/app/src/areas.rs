@@ -90,6 +90,12 @@ impl App {
         self.update_results_display(ctx);
         self.update_figure_preview(ctx);
         self.handle_build_keys(ctx);
+        // Dragging atoms exists only in Build mode: closing Build turns the
+        // switch off, so it starts off whenever Build opens again.
+        if !self.building() {
+            self.build.drag_atoms = false;
+            self.build.drag = None;
+        }
     }
 
     /// The tool windows, in toolbar order, then the others.
