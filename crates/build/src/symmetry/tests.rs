@@ -263,3 +263,5 @@ fn write_known_molecules() {
         std::fs::write(dir.join(format!("{}.xyz", name.replace(' ', "-"))), text).unwrap();
     }
 }
+
+

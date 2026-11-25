@@ -215,17 +215,19 @@ fn finite_candidates(z: &[u32], q: &[DVec3], center: DVec3) -> Vec<Candidate> {
         if let Some((_, miss)) = image_map(z, q, &plane, FIND_TOLERANCE) {
             keep_best(&mut found, Found { matrix: plane, direction: u, kind: 0, miss });
         }
-        for order in 2..=8u32 {
-            let m = rotation(u, order);
-            if let Some((_, miss)) = image_map(z, q, &m, FIND_TOLERANCE) {
-                keep_best(&mut found, Found { matrix: m, direction: u, kind: order as i32, miss });
-            }
+        let proper: Vec<(u32, DMat3, f64)> = (2..=8u32).filter_map(|n| {
+            let m = rotation(u, n);
+            image_map(z, q, &m, FIND_TOLERANCE).map(|(_, miss)| (n, m, miss))
+        }).collect();
+        let improper: Vec<(u32, DMat3, f64)> = (3..=12u32).filter_map(|n| {
+            let m = reflection(u) * rotation(u, n);
+            image_map(z, q, &m, FIND_TOLERANCE).map(|(_, miss)| (n, m, miss))
+        }).collect();
+        for (n, m, miss) in plausible_orders(proper) {
+            keep_best(&mut found, Found { matrix: m, direction: u, kind: n as i32, miss });
         }
-        for order in 3..=12u32 {
-            let m = reflection(u) * rotation(u, order);
-            if let Some((_, miss)) = image_map(z, q, &m, FIND_TOLERANCE) {
-                keep_best(&mut found, Found { matrix: m, direction: u, kind: -(order as i32), miss });
-            }
+        for (n, m, miss) in plausible_orders(improper) {
+            keep_best(&mut found, Found { matrix: m, direction: u, kind: -(n as i32), miss });
         }
     }
 
@@ -253,13 +255,13 @@ fn finite_candidates(z: &[u32], q: &[DVec3], center: DVec3) -> Vec<Candidate> {
     // Each group checked by symmetrizing; permutations cached by operation.
     // Groups that are nearly the same (same operations to 1e-3) count once:
     // the closest is kept.
-    let mut maps: HashMap<String, Option<Vec<usize>>> = HashMap::new();
-    let mut best: HashMap<String, usize> = HashMap::new();
+    let mut maps: HashMap<[i64; 9], Option<Vec<usize>>> = HashMap::new();
+    let mut best: HashMap<Vec<[i64; 9]>, usize> = HashMap::new();
     let mut out: Vec<Candidate> = Vec::new();
     for group in groups {
         let perms: Option<Vec<Vec<usize>>> = group
             .iter()
-            .map(|m| maps.entry(matrix_key(m)).or_insert_with(|| image_map(z, q, m, FIND_TOLERANCE * 1.5).map(|(perm, _)| perm)).clone())
+            .map(|m| maps.entry(rounded(m)).or_insert_with(|| image_map(z, q, m, FIND_TOLERANCE * 1.5).map(|(perm, _)| perm)).clone())
             .collect();
         let Some(perms) = perms else { continue };
         let symmetric: Vec<DVec3> = (0..q.len())
@@ -271,11 +273,12 @@ fn finite_candidates(z: &[u32], q: &[DVec3], center: DVec3) -> Vec<Candidate> {
         }
         let (label, elements) = classify(&group);
         let candidate = Candidate { label, order: group.len(), displacement, elements, symmetric: symmetric.iter().map(|v| (*v + center).as_vec3()).collect() };
-        match best.get(&group_key(&group)) {
+        let key = group_key(&group);
+        match best.get(&key) {
             Some(&k) if out[k].displacement <= displacement => {}
             Some(&k) => out[k] = candidate,
             None => {
-                best.insert(group_key(&group), out.len());
+                best.insert(key, out.len());
                 out.push(candidate);
             }
         }
@@ -283,38 +286,39 @@ fn finite_candidates(z: &[u32], q: &[DVec3], center: DVec3) -> Vec<Candidate> {
     out
 }
 
+/// Of the orders that passed about one axis, those not beaten by another
+/// that maps the atoms more closely and neither divides nor is divided by
+/// it: with a loose tolerance an S9 or S11 passes next to a true S10, only
+/// a few degrees off.
+fn plausible_orders(passed: Vec<(u32, DMat3, f64)>) -> Vec<(u32, DMat3, f64)> {
+    passed
+        .iter()
+        .filter(|(n, _, miss)| !passed.iter().any(|(m, _, other)| other < miss && n % m != 0 && m % n != 0))
+        .cloned()
+        .collect()
+}
+
 /// Keeps the candidates that no larger group, as close or closer and
 /// containing all their elements, makes redundant; and of identical ones
 /// (same group, same elements) the closest.
 fn prune(candidates: &mut Vec<Candidate>) {
-    let n = candidates.len();
-    let mut keep = vec![true; n];
-    for i in 0..n {
-        for j in 0..n {
-            if i == j {
-                continue;
-            }
-            let (a, b) = (&candidates[i], &candidates[j]);
-            let larger = rank(b) > rank(a) && b.displacement <= a.displacement + 1e-6 && contains(b, a);
-            let same = rank(b) == rank(a)
-                && b.label == a.label
-                && contains(b, a)
-                && contains(a, b)
-                && (b.displacement < a.displacement || (b.displacement == a.displacement && j < i));
-            // A near copy of a closer candidate of the same group (its
-            // elements within ~10 degrees): a wrong snap, not a real choice.
-            let near_copy = b.label == a.label && b.displacement + 0.05 < a.displacement && overlaps(b, a);
-            if larger || same || near_copy {
-                keep[i] = false;
-                break;
-            }
+    // Largest and closest first, each compared with those kept so far: what
+    // would make a candidate redundant is kept itself, or made redundant by
+    // something kept.
+    candidates.sort_by(|a, b| rank(b).cmp(&rank(a)).then(a.displacement.total_cmp(&b.displacement)));
+    let mut kept: Vec<Candidate> = Vec::new();
+    for a in candidates.drain(..) {
+        let redundant = kept.iter().any(|b| {
+            let larger = rank(b) > rank(&a) && b.displacement <= a.displacement + 1e-6 && contains(b, &a);
+            let same = rank(b) == rank(&a) && b.label == a.label && contains(b, &a) && contains(&a, b);
+            let near_copy = b.label == a.label && b.displacement + 0.05 < a.displacement && overlaps(b, &a);
+            larger || same || near_copy
+        });
+        if !redundant {
+            kept.push(a);
         }
     }
-    let mut k = 0;
-    candidates.retain(|_| {
-        k += 1;
-        keep[k - 1]
-    });
+    *candidates = kept;
 }
 
 /// Whether the main axes (or, without one, the planes) of the two lie
@@ -483,13 +487,24 @@ fn snapped(a: &Found, b: &Found) -> Option<DMat3> {
     } else {
         let side = (v - u * cos).try_normalize().unwrap_or_else(|| any_perpendicular(u));
         let t = target.to_radians();
-        (u * t.cos() + side * t.sin()) * if cos < 0.0 { -1.0 } else { 1.0 }
+        u * (cos.signum() * t.cos()) + side * t.sin()
     };
     // `b` is a rotation or a reflection times a rotation about `v`: the
     // same about `new_v`.
-    let turn = DQuat::from_rotation_arc(v, new_v.normalize());
-    let r = DMat3::from_quat(turn);
+    // (Not `DQuat::from_rotation_arc`: it returns the identity for turns
+    // below ~1e-8 rad, exactly the small corrections made here.)
+    let new_v = new_v.normalize();
+    let axis = v.cross(new_v);
+    let r = match axis.try_normalize() {
+        Some(axis) => DMat3::from_quat(DQuat::from_axis_angle(axis, axis_angle(v, new_v))),
+        None => DMat3::IDENTITY,
+    };
     Some(r * b.matrix * r.transpose())
+}
+
+/// The angle between two unit vectors, precise also when it is tiny.
+fn axis_angle(a: DVec3, b: DVec3) -> f64 {
+    a.cross(b).length().atan2(a.dot(b))
 }
 
 fn any_perpendicular(u: DVec3) -> DVec3 {
@@ -516,7 +531,12 @@ fn closure(gens: &[DMat3]) -> Option<Vec<DMat3>> {
             }
         }
     }
-    Some(group)
+    // Exactly closed, or not a group: each generator times each operation
+    // is an operation to 1e-9 (every operation is a product of generators,
+    // so this is enough). Generators a hair inconsistent make near copies
+    // that the grid above may keep apart.
+    let member = |p: &DMat3| group.iter().any(|x| (0..3).all(|c| (x.col(c) - p.col(c)).length_squared() < 1e-18));
+    if group.iter().all(|m| gens.iter().all(|g| member(&(*g * *m)))) { Some(group) } else { None }
 }
 
 /// A matrix's entries on a grid of 1e-6, to recognize it again: the
@@ -530,14 +550,12 @@ fn close(a: &DMat3, b: &DMat3) -> bool {
     (0..3).all(|c| (a.col(c) - b.col(c)).length_squared() < 1e-12)
 }
 
-fn matrix_key(m: &DMat3) -> String {
-    m.to_cols_array().iter().map(|v| format!("{:.6}", if v.abs() < 5e-7 { 0.0 } else { *v })).collect::<Vec<_>>().join(",")
-}
-
-fn group_key(group: &[DMat3]) -> String {
-    let mut keys: Vec<String> = group.iter().map(|m| m.to_cols_array().iter().map(|v| format!("{:.3}", if v.abs() < 5e-4 { 0.0 } else { *v })).collect::<Vec<_>>().join(",")).collect();
-    keys.sort();
-    keys.join(";")
+/// A group's operations on a grid of 1e-3, sorted: groups that are nearly
+/// the same have the same key.
+fn group_key(group: &[DMat3]) -> Vec<[i64; 9]> {
+    let mut keys: Vec<[i64; 9]> = group.iter().map(|m| m.to_cols_array().map(|v| (v * 1e3).round() as i64)).collect();
+    keys.sort_unstable();
+    keys
 }
 
 /// Names a group from its operations, and lists its elements.
@@ -699,6 +717,10 @@ fn jacobi_eigenvectors(mut a: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
 
 /// The directions symmetry elements may have (unit, duplicates removed).
 fn candidate_directions(z: &[u32], q: &[DVec3]) -> Vec<DVec3> {
+    let moments: Vec<f64> = principal_axes(q).iter().map(|a| q.iter().map(|v| (*v - *a * v.dot(*a)).length_squared()).sum()).collect();
+    let largest = moments.iter().copied().fold(0.0, f64::max).max(1e-9);
+    let smallest = moments.iter().copied().fold(f64::MAX, f64::min);
+    let spherical = (largest - smallest) / largest < 0.05;
     let mut raw: Vec<DVec3> = principal_axes(q).to_vec();
     raw.extend([DVec3::X, DVec3::Y, DVec3::Z]);
     raw.extend(q.iter().filter(|v| v.length() > FIND_TOLERANCE).copied());
@@ -710,12 +732,24 @@ fn candidate_directions(z: &[u32], q: &[DVec3]) -> Vec<DVec3> {
                 raw.push(q[i].cross(q[j]));
             }
         }
-        if shell.len() <= 60 {
+        // Triples only for spherical tops (equal moments of inertia): their
+        // C3, C4 and C5 axes are no principal axes. Elsewhere every axis is
+        // a principal axis or passes through atoms or midpoints.
+        // Of nearby atoms only (within twice the shortest distance in the
+        // shell): those span the faces and rings the axes go through.
+        if spherical && shell.len() <= 120 {
+            let shortest = shell.iter().enumerate().flat_map(|(a, &i)| shell[a + 1..].iter().map(move |&j| (i, j))).map(|(i, j)| q[i].distance(q[j])).fold(f64::MAX, f64::min);
+            let near = |i: usize, j: usize| q[i].distance(q[j]) <= 2.0 * shortest + FIND_TOLERANCE;
             for (a, &i) in shell.iter().enumerate() {
                 for (b, &j) in shell.iter().enumerate().skip(a + 1) {
+                    if !near(i, j) {
+                        continue;
+                    }
                     for &k in &shell[b + 1..] {
-                        raw.push(q[i] + q[j] + q[k]);
-                        raw.push((q[j] - q[i]).cross(q[k] - q[i]));
+                        if near(i, k) && near(j, k) {
+                            raw.push(q[i] + q[j] + q[k]);
+                            raw.push((q[j] - q[i]).cross(q[k] - q[i]));
+                        }
                     }
                 }
             }
@@ -728,8 +762,11 @@ fn candidate_directions(z: &[u32], q: &[DVec3]) -> Vec<DVec3> {
         if u.x < -1e-9 || (u.x.abs() <= 1e-9 && (u.y < -1e-9 || (u.y.abs() <= 1e-9 && u.z < 0.0))) {
             u = -u;
         }
-        // Buckets of ~2 degrees; neighbours checked so near-duplicates on
-        // a boundary are caught.
+        // Only true duplicates (to ~1e-5 rad) are dropped: an exact
+        // direction must never lose its place to a rough one nearby (near
+        // copies are merged later, keeping the one that maps atoms best).
+        // Buckets of ~2 degrees; neighbours checked so duplicates on a
+        // boundary are caught.
         let cell = |x: f64| (x * 30.0).floor() as i32;
         let key = (cell(u.x), cell(u.y), cell(u.z));
         let mut duplicate = false;
@@ -737,7 +774,7 @@ fn candidate_directions(z: &[u32], q: &[DVec3]) -> Vec<DVec3> {
             for dy in -1..=1 {
                 for dz in -1..=1 {
                     if let Some(list) = buckets.get(&(key.0 + dx, key.1 + dy, key.2 + dz))
-                        && list.iter().any(|&k| out[k].dot(u).abs() > 0.99985)
+                        && list.iter().any(|&k| out[k].dot(u).abs() > 1.0 - 1e-10)
                     {
                         duplicate = true;
                         break 'search;
