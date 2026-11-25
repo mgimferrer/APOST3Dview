@@ -18,16 +18,23 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
-use apost3dview_core::{parse_cube, Bond, LengthUnit, MeasurementKind};
+use apost3dview_core::{Bond, LengthUnit, MeasurementKind};
 use apost3dview_render::{AoSettings, BondVisualStyle, ColorScale, DofSettings, IsosurfaceMaterial, Material, MoleculeStyleSettings};
 use egui::Color32;
 use glam::{Quat, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
 use crate::app::App;
-use crate::frames::FrameAlignment;
-use crate::isosurfaces::{OrbitalColors, Surface, SurfaceSettings, SurfaceSource};
-use crate::orbitals::{density_surface, orbital_surfaces, OrbitalChoice, OrbitalNames, SetContext};
+
+mod apost;
+mod figure;
+mod frames;
+mod surfaces;
+
+use figure::FigureState;
+use frames::FramesState;
+use surfaces::SurfaceState;
+use crate::isosurfaces::OrbitalColors;
 use crate::results_view::ResultsView;
 use crate::state::{AtomLabelMode, Measurement};
 use crate::util::find_bond_between;
@@ -57,29 +64,6 @@ struct SessionFile {
     /// before panels have none, and get the defaults).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     figure: Option<FigureState>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct FigureState {
-    settings: crate::panels::FigureSettings,
-    #[serde(default)]
-    panels: Vec<PanelState>,
-}
-
-/// A panel: a structure (1-based position in `structures`), the surface
-/// shown alone in it, or the surfaces drawn together (`surfaces`, two or
-/// more; written only then, so a one-surface panel is saved as before and
-/// an older APOST3Dview reads an overlay as the structure as shown), or
-/// neither (the structure as shown), its own caption (absent: automatic).
-#[derive(Serialize, Deserialize)]
-struct PanelState {
-    structure: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    surface: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    surfaces: Vec<String>,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    caption: String,
 }
 
 /// A camera: what it looks at, from how far, turned how.
@@ -225,56 +209,6 @@ struct StructureState {
     frames: Option<FramesState>,
 }
 
-/// How a structure with frames was left.
-#[derive(Serialize, Deserialize)]
-struct FramesState {
-    /// Where along the frames, 1 = the first frame (1.5 = halfway to the
-    /// second).
-    frame: f32,
-    #[serde(default)]
-    line_up: LineUp,
-    /// The atoms the frames are lined up on (1-based), for `line_up =
-    /// "atoms"`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    line_up_atoms: Vec<usize>,
-    #[serde(default)]
-    player: crate::frames::PlayerSettings,
-    /// Views kept along the frames (2026-11-24; absent = none).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    views: Vec<KeptViewState>,
-    /// Whether the camera follows them while the frames play.
-    #[serde(default = "follow_views_default", skip_serializing_if = "is_true")]
-    follow_views: bool,
-}
-
-fn follow_views_default() -> bool {
-    true
-}
-
-fn is_true(value: &bool) -> bool {
-    *value
-}
-
-/// A view kept at a place along the frames.
-#[derive(Serialize, Deserialize)]
-struct KeptViewState {
-    /// 1 = the first frame.
-    frame: f32,
-    target: [f32; 3],
-    distance: f32,
-    /// Quaternion, x y z w.
-    orientation: [f32; 4],
-}
-
-#[derive(Serialize, Deserialize, Default, Clone, Copy, PartialEq)]
-#[serde(rename_all = "lowercase")]
-enum LineUp {
-    #[default]
-    Previous,
-    Atoms,
-    File,
-}
-
 /// Where an aligned structure's coordinates sit in the shared frame
 /// (`shared = rotation * own + translation`), and what it was aligned onto.
 #[derive(Serialize, Deserialize)]
@@ -291,67 +225,6 @@ struct AlignmentState {
 struct MeasurementState {
     atoms: Vec<usize>,
     label_offset: [f32; 2],
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-enum SurfaceOrigin {
-    Cube {
-        file: String,
-        #[serde(default)]
-        file_absolute: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        fingerprint: Option<Fingerprint>,
-    },
-    Orbital {
-        spin: Spin,
-        orbital: usize,
-        grid_spacing_bohr: f64,
-        box_padding_bohr: f64,
-        /// The analysis set ("eos", "geos", "oslo") or the natural orbitals
-        /// of a density matrix ("natural-MP2"); absent for SCF orbitals.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        orbital_set: Option<String>,
-        /// An EFO times its fragment's atomic weight (APOST-3D 0.16 on);
-        /// absent = as stored in the orbital file.
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        fragment_weighted: bool,
-    },
-    /// The total or spin density, recomputed from the wavefunction.
-    Density {
-        spin_density: bool,
-        grid_spacing_bohr: f64,
-        box_padding_bohr: f64,
-        /// The `.fchk` density matrix it comes from ("MP2"; "SCF" for a
-        /// correlated 1-RDM), through its natural orbitals; absent for the
-        /// density of the occupied orbitals.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        density_matrix: Option<String>,
-    },
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
-#[serde(rename_all = "lowercase")]
-enum Spin {
-    Alpha,
-    Beta,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SurfaceState {
-    label: String,
-    visible: bool,
-    isovalue: f32,
-    refinement: usize,
-    both_signs: bool,
-    positive_color: [u8; 4],
-    negative_color: [u8; 4],
-    opacity: f32,
-    /// Analysis orbitals colored by fragment (default off).
-    #[serde(default)]
-    by_fragment: bool,
-    #[serde(flatten)]
-    origin: SurfaceOrigin,
 }
 
 /// Developer check for changes that must not alter sessions: with this
@@ -497,56 +370,21 @@ impl App {
                 let bonds_with = |style: BondVisualStyle| {
                     structure.bond_styles.iter().enumerate().filter(|(_, s)| **s == style).map(|(i, _)| atom_pair(molecule, i)).collect::<Vec<_>>()
                 };
-                let surfaces = structure
-                    .surfaces.list
-                    .iter()
-                    .map(|surface| {
-                        let origin = match &surface.source {
-                            SurfaceSource::Cube(file) => SurfaceOrigin::Cube { file: relative_path(base, file), file_absolute: file.to_string_lossy().into_owned(), fingerprint: fingerprint(file) },
-                            SurfaceSource::Density { spin, spacing_bohr, padding_bohr, natural } => SurfaceOrigin::Density {
-                                spin_density: *spin,
-                                grid_spacing_bohr: *spacing_bohr,
-                                box_padding_bohr: *padding_bohr,
-                                density_matrix: natural.clone(),
-                            },
-                            SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set, weighted } => SurfaceOrigin::Orbital {
-                                spin: if choice.beta { Spin::Beta } else { Spin::Alpha },
-                                orbital: choice.mo_index + 1,
-                                grid_spacing_bohr: *spacing_bohr,
-                                box_padding_bohr: *padding_bohr,
-                                orbital_set: set.clone(),
-                                fragment_weighted: *weighted,
-                            },
-                        };
-                        let s = &surface.settings;
-                        SurfaceState {
-                            label: surface.label.clone(),
-                            visible: surface.visible,
-                            isovalue: s.isovalue,
-                            refinement: s.refinement,
-                            both_signs: s.both_signs,
-                            positive_color: color_to_array(s.positive_color),
-                            negative_color: color_to_array(s.negative_color),
-                            opacity: s.opacity,
-                            by_fragment: s.by_fragment,
-                            origin,
-                        }
-                    })
-                    .collect();
+                let surfaces = surfaces::saved_surfaces(structure, base);
                 let mut hidden_atoms: Vec<usize> = structure.hidden_atoms.iter().map(|&i| i + 1).collect();
                 hidden_atoms.sort_unstable();
                 let mut hidden_bonds: Vec<[usize; 2]> = structure.hidden_bonds.iter().map(|&i| atom_pair(molecule, i)).collect();
                 hidden_bonds.sort_unstable();
-                let results = structure.apost.results.as_ref().map(|a| &a.results_path).filter(|r| !crate::files::same_file(r, path));
+                let results = apost::saved_results(structure, path, base);
                 Some(StructureState {
                     file: relative_path(base, path),
                     file_absolute: path.to_string_lossy().into_owned(),
                     atomic_numbers: molecule.atomic_numbers.clone(),
                     file_fingerprint: fingerprint(path),
-                    results: results.map(|r| relative_path(base, r)),
-                    results_absolute: results.map(|r| r.to_string_lossy().into_owned()),
-                    results_fingerprint: results.and_then(|r| fingerprint(r)),
-                    results_view: structure.apost.results.as_ref().and_then(|a| a.view.clone()),
+                    results: results.results,
+                    results_absolute: results.results_absolute,
+                    results_fingerprint: results.results_fingerprint,
+                    results_view: results.results_view,
                     selected_surface: structure.surfaces.selected,
                     hidden_atoms,
                     added_bonds: (structure.perceived_bonds..molecule.bonds.len()).map(|i| atom_pair(molecule, i)).collect(),
@@ -567,19 +405,7 @@ impl App {
                         rmsd: p.rmsd,
                     }),
                     frame_of_file: structure.file_frame.map(|k| k + 1),
-                    frames: structure.frames.as_ref().map(|f| {
-                        let (line_up, line_up_atoms) = match &f.alignment {
-                            FrameAlignment::Previous => (LineUp::Previous, Vec::new()),
-                            FrameAlignment::Atoms(atoms) => (LineUp::Atoms, atoms.iter().map(|a| a + 1).collect()),
-                            FrameAlignment::File => (LineUp::File, Vec::new()),
-                        };
-                        let views = f
-                            .views
-                            .iter()
-                            .map(|v| KeptViewState { frame: v.position + 1.0, target: v.target.to_array(), distance: v.distance, orientation: v.orientation.to_array() })
-                            .collect();
-                        FramesState { frame: f.position + 1.0, line_up, line_up_atoms, player: f.player, views, follow_views: f.follow_views }
-                    }),
+                    frames: structure.frames.as_ref().map(frames::saved_frames),
                 })
             })
             .collect();
@@ -595,21 +421,7 @@ impl App {
                 }))
             })
             .collect();
-        let figure = &self.render_export.figure;
-        let figure = FigureState {
-            settings: figure.settings.clone(),
-            panels: figure
-                .panels
-                .iter()
-                .filter_map(|p| {
-                    let (surface, surfaces) = match p.surfaces.as_slice() {
-                        [one] => (Some(one.clone()), Vec::new()),
-                        several => (None, several.to_vec()),
-                    };
-                    Some(PanelState { structure: (*positions.get(p.structure)?)?, surface, surfaces, caption: p.caption.clone() })
-                })
-                .collect(),
-        };
+        let figure = self.saved_figure(&positions);
 
         let camera = &self.camera;
         SessionFile {
@@ -734,22 +546,7 @@ impl App {
                 continue;
             };
             opened.insert(position, index);
-            // Its APOST-3D results, as the session had them open.
-            let results = match (&state.results, &state.results_absolute) {
-                (Some(relative), absolute) => {
-                    let found = resolve(&base, relative, absolute.as_deref().unwrap_or(""));
-                    if found.is_none() {
-                        problems.push(format!("{} was not found", file_name(relative)));
-                    }
-                    found
-                }
-                (None, _) if state.results_view.is_some() && self.structures[index].apost.results.is_none() => self.structures[index].apost.nearby.clone(),
-                _ => None,
-            };
-            if let Some(results) = results {
-                check_fingerprint(&results, state.results_fingerprint.as_ref(), &mut problems);
-                self.attach_results(index, &results);
-            }
+            self.reopen_results(index, state, &base, &mut problems);
             self.restore_structure(index, state, &base, &mut problems);
         }
 
@@ -779,26 +576,7 @@ impl App {
         if let Some(active) = self.active_structure {
             self.camera.world_up = crate::alignment::up_in(crate::alignment::motion(self.structures[active].placement.as_ref()));
         }
-        let figure = &mut self.render_export.figure;
-        figure.preview = Default::default();
-        match &session.figure {
-            Some(state) => {
-                figure.settings = state.settings.clone();
-                figure.panels = state
-                    .panels
-                    .iter()
-                    .filter_map(|p| {
-                        let index = *opened.get(&p.structure.checked_sub(1)?)?;
-                        let surfaces = if p.surfaces.is_empty() { p.surface.iter().cloned().collect() } else { p.surfaces.clone() };
-                        Some(crate::panels::Panel { structure: index, surfaces, caption: p.caption.clone() })
-                    })
-                    .collect();
-            }
-            None => {
-                figure.settings = Default::default();
-                figure.panels.clear();
-            }
-        }
+        self.restore_figure(session.figure.as_ref(), &opened);
         self.spin_direction = Vec2::from_array(view.spin_direction).normalize_or(Vec2::X);
         self.auto_spin_speed = view.spin_speed;
         self.rebuild_measurements();
@@ -849,11 +627,7 @@ impl App {
         let structure = &mut self.structures[index];
         structure.surfaces.list = surfaces;
         structure.surfaces.selected = state.selected_surface.filter(|&i| i < structure.surfaces.list.len());
-        if let (Some(view), Some(attachment)) = (&state.results_view, structure.apost.results.as_mut())
-            && attachment.results.is_ok()
-        {
-            attachment.view = Some(view.clone());
-        }
+        apost::restore_results_view(structure, state);
         if !same_atoms {
             return;
         }
@@ -877,29 +651,8 @@ impl App {
             }
         }
         structure.hidden_atoms.extend(state.hidden_atoms.iter().filter(|&&a| a >= 1 && a <= n_atoms).map(|a| a - 1));
-        if let (Some(saved), Some(frames)) = (&state.frames, structure.frames.as_mut()) {
-            frames.player = saved.player;
-            frames.alignment = match saved.line_up {
-                LineUp::Previous => FrameAlignment::Previous,
-                LineUp::Atoms if valid(&saved.line_up_atoms) => FrameAlignment::Atoms(saved.line_up_atoms.iter().map(|a| a - 1).collect()),
-                LineUp::Atoms => FrameAlignment::Previous,
-                LineUp::File => FrameAlignment::File,
-            };
-            frames.realign();
-            // Saved in the coordinates of the frames as lined up then: added
-            // after lining up, so they aren't carried.
-            frames.follow_views = saved.follow_views;
-            for v in saved.views.iter().filter(|v| v.distance > 0.0 && v.frame >= 1.0) {
-                let orientation = Quat::from_array(v.orientation);
-                frames.add_view(crate::frames::KeptView {
-                    position: (v.frame - 1.0).min(frames.last()),
-                    target: Vec3::from_array(v.target),
-                    distance: v.distance,
-                    orientation: if orientation.is_normalized() { orientation } else { orientation.normalize() },
-                });
-            }
-            let position = saved.frame - 1.0;
-            self.show_frame_position(index, position);
+        if let Some(saved) = &state.frames {
+            self.restore_frames(index, saved);
         }
         let structure = &mut self.structures[index];
         for m in state.measurements.iter().filter(|m| valid(&m.atoms)) {
@@ -908,107 +661,6 @@ impl App {
                 structure.measurements.push(Measurement { kind, label_offset: egui::vec2(m.label_offset[0], m.label_offset[1]) });
             }
         }
-    }
-
-    /// The structure's surfaces, in the recorded order: cubes read again,
-    /// generated orbitals computed again (all of one grid in one pass).
-    fn restore_surfaces(&mut self, index: usize, states: &[SurfaceState], base: &Path, name: &str, problems: &mut Vec<String>) -> Vec<Surface> {
-        let mut slots: Vec<Option<Surface>> = states.iter().map(|_| None).collect();
-        let settings_of = |s: &SurfaceState| SurfaceSettings {
-            isovalue: s.isovalue,
-            refinement: s.refinement.clamp(1, 3),
-            both_signs: s.both_signs,
-            positive_color: color_from_array(s.positive_color),
-            negative_color: color_from_array(s.negative_color),
-            opacity: s.opacity.clamp(0.05, 1.0),
-            by_fragment: s.by_fragment,
-        };
-
-        // Orbitals, grouped by set and grid so each group is one batched
-        // evaluation.
-        // (set, spacing bits, padding bits) -> (slot, orbital).
-        type Group = (Option<String>, u64, u64, bool);
-        let mut groups: BTreeMap<Group, Vec<(usize, OrbitalChoice)>> = BTreeMap::new();
-        for (slot, state) in states.iter().enumerate() {
-            match &state.origin {
-                SurfaceOrigin::Cube { file, file_absolute, fingerprint: saved } => match resolve(base, file, file_absolute).map(|p| (parse_cube(&p), p)) {
-                    Some((Ok(cube), path)) => {
-                        check_fingerprint(&path, saved.as_ref(), problems);
-                        slots[slot] = Some(Surface::new(state.label.clone(), cube.grid, settings_of(state), SurfaceSource::Cube(path)));
-                    }
-                    Some((Err(_), _)) => problems.push(format!("{} could not be read", file_name(file))),
-                    None => problems.push(format!("{} was not found", file_name(file))),
-                },
-                SurfaceOrigin::Density { spin_density, grid_spacing_bohr, box_padding_bohr, density_matrix } => {
-                    let structure = &self.structures[index];
-                    let natural = density_matrix.as_ref().map(|kind| structure.surfaces.densities.as_ref().and_then(|d| d.natural.iter().find(|n| &n.kind == kind)).ok_or(kind));
-                    let generated = match (&structure.surfaces.wavefunction, natural) {
-                        (None, _) => Err("no wavefunction".to_string()),
-                        (Some(_), Some(Err(kind))) => Err(format!("the file has no {kind} density matrix")),
-                        (Some(wfn), natural) => density_surface(wfn, *spin_density, *grid_spacing_bohr, *box_padding_bohr, natural.and_then(Result::ok), self.orbital_colors),
-                    };
-                    match generated {
-                        Ok(mut surface) => {
-                            surface.settings = settings_of(state);
-                            slots[slot] = Some(surface);
-                        }
-                        Err(err) => problems.push(format!("the density of {name} could not be generated ({err})")),
-                    }
-                }
-                SurfaceOrigin::Orbital { spin, orbital, grid_spacing_bohr, box_padding_bohr, orbital_set, fragment_weighted } => {
-                    let choice = OrbitalChoice { beta: *spin == Spin::Beta, mo_index: orbital.saturating_sub(1) };
-                    groups.entry((orbital_set.clone(), grid_spacing_bohr.to_bits(), box_padding_bohr.to_bits(), *fragment_weighted)).or_default().push((slot, choice));
-                }
-            }
-        }
-        for ((set_name, spacing, padding, weighted), members) in groups {
-            let choices: Vec<OrbitalChoice> = members.iter().map(|(_, c)| *c).collect();
-            let generated = match &set_name {
-                None => match &self.structures[index].surfaces.wavefunction {
-                    None => Err("no wavefunction".to_string()),
-                    Some(wfn) => orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), OrbitalNames::Scf),
-                },
-                Some(key) if key.starts_with("natural-") => match self.structures[index].surfaces.densities.as_ref().and_then(|d| d.by_key(key)) {
-                    None => Err(format!("the file has no {} density matrix", &key["natural-".len()..])),
-                    Some(set) => orbital_surfaces(&set.orbitals, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), OrbitalNames::Natural(set)),
-                },
-                Some(analysis) => match self.structures[index].apost.orbital_sets.iter().position(|s| &s.set.key() == analysis) {
-                    None => Err(format!("its {analysis} orbital file was not found")),
-                    Some(position) if !self.load_orbital_set(index, position) => Err(format!("its {analysis} orbital file could not be used")),
-                    Some(position) => {
-                        let structure = &self.structures[index];
-                        let set = &structure.apost.orbital_sets[position];
-                        match (&set.wavefunction, structure.apost.results.as_ref().map(|a| &a.results)) {
-                            (Some(Ok(wfn)), Some(Ok(results))) => {
-                                let context = SetContext { set, results, molecule: &structure.molecule, weighted };
-                                orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), OrbitalNames::Set(&context))
-                            }
-                            _ => Err("no results".to_string()),
-                        }
-                    }
-                },
-            };
-            match generated {
-                Ok(surfaces) => {
-                    for ((slot, _), mut surface) in members.into_iter().zip(surfaces) {
-                        surface.settings = settings_of(&states[slot]);
-                        slots[slot] = Some(surface);
-                    }
-                }
-                Err(err) => problems.push(format!("orbitals of {name} could not be generated ({err})")),
-            }
-        }
-
-        slots
-            .into_iter()
-            .zip(states)
-            .filter_map(|(surface, state)| {
-                surface.map(|mut s| {
-                    s.visible = state.visible;
-                    s
-                })
-            })
-            .collect()
     }
 }
 
