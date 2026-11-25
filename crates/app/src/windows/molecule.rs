@@ -99,11 +99,16 @@ impl App {
                     if structure.apost.results.as_ref().is_some_and(|a| a.results.is_ok()) {
                         notes.push("APOST-3D".to_string());
                     }
+                    if let Some(build) = &structure.build {
+                        notes.push(if build.saved { "edited, saved".to_string() } else { "edited, not saved".to_string() });
+                    }
                     if !notes.is_empty() {
                         ui.label(RichText::new(notes.join(", ")).small().weak());
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("\u{d7}").on_hover_text("Close").clicked() {
+                        let unsaved = structure.build.as_ref().is_some_and(|b| !b.saved);
+                        let hover = if unsaved { "Close. Its edits are not saved, and undo can't bring it back." } else { "Close" };
+                        if ui.small_button("\u{d7}").on_hover_text(hover).clicked() {
                             close = Some(index);
                         }
                     });

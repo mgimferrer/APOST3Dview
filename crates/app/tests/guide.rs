@@ -308,6 +308,42 @@ fn reaction_path() {
     sees_text(&guide, "seen from the kept views");
 }
 
+/// "Editing a molecule": the ethane example (C2H6-OSLO-2CH3), Build opened,
+/// a methyl turned to eclipsed by setting the H-C-C-H dihedral to 0 (edits
+/// go to a copy under the original), the C-C bond stretched.
+#[test]
+fn editing_a_molecule() {
+    let mut guide = open(vec![example("C2H6-OSLO-2CH3").join("C2H6-OSLO-2CH3.fchk")]);
+    click(&mut guide, "Build");
+    sees_text(&guide, "Edits go to a copy of C2H6-OSLO-2CH3.fchk");
+    sees_text(&guide, "Building: C2H6-OSLO-2CH3.fchk");
+    // H3-C1-C2-H6: atoms are numbered from 1 in the app, from 0 here.
+    let z = guide.state().atomic_numbers();
+    let carbons: Vec<usize> = (0..z.len()).filter(|&i| z[i] == 6).collect();
+    let p = guide.state().atom_positions();
+    let near = |c: usize| (0..z.len()).find(|&i| z[i] == 1 && (0..3).map(|k| (p[i][k] - p[c][k]).powi(2)).sum::<f32>().sqrt() < 1.2).unwrap();
+    let (c1, c2) = (carbons[0], carbons[1]);
+    guide.state_mut().select_atoms(&[near(c1), c1, c2, near(c2)]);
+    guide.run_steps(3);
+    for label in ["Set", "Both sides, half each", "Delete selected atoms", "Bonds from distances", "Move", "Change"] {
+        sees(&guide, label);
+    }
+    guide.state_mut().build_set_value(0.0);
+    guide.run_steps(3);
+    sees_text(&guide, "Building: C2H6-OSLO-2CH3 (edited)");
+    for label in ["Undo", "Redo", "Save as .xyz...", "Continue in a new copy"] {
+        sees(&guide, label);
+    }
+    sees_text(&guide, "edited, not saved");
+    guide.state_mut().select_atoms(&[c1, c2]);
+    guide.run_steps(3);
+    sees_text(&guide, "Turn about");
+    frame(&mut guide, 0.4, 0.25, 1.9);
+    guide.state_mut().pan_view(1.2, 0.0);
+    settle(&mut guide);
+    snap_window(&mut guide, "build-window", 1400);
+}
+
 /// "Looking at a molecule", Styles: an Fe d EFO of ferrocene (the
 /// FeCp2-EOS-OSLO example) in the four styles, side by side, in the view of
 /// the paper's figure (Cp-Fe-Cp vertical, seen from a little above).

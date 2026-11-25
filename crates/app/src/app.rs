@@ -46,11 +46,15 @@ pub struct StartupOptions {
     /// application, `default_recent_file`); `None`: in memory only, so that
     /// tests never touch a user's list.
     pub recent_file: Option<PathBuf>,
+    /// Where the Features choice is kept (`default_features_file` for the
+    /// real application); `None`: every area on, nothing asked (tests,
+    /// the headless renderer).
+    pub features_file: Option<PathBuf>,
 }
 
 impl Default for StartupOptions {
     fn default() -> Self {
-        Self { files: Vec::new(), splash: true, recent_file: None }
+        Self { files: Vec::new(), splash: true, recent_file: None, features_file: None }
     }
 }
 
@@ -169,6 +173,10 @@ pub struct App {
     pub(crate) surfaces: crate::areas::SurfacesArea,
     /// The APOST-3D area's app-wide state (`areas.rs`).
     pub(crate) apost: crate::areas::ApostArea,
+    /// The Build area's app-wide state (`build.rs`).
+    pub(crate) build: crate::build::BuildArea,
+    /// Which optional areas are shown (`features.rs`).
+    pub(crate) features: crate::features::Features,
     /// Open > Recent.
     pub(crate) recent: crate::recent::RecentFiles,
     /// Windows asked for since the last frame, to show expanded
@@ -256,6 +264,8 @@ impl App {
             toasts: Vec::new(),
             surfaces: Default::default(),
             apost: Default::default(),
+            build: Default::default(),
+            features: crate::features::Features::load(options.features_file.clone()),
             recent: crate::recent::RecentFiles::load(options.recent_file.clone()),
             windows_to_expand: Vec::new(),
             window_column: Default::default(),
@@ -533,11 +543,22 @@ impl App {
     /// around, and auto-spin — always in view, so none of it has to be
     /// looked up in a window.
     fn show_status_bar(&mut self, ui: &mut egui::Ui) {
-        let response = egui::Panel::bottom("status_bar").show(ui, |ui| {
+        // In Build mode the bar is blue and starts with "Building:", with
+        // the view's blue frame (`paint_build_frame`).
+        let building = self.building();
+        let mut panel = egui::Panel::bottom("status_bar");
+        if building {
+            panel = panel.frame(egui::Frame::side_top_panel(ui.style()).fill(crate::windows::build::BUILD_BLUE));
+        }
+        let response = panel.show(ui, |ui| {
+            if building {
+                ui.visuals_mut().override_text_color = Some(Color32::from_rgb(240, 246, 252));
+            }
             ui.horizontal(|ui| {
                 if let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) {
                     let n = structure.molecule.atomic_numbers.len();
-                    ui.label(RichText::new(&structure.label).strong());
+                    let name = if building { format!("Building: {}", structure.label) } else { structure.label.clone() };
+                    ui.label(RichText::new(name).strong());
                     ui.label(RichText::new(format!("{n} atom{}", if n == 1 { "" } else { "s" })).weak());
                     let selected = structure.selected_atoms.len() + structure.selected_bonds.len();
                     if selected > 0 {
@@ -619,6 +640,9 @@ impl App {
                 // A click closes an open window, and opens a closed one
                 // expanded.
                 for window in ToolWindow::TOOLBAR {
+                    if window == ToolWindow::Build && !self.features.building {
+                        continue;
+                    }
                     let open = self.window_open(window);
                     if ui.selectable_label(open, window.title()).clicked() {
                         if open {

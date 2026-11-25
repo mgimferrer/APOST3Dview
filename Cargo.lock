@@ -190,6 +190,7 @@ dependencies = [
 name = "apost3dview"
 version = "1.0.1"
 dependencies = [
+ "apost3dview-build",
  "apost3dview-core",
  "apost3dview-render",
  "eframe",

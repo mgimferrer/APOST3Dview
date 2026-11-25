@@ -8,6 +8,7 @@ mod apost_input;
 mod apost_tables;
 mod apost_values;
 mod appearance;
+pub(crate) mod build;
 pub(crate) mod column;
 mod coordinates;
 mod export;
@@ -23,6 +24,7 @@ pub(crate) enum ToolWindow {
     Molecule,
     Surfaces,
     Measure,
+    Build,
     Apost,
     Appearance,
     Export,
@@ -30,10 +32,11 @@ pub(crate) enum ToolWindow {
 }
 
 impl ToolWindow {
-    pub(crate) const ALL: [ToolWindow; 7] = [
+    pub(crate) const ALL: [ToolWindow; 8] = [
         ToolWindow::Molecule,
         ToolWindow::Surfaces,
         ToolWindow::Measure,
+        ToolWindow::Build,
         ToolWindow::Apost,
         ToolWindow::Appearance,
         ToolWindow::Export,
@@ -41,8 +44,9 @@ impl ToolWindow {
     ];
 
     /// The windows with a toolbar button (Coordinates opens from Molecule).
-    pub(crate) const TOOLBAR: [ToolWindow; 6] =
-        [ToolWindow::Molecule, ToolWindow::Surfaces, ToolWindow::Measure, ToolWindow::Apost, ToolWindow::Appearance, ToolWindow::Export];
+    /// Build only when switched on in Features.
+    pub(crate) const TOOLBAR: [ToolWindow; 7] =
+        [ToolWindow::Molecule, ToolWindow::Surfaces, ToolWindow::Measure, ToolWindow::Build, ToolWindow::Apost, ToolWindow::Appearance, ToolWindow::Export];
 
     /// The window's title.
     pub(crate) fn title(self) -> &'static str {
@@ -50,6 +54,7 @@ impl ToolWindow {
             ToolWindow::Molecule => "Molecule",
             ToolWindow::Surfaces => "Surfaces",
             ToolWindow::Measure => "Measure",
+            ToolWindow::Build => "Build",
             ToolWindow::Apost => "APOST-3D",
             ToolWindow::Appearance => "Appearance",
             ToolWindow::Export => "Export",

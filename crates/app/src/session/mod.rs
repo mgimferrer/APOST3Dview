@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::app::App;
 
 mod apost;
+mod build;
 mod figure;
 mod frames;
 mod surfaces;
@@ -41,8 +42,11 @@ use crate::util::find_bond_between;
 
 pub(crate) const SESSION_EXTENSION: &str = "a3dview";
 const SESSION_FORMAT: &str = "apost3dview-session";
-/// Raised when a change means an older APOST-3Dview can't read the file.
-const SESSION_VERSION: u32 = 1;
+/// The newest session version this APOST-3Dview reads. Raised when a change
+/// means an older APOST-3Dview can't read the file: 2 = edited structures
+/// written into the session (`[structures.edited]`). A session without
+/// them is still written as version 1, readable by every release.
+const SESSION_VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 struct SessionFile {
@@ -207,6 +211,11 @@ struct StructureState {
     /// play (2026-11-24; absent before).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     frames: Option<FramesState>,
+    /// A structure made in the Build window: its name, the file it was
+    /// made from (then `file` too), and, until it is saved as a file, its
+    /// atoms written here (the session is then version 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    edited: Option<build::EditedState>,
 }
 
 /// Where an aligned structure's coordinates sit in the shared frame
@@ -365,7 +374,8 @@ impl App {
             .structures
             .iter()
             .filter_map(|structure| {
-                let path = structure.source_path.as_ref()?;
+                let path = build::session_file(structure)?;
+                let inline = build::written_inline(structure);
                 let molecule = &structure.molecule;
                 let bonds_with = |style: BondVisualStyle| {
                     structure.bond_styles.iter().enumerate().filter(|(_, s)| **s == style).map(|(i, _)| atom_pair(molecule, i)).collect::<Vec<_>>()
@@ -380,7 +390,7 @@ impl App {
                     file: relative_path(base, path),
                     file_absolute: path.to_string_lossy().into_owned(),
                     atomic_numbers: molecule.atomic_numbers.clone(),
-                    file_fingerprint: fingerprint(path),
+                    file_fingerprint: if inline { None } else { fingerprint(path) },
                     results: results.results,
                     results_absolute: results.results_absolute,
                     results_fingerprint: results.results_fingerprint,
@@ -406,6 +416,7 @@ impl App {
                     }),
                     frame_of_file: structure.file_frame.map(|k| k + 1),
                     frames: structure.frames.as_ref().map(frames::saved_frames),
+                    edited: build::saved_edited(structure, base),
                 })
             })
             .collect();
@@ -415,7 +426,7 @@ impl App {
             .structures
             .iter()
             .scan(0, |next, s| {
-                Some(s.source_path.as_ref().map(|_| {
+                Some(build::session_file(s).map(|_| {
                     *next += 1;
                     *next
                 }))
@@ -426,7 +437,7 @@ impl App {
         let camera = &self.camera;
         SessionFile {
             format: SESSION_FORMAT.to_string(),
-            version: SESSION_VERSION,
+            version: if self.structures.iter().any(build::written_inline) { 2 } else { 1 },
             written_by: format!("APOST-3Dview {}", env!("CARGO_PKG_VERSION")),
             active_structure: self.active_structure,
             view: ViewState {
@@ -536,6 +547,13 @@ impl App {
         // Position in the session -> index of the structure opened for it.
         let mut opened: BTreeMap<usize, usize> = BTreeMap::new();
         for (position, state) in session.structures.iter().enumerate() {
+            if let Some(edited) = state.edited.as_ref().filter(|e| e.is_inline()) {
+                if let Some(index) = self.restore_edited_copy(state, edited, &base, &mut problems) {
+                    opened.insert(position, index);
+                    self.restore_structure(index, state, &base, &mut problems);
+                }
+                continue;
+            }
             let Some(file) = resolve(&base, &state.file, &state.file_absolute) else {
                 problems.push(format!("{} was not found", file_name(&state.file)));
                 continue;
@@ -548,6 +566,12 @@ impl App {
             opened.insert(position, index);
             self.reopen_results(index, state, &base, &mut problems);
             self.restore_structure(index, state, &base, &mut problems);
+            if let Some(edited) = &state.edited {
+                self.mark_saved_copy(index, edited, &base);
+            }
+        }
+        if session.structures.iter().any(|s| s.edited.is_some()) {
+            self.require_building();
         }
 
         let active = session.active_structure.and_then(|p| opened.get(&p).copied()).or_else(|| opened.values().next().copied());

@@ -66,6 +66,7 @@ impl ToolWindow {
             ToolWindow::Molecule => 280.0,
             ToolWindow::Surfaces => 520.0,
             ToolWindow::Measure => 300.0,
+            ToolWindow::Build => 400.0,
             ToolWindow::Apost => 560.0,
             ToolWindow::Appearance => 460.0,
             ToolWindow::Export => 420.0,

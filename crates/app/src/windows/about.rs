@@ -54,6 +54,10 @@ impl App {
                     ui.add_space(8.0);
                     ui.separator();
                     ui.add_space(8.0);
+                    if ui.button("Features...").on_hover_text("Choose which tools are shown (building molecules)").clicked() {
+                        self.open_features();
+                    }
+                    ui.add_space(4.0);
                     ui.hyperlink_to("Report a problem or suggest a feature", "https://github.com/mgimferrer/APOST3Dview/issues/new/choose");
                     let details = self.system_details();
                     ui.label(egui::RichText::new(&details).small().weak());

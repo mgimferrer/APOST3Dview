@@ -19,7 +19,7 @@ fn app_keeping(store: &Path, files: Vec<PathBuf>) -> Harness<'static, App> {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 900.0))
         .renderer(common::AppRenderer::new())
-        .build_eframe(move |cc| App::with_options(cc, StartupOptions { files, splash: false, recent_file: Some(store) }));
+        .build_eframe(move |cc| App::with_options(cc, StartupOptions { files, splash: false, recent_file: Some(store), features_file: None }));
     harness.run_steps(4);
     harness
 }

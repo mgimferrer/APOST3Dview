@@ -9,6 +9,7 @@
 //!   on).
 //! - Figures: panel figures (always on, in the Export window).
 //! - Frames: reaction paths, shown when a multi-frame file is opened.
+//! - Build: editing geometries in edited copies (switched on in Features).
 //!
 //! An area may read another area's state; it changes it only through that
 //! area's methods. A new area adds its per-frame work and windows to the
@@ -88,6 +89,7 @@ impl App {
         self.update_surfaces(ctx);
         self.update_results_display(ctx);
         self.update_figure_preview(ctx);
+        self.handle_build_keys(ctx);
     }
 
     /// The tool windows, in toolbar order, then the others.
@@ -95,11 +97,13 @@ impl App {
         self.show_molecule_window(ctx);
         self.show_surfaces_window(ctx);
         self.show_measure_window(ctx);
+        self.show_build_window(ctx);
         self.show_apost_window(ctx);
         self.show_appearance_window(ctx);
         self.show_export_window(ctx);
         self.show_figure_preview_window(ctx);
         self.show_coordinates_window(ctx);
         self.show_about_window(ctx);
+        self.show_features_window(ctx);
     }
 }

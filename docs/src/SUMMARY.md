@@ -11,6 +11,7 @@
 
 - [Looking at a molecule](molecule.md)
 - [Reaction paths and other frames](frames.md)
+- [Editing a molecule](building.md)
 - [Orbitals and densities](orbitals.md)
 - [APOST-3D results on the molecule](results.md)
     - [Fragments, charges and bond orders](results/fragments.md)

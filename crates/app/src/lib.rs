@@ -7,7 +7,9 @@
 mod alignment;
 mod app;
 mod areas;
+mod build;
 mod export;
+mod features;
 mod files;
 mod frames;
 pub mod graphics;
@@ -34,6 +36,7 @@ mod windows;
 
 pub use app::{App, StartupOptions};
 pub use headless::{render_session, DEFAULT_SIZE};
+pub use features::default_features_file;
 pub use recent::default_recent_file;
 
 /// The app's name for the system: eframe's folder for saved state (and our

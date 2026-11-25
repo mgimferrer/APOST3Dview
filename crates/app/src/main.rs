@@ -25,6 +25,7 @@ fn main() -> eframe::Result<()> {
     let startup = apost3dview::StartupOptions {
         files: std::env::args_os().skip(1).map(std::path::PathBuf::from).collect(),
         recent_file: apost3dview::default_recent_file(),
+        features_file: apost3dview::default_features_file(),
         ..Default::default()
     };
 

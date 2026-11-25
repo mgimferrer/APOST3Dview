@@ -15,6 +15,7 @@ use crate::results::ApostAttachment;
 /// A committed distance/angle/dihedral, with a screen-space label position
 /// the user can drag away from the default (the involved atoms' centroid)
 /// — for composing publication images without labels overlapping.
+#[derive(Clone)]
 pub(crate) struct Measurement {
     pub(crate) kind: MeasurementKind,
     pub(crate) label_offset: egui::Vec2,
@@ -112,6 +113,9 @@ pub(crate) struct LoadedStructure {
     /// Frames area: the geometries of a multi-frame .xyz file, shown one at
     /// a time (`frames.rs`); `molecule.positions` hold the one shown.
     pub(crate) frames: Option<crate::frames::Frames>,
+    /// Build area: `Some` for a structure made in the Build window (an
+    /// edited copy), with its undo history (`build.rs`).
+    pub(crate) build: Option<crate::build::StructureBuild>,
 }
 
 /// A structure's part of the Surfaces area.
@@ -182,6 +186,7 @@ impl LoadedStructure {
             surfaces: StructureSurfaces::default(),
             apost: StructureApost::default(),
             frames: None,
+            build: None,
         }
     }
 

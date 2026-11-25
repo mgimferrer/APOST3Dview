@@ -23,4 +23,12 @@ impl LengthUnit {
             LengthUnit::Bohr => angstrom / ANGSTROM_PER_BOHR,
         }
     }
+
+    /// A length in this unit, in angstrom.
+    pub fn to_angstrom(self, value: f64) -> f64 {
+        match self {
+            LengthUnit::Angstrom => value,
+            LengthUnit::Bohr => value * ANGSTROM_PER_BOHR,
+        }
+    }
 }
