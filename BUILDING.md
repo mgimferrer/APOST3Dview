@@ -43,6 +43,14 @@ cargo test --workspace
 - `cargo test --workspace --profile ci` (as CI does) builds the tests optimized, with the debug checks kept: slower to compile, much faster to run (the every-point orbital comparisons of `reference_cubes.rs`: 208 s unoptimized, 31 s with it). The reference scenes are written and compared with the default (debug) build, see `render_reference.rs`.
 - `crates/app/tests/input_runs.rs` runs inputs made with the input generator through APOST-3D itself and opens their results; it needs an APOST-3D checkout with the program built, `APOST3D_DIR=path/to/APOST3D cargo test -p apost3dview --test input_runs`, and skips itself otherwise (so it doesn't run in CI).
 - Reference scenes (pixel-by-pixel comparisons before and after a renderer change): see the comments at the top of `crates/app/tests/render_reference.rs`.
+- Checking that sessions don't change (for changes that must not alter what is saved or restored): with `APOST3DVIEW_SESSION_DUMP=folder`, every session the app saves, and the state just after a session is opened, is written to that folder as text (absolute paths and temporary folder names left out), one file per distinct text, named by its checksum. Run the app tests before and after the change into two folders, then compare the file names:
+
+  ```bash
+  APOST3DVIEW_SESSION_DUMP=$PWD/target/session-dump/before cargo test --profile ci -p apost3dview
+  # ... the change ...
+  APOST3DVIEW_SESSION_DUMP=$PWD/target/session-dump/after cargo test --profile ci -p apost3dview
+  diff <(ls target/session-dump/before) <(ls target/session-dump/after)
+  ```
 
 ## Test data
 

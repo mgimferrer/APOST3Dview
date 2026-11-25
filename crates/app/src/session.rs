@@ -354,6 +354,39 @@ struct SurfaceState {
     origin: SurfaceOrigin,
 }
 
+/// Developer check for changes that must not alter sessions: with this
+/// variable set to a folder, every session saved, and the state just after
+/// a session is opened, is written there as text, one file per distinct
+/// text (named by its SHA-256). Run the tests before and after a change and
+/// compare the two folders' file names (BUILDING.md, "Checking that
+/// sessions don't change").
+pub const SESSION_DUMP_VAR: &str = "APOST3DVIEW_SESSION_DUMP";
+
+/// Writes `text` to the dump folder (see `SESSION_DUMP_VAR`), without what
+/// differs from run to run: absolute paths, and the test runner's process
+/// id and temporary folder in the paths.
+fn dump_session_text(kind: &str, text: &str) {
+    use sha2::{Digest, Sha256};
+    let Some(dir) = std::env::var_os(SESSION_DUMP_VAR) else { return };
+    let temp = std::env::temp_dir();
+    let temp = temp.to_string_lossy();
+    let temp = temp.trim_end_matches(['/', '\\']);
+    let pid = std::process::id();
+    let mut normalized = format!("# {kind}\n");
+    for line in text.lines() {
+        if line.split('=').next().is_some_and(|key| key.trim_end().ends_with("_absolute")) {
+            continue;
+        }
+        let line = line.replace(temp, "TMP").replace(&format!("-{pid}/"), "-PID/").replace(&format!("-{pid}\\"), "-PID\\").replace(&format!("-{pid}\""), "-PID\"");
+        normalized.push_str(&line);
+        normalized.push('\n');
+    }
+    let name: String = Sha256::digest(normalized.as_bytes()).iter().take(16).map(|b| format!("{b:02x}")).collect();
+    let dir = PathBuf::from(dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(dir.join(format!("{kind}-{name}.toml")), normalized);
+}
+
 fn color_to_array(color: Color32) -> [u8; 4] {
     color.to_array()
 }
@@ -624,6 +657,7 @@ impl App {
     pub fn save_session_to(&self, path: &Path) -> Result<(), String> {
         let base = path.parent().unwrap_or(Path::new("."));
         let text = toml::to_string_pretty(&self.session_state(base)).map_err(|err| err.to_string())?;
+        dump_session_text("saved", &text);
         let header = "# APOST-3Dview session: open it with APOST-3Dview (Open, drag and drop, or the command line).\n\n";
         std::fs::write(path, format!("{header}{text}")).map_err(|err| err.to_string())
     }
@@ -771,6 +805,11 @@ impl App {
         self.rebuild_isosurface();
 
         self.session_path = Some(path.to_path_buf());
+        if std::env::var_os(SESSION_DUMP_VAR).is_some()
+            && let Ok(text) = toml::to_string_pretty(&self.session_state(path.parent().unwrap_or(Path::new("."))))
+        {
+            dump_session_text("reopened", &text);
+        }
         if problems.is_empty() {
             self.show_status(format!("Session {name} opened"));
         } else {
