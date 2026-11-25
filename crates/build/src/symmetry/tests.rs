@@ -233,3 +233,33 @@ fn several_candidates_of_one_group_are_told_apart() {
     assert!(c2v.displacement > 0.005 && c2v.displacement < 0.02);
 }
 
+
+/// Writes the known molecules as .xyz into `APOST3DVIEW_SYMMETRY_XYZ` (for
+/// the comparison with pymatgen in validation/symmetry/).
+#[test]
+#[ignore]
+fn write_known_molecules() {
+    let Some(dir) = std::env::var_os("APOST3DVIEW_SYMMETRY_XYZ") else { return };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let symbol = |z: u32| match z {
+        1 => "H",
+        5 => "B",
+        6 => "C",
+        7 => "N",
+        8 => "O",
+        9 => "F",
+        16 => "S",
+        17 => "Cl",
+        26 => "Fe",
+        35 => "Br",
+        _ => panic!("no symbol for {z}"),
+    };
+    for (name, m, group) in known() {
+        let mut text = format!("{}\n{name}, {group}\n", m.len());
+        for (z, p) in &m {
+            text.push_str(&format!("{:<2} {:16.10} {:16.10} {:16.10}\n", symbol(*z), p[0], p[1], p[2]));
+        }
+        std::fs::write(dir.join(format!("{}.xyz", name.replace(' ', "-"))), text).unwrap();
+    }
+}

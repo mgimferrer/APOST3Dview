@@ -19,10 +19,12 @@ was found.
 | [`qchem/`](qchem/) | Q-Chem 6.3 | `.fchk` | pure d/f/g, Cartesian d, an unrestricted triplet |
 | [`orca/`](orca/) | ORCA 6.1.1 | `.molden` | s-p-d, f, g, an unrestricted triplet, an ECP, CASSCF natural orbitals and density |
 | [`orca/orca2fchk/`](orca/orca2fchk/) | ORCA 6.1.1, converted by APOST-3D's orca2fchk.py | `.fchk` | the same calculations as `orca/`, by the route ORCA users take to APOST-3D |
+| [`symmetry/`](symmetry/) | pymatgen 2024.8.9 | `.xyz` | point groups of 29 structures (C1 to Ih, C∞v, D∞h), ideal and from real calculations, at two tolerances |
 | [`apost3d/`](apost3d/) | APOST-3D 5 | `.apost.json` | the atomic weights (TFVC, Becke-rho) rebuilt from the results file, at reference points; EFOs from the unweighted file against APOST-3D's cube files |
 
 The orbital comparisons run as `cargo test -p apost3dview-core --test reference_cubes`, the
-atomic weights as `cargo test -p apost3dview-core --test atomic_weights`.
+atomic weights as `cargo test -p apost3dview-core --test atomic_weights`, the
+point groups as `cargo test -p apost3dview-build --test symmetry_pymatgen`.
 The Gaussian files also serve as ordinary inputs for the app's tests and
 reference scenes. The densities from the Gaussian files are checked against
 Gaussian's own density matrices in `crates/core/tests/densities.rs`.
