@@ -1,4 +1,4 @@
-# Every push to main: build and check on Windows, macOS and Linux, and run
+# Every push to main or development: build and check on Windows, macOS and Linux, and run
 # the tests that need no GPU. The app tests run on a software GPU (WARP on
 # Windows, lavapipe on Linux): every render pipeline built and drawn through
 # DX12 and Vulkan, which this Mac never exercises. Both jobs first copy
@@ -10,7 +10,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, development]
   pull_request:
   workflow_dispatch:
 

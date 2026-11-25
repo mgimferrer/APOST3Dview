@@ -1,4 +1,4 @@
-# The user guide (docs/, mdBook): built on every push and pull request, so a
+# The user guide (docs/, mdBook): built on every push (main, development) and pull request, so a
 # broken page shows up at once; on main also published with GitHub Pages at
 # https://mgimferrer.github.io/APOST3Dview/ (Settings > Pages > Source:
 # GitHub Actions, once). The pictures are committed (scripts/guide-images.sh
@@ -8,7 +8,7 @@ name: Guide
 
 on:
   push:
-    branches: [main]
+    branches: [main, development]
   pull_request:
   workflow_dispatch:
 
