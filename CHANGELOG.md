@@ -14,6 +14,7 @@ What changed in each version of APOST-3Dview, for its users. The newest version 
 - **Linux**: the download now runs on any 64-bit Linux with glibc 2.17 or later (RHEL, CentOS, Rocky and AlmaLinux 7 and later, Ubuntu 14.04 and later). Version 1.0.0 needed glibc 2.35 (Ubuntu 22.04 or newer) and stopped with "GLIBC_2.xx not found" on older systems.
 
 ### Fixed
+- Dihedral angles in Measure had the opposite sign to the IUPAC convention (and to Gaussian, ORCA and Chemcraft). Their size was right. Now positive when, looking from the second atom to the third, the first bond turns clockwise to cover the last one.
 - Without a graphics driver it can use (Vulkan on Linux), the program now stops with a message saying what is missing and how to install it, instead of crashing. It no longer falls back to OpenGL, which can't draw its pictures yet.
 - Ambient occlusion is recomputed when the geometry changes (it kept the old shading until the view moved).
 

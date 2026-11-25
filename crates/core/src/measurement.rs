@@ -51,20 +51,17 @@ pub fn measure(molecule: &Molecule, kind: MeasurementKind) -> f32 {
             v1.dot(v2).clamp(-1.0, 1.0).acos().to_degrees()
         }
         MeasurementKind::Dihedral(a, b, c, d) => {
-            // Standard atan2-based torsion angle (Praxeolitic formula):
-            // numerically stable near 0/180 degrees, unlike an acos of a
-            // dot product between the two half-planes.
-            let b1 = molecule.positions[b] - molecule.positions[a];
-            let b2 = molecule.positions[c] - molecule.positions[b];
-            let b3 = molecule.positions[d] - molecule.positions[c];
-
-            let n1 = b1.cross(b2).normalize_or_zero();
-            let n2 = b2.cross(b3).normalize_or_zero();
-            let m1 = n1.cross(b2.normalize_or_zero());
-
-            let x = n1.dot(n2);
-            let y = m1.dot(n2);
-            y.atan2(x).to_degrees()
+            // atan2 form (stable near 0 and 180 degrees) with the IUPAC
+            // sign: positive when, looking from b to c, the bond a-b turns
+            // clockwise to cover c-d (as Gaussian, ORCA and Chemcraft).
+            // Computed in f64, as the Build window's edits.
+            let p = |i: usize| molecule.positions[i].as_dvec3();
+            let b1 = p(b) - p(a);
+            let b2 = p(c) - p(b);
+            let b3 = p(d) - p(c);
+            let y = b2.length() * b1.dot(b2.cross(b3));
+            let x = b1.cross(b2).dot(b2.cross(b3));
+            y.atan2(x).to_degrees() as f32
         }
     }
 }
@@ -109,5 +106,18 @@ mod tests {
         ]);
         let angle = measure(&cis, MeasurementKind::Dihedral(0, 1, 2, 3)).abs();
         assert!(angle < 1e-3, "expected ~0, got {angle}");
+    }
+
+    #[test]
+    fn dihedral_sign_follows_iupac() {
+        // a up (+y), b at the origin, c along +z, d at -x: seen from b
+        // toward c, +x lies left of +y, so d at -x is a clockwise quarter
+        // turn from a: +90. With d at +x: -90.
+        let clockwise = molecule(&[Vec3::new(0.0, 1.0, 0.0), Vec3::ZERO, Vec3::new(0.0, 0.0, 1.0), Vec3::new(-1.0, 0.0, 1.0)]);
+        let angle = measure(&clockwise, MeasurementKind::Dihedral(0, 1, 2, 3));
+        assert!((angle - 90.0).abs() < 1e-4, "expected +90, got {angle}");
+        let counter = molecule(&[Vec3::new(0.0, 1.0, 0.0), Vec3::ZERO, Vec3::new(0.0, 0.0, 1.0), Vec3::new(1.0, 0.0, 1.0)]);
+        let angle = measure(&counter, MeasurementKind::Dihedral(0, 1, 2, 3));
+        assert!((angle + 90.0).abs() < 1e-4, "expected -90, got {angle}");
     }
 }
