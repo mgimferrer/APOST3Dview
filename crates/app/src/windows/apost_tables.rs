@@ -72,7 +72,7 @@ impl App {
         let Some(Ok(results)) = structure.apost.results.as_ref().map(|a| &a.results) else { return };
         // The energy partitioning's numbers are in its own section.
         let entries: Vec<&IndexEntry> =
-            results.entries(QuantityKind::Scalar).filter(|e| (self.list_other_values || !e.is_comparison()) && e.analysis.as_deref() != Some("enpart")).collect();
+            results.entries(QuantityKind::Scalar).filter(|e| (self.apost.list_other_values || !e.is_comparison()) && e.analysis.as_deref() != Some("enpart")).collect();
         if entries.is_empty() {
             return;
         }
@@ -102,7 +102,7 @@ impl App {
         let Some(active) = self.active_structure else { return };
         let structure = &self.structures[active];
         let Some(Ok(results)) = structure.apost.results.as_ref().map(|a| &a.results) else { return };
-        let entries: Vec<&IndexEntry> = results.entries(QuantityKind::Table).filter(|e| self.list_other_values || !e.is_comparison()).collect();
+        let entries: Vec<&IndexEntry> = results.entries(QuantityKind::Table).filter(|e| self.apost.list_other_values || !e.is_comparison()).collect();
         if entries.is_empty() {
             return;
         }
@@ -110,7 +110,7 @@ impl App {
         // one with something to draw.
         let drawable = |e: &IndexEntry| matches!(results.quantity(e), Ok(Quantity::Table(t)) if table_channel(e, &t).is_some());
         let default = entries.iter().find(|e| drawable(e)).copied().unwrap_or(entries[0]);
-        let chosen = self.apost_table.as_ref().and_then(|id| entries.iter().find(|e| &e.id == id)).copied().unwrap_or(default);
+        let chosen = self.apost.table.as_ref().and_then(|id| entries.iter().find(|e| &e.id == id)).copied().unwrap_or(default);
         let mut choice = chosen.id.clone();
         let mut draw = None;
         egui::CollapsingHeader::new(RichText::new(format!("Tables ({})", entries.len()))).id_salt("apost_tables").show(ui, |ui| {
@@ -202,7 +202,7 @@ impl App {
                 });
             });
         });
-        self.apost_table = Some(choice);
+        self.apost.table = Some(choice);
         if let Some((analysis, beta, index)) = draw {
             self.draw_set_orbital(&analysis, beta, index);
         }

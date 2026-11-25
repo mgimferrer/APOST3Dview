@@ -168,11 +168,11 @@ impl App {
                 self.open_window(ToolWindow::Surfaces);
             }
             if has_results && ui.button("APOST-3D results...").clicked() {
-                self.apost_tab = Some(crate::input_generator::ApostTab::Results);
+                self.apost.tab = Some(crate::input_generator::ApostTab::Results);
                 self.open_window(ToolWindow::Apost);
             }
             if is_fchk && !has_results && ui.button("APOST-3D input...").on_hover_text("Prepare an APOST-3D input for this calculation").clicked() {
-                self.apost_tab = Some(crate::input_generator::ApostTab::Input);
+                self.apost.tab = Some(crate::input_generator::ApostTab::Input);
                 self.open_window(ToolWindow::Apost);
             }
             if ui.button("Coordinates...").on_hover_text("Cartesian coordinates, to copy or save as .xyz").clicked() {

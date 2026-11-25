@@ -304,7 +304,7 @@ impl App {
     /// The part of the window shown now (`apost_tab`).
     pub(crate) fn apost_tab_shown(&self) -> crate::input_generator::ApostTab {
         use crate::input_generator::ApostTab;
-        self.apost_tab.unwrap_or_else(|| match self.active_structure.and_then(|i| self.structures.get(i)) {
+        self.apost.tab.unwrap_or_else(|| match self.active_structure.and_then(|i| self.structures.get(i)) {
             Some(s) if s.apost.results.is_none() && s.apost.nearby.is_none() => ApostTab::Input,
             _ => ApostTab::Results,
         })
@@ -320,7 +320,7 @@ impl App {
         });
         ui.separator();
         if tab != self.apost_tab_shown() {
-            self.apost_tab = Some(tab);
+            self.apost.tab = Some(tab);
         }
         tab
     }

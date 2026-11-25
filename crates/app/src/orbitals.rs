@@ -303,17 +303,17 @@ impl App {
             return;
         }
 
-        let spacing = self.orbital_generation.resolve_spacing_bohr();
+        let spacing = self.surfaces.generation.resolve_spacing_bohr();
         let mut choices: Vec<OrbitalChoice> = structure.surfaces.selected_alpha_mos.iter().map(|&mo_index| OrbitalChoice { beta: false, mo_index }).collect();
         if wfn.beta.is_some() {
             choices.extend(structure.surfaces.selected_beta_mos.iter().map(|&mo_index| OrbitalChoice { beta: true, mo_index }));
         }
         choices.sort_unstable_by_key(|c| (c.beta, c.mo_index));
 
-        let padding = self.orbital_generation.padding_bohr;
+        let padding = self.surfaces.generation.padding_bohr;
         let mut surfaces = Vec::new();
         if !choices.is_empty() {
-            match orbital_surfaces(wfn, &choices, spacing, padding, self.surface_defaults, OrbitalNames::Scf) {
+            match orbital_surfaces(wfn, &choices, spacing, padding, self.surfaces.defaults, OrbitalNames::Scf) {
                 Ok(s) => surfaces = s,
                 Err(err) => {
                     self.show_warning(format!("Orbitals could not be generated: {err}"));
@@ -354,9 +354,9 @@ impl App {
             self.show_warning("No orbitals selected");
             return;
         }
-        let spacing = self.orbital_generation.resolve_spacing_bohr();
-        let padding = self.orbital_generation.padding_bohr;
-        let surfaces = match orbital_surfaces(&set.orbitals, &choices, spacing, padding, self.surface_defaults, OrbitalNames::Natural(set)) {
+        let spacing = self.surfaces.generation.resolve_spacing_bohr();
+        let padding = self.surfaces.generation.padding_bohr;
+        let surfaces = match orbital_surfaces(&set.orbitals, &choices, spacing, padding, self.surfaces.defaults, OrbitalNames::Natural(set)) {
             Ok(surfaces) => surfaces,
             Err(err) => {
                 self.show_warning(format!("Orbitals could not be generated: {err}"));
@@ -398,8 +398,8 @@ impl App {
         if !self.load_orbital_set(active, index) {
             return;
         }
-        let spacing = self.orbital_generation.resolve_spacing_bohr();
-        let padding = self.orbital_generation.padding_bohr;
+        let spacing = self.surfaces.generation.resolve_spacing_bohr();
+        let padding = self.surfaces.generation.padding_bohr;
         let structure = &self.structures[active];
         let set = &structure.apost.orbital_sets[index];
         let mut choices: Vec<OrbitalChoice> = set.selected_alpha.iter().map(|&mo_index| OrbitalChoice { beta: false, mo_index }).collect();
@@ -410,8 +410,8 @@ impl App {
             return;
         }
         let (Some(Ok(wfn)), Some(Ok(results))) = (&set.wavefunction, structure.apost.results.as_ref().map(|a| &a.results)) else { return };
-        let context = SetContext { set, results, molecule: &structure.molecule, weighted: self.orbital_generation.fragment_weighted };
-        let surfaces = match orbital_surfaces(wfn, &choices, spacing, padding, self.surface_defaults, OrbitalNames::Set(&context)) {
+        let context = SetContext { set, results, molecule: &structure.molecule, weighted: self.surfaces.generation.fragment_weighted };
+        let surfaces = match orbital_surfaces(wfn, &choices, spacing, padding, self.surfaces.defaults, OrbitalNames::Set(&context)) {
             Ok(surfaces) => surfaces,
             Err(err) => {
                 self.show_warning(format!("Orbitals could not be generated: {err}"));
@@ -442,7 +442,7 @@ impl App {
         if groups.is_empty() || !self.load_orbital_set(structure_index, position) {
             return;
         }
-        let weighted = self.orbital_generation.fragment_weighted;
+        let weighted = self.surfaces.generation.fragment_weighted;
         let structure = &self.structures[structure_index];
         let set = &structure.apost.orbital_sets[position];
         let (Some(Ok(wfn)), Some(Ok(results))) = (&set.wavefunction, structure.apost.results.as_ref().map(|a| &a.results)) else { return };

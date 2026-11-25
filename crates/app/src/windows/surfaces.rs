@@ -183,7 +183,7 @@ impl App {
         let has_beta = set.labels(true).iter().any(Option::is_some);
         let list_height = if has_beta { 110.0 } else { 160.0 };
         // Drawn from the unweighted file, EFOs are exact (no "approximate").
-        let exact = self.orbital_generation.fragment_weighted && matches!(fragment_weighting(set, results), Some(Ok(_)));
+        let exact = self.surfaces.generation.fragment_weighted && matches!(fragment_weighting(set, results), Some(Ok(_)));
         show_set_checklist(ui, set, false, results, molecule, list_height, exact);
         if has_beta {
             show_set_checklist(ui, set, true, results, molecule, list_height, exact);
@@ -206,9 +206,9 @@ impl App {
                          projections of the EFOs onto the basis set, approximate, with small tails on the other fragments (what other programs show \
                          from that file). Changing this redraws the EFOs already generated."
                     );
-                    let mut as_stored = !self.orbital_generation.fragment_weighted;
+                    let mut as_stored = !self.surfaces.generation.fragment_weighted;
                     if ui.checkbox(&mut as_stored, "Draw as stored in the .fchk").on_hover_text(hint).changed() {
-                        self.orbital_generation.fragment_weighted = !as_stored;
+                        self.surfaces.generation.fragment_weighted = !as_stored;
                         reweigh = Some(set.set.key());
                     }
                 });
@@ -243,8 +243,8 @@ impl App {
     fn show_generate_orbitals(&mut self, ui: &mut egui::Ui, active: usize) {
         let num_orbitals = self.structures[active].surfaces.wavefunction.as_ref().unwrap().alpha.num_orbitals();
         let is_unrestricted = self.structures[active].surfaces.wavefunction.as_ref().unwrap().beta.is_some();
-        self.orbital_generation.range_start = self.orbital_generation.range_start.clamp(1, num_orbitals.max(1));
-        self.orbital_generation.range_end = self.orbital_generation.range_end.clamp(1, num_orbitals.max(1));
+        self.surfaces.generation.range_start = self.surfaces.generation.range_start.clamp(1, num_orbitals.max(1));
+        self.surfaces.generation.range_end = self.surfaces.generation.range_end.clamp(1, num_orbitals.max(1));
 
         ui.horizontal(|ui| {
             if ui.button("HOMO/LUMO").clicked() {
@@ -273,13 +273,13 @@ impl App {
         });
         ui.horizontal(|ui| {
             ui.label("Range:");
-            ui.add(egui::DragValue::new(&mut self.orbital_generation.range_start).range(1..=num_orbitals.max(1)));
+            ui.add(egui::DragValue::new(&mut self.surfaces.generation.range_start).range(1..=num_orbitals.max(1)));
             ui.label("to");
-            ui.add(egui::DragValue::new(&mut self.orbital_generation.range_end).range(1..=num_orbitals.max(1)));
+            ui.add(egui::DragValue::new(&mut self.surfaces.generation.range_end).range(1..=num_orbitals.max(1)));
             if ui.button("Select range").clicked() {
                 let (lo, hi) = (
-                    self.orbital_generation.range_start.min(self.orbital_generation.range_end),
-                    self.orbital_generation.range_start.max(self.orbital_generation.range_end),
+                    self.surfaces.generation.range_start.min(self.surfaces.generation.range_end),
+                    self.surfaces.generation.range_start.max(self.surfaces.generation.range_end),
                 );
                 let structure = &mut self.structures[active];
                 for mo_number in lo..=hi {
@@ -390,22 +390,22 @@ impl App {
         ui.add_space(4.0);
         ui.label("Accuracy:");
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.orbital_generation.preset, OrbitalAccuracyPreset::Low, "Low");
-            ui.selectable_value(&mut self.orbital_generation.preset, OrbitalAccuracyPreset::Medium, "Medium");
-            ui.selectable_value(&mut self.orbital_generation.preset, OrbitalAccuracyPreset::High, "High");
-            ui.selectable_value(&mut self.orbital_generation.preset, OrbitalAccuracyPreset::Custom, "Custom");
+            ui.selectable_value(&mut self.surfaces.generation.preset, OrbitalAccuracyPreset::Low, "Low");
+            ui.selectable_value(&mut self.surfaces.generation.preset, OrbitalAccuracyPreset::Medium, "Medium");
+            ui.selectable_value(&mut self.surfaces.generation.preset, OrbitalAccuracyPreset::High, "High");
+            ui.selectable_value(&mut self.surfaces.generation.preset, OrbitalAccuracyPreset::Custom, "Custom");
         });
-        if self.orbital_generation.preset == OrbitalAccuracyPreset::Custom {
+        if self.surfaces.generation.preset == OrbitalAccuracyPreset::Custom {
             ui.horizontal(|ui| {
                 ui.label("Spacing (Bohr):");
-                ui.add(egui::DragValue::new(&mut self.orbital_generation.custom_spacing_bohr).speed(0.01).range(0.02..=2.0));
+                ui.add(egui::DragValue::new(&mut self.surfaces.generation.custom_spacing_bohr).speed(0.01).range(0.02..=2.0));
             });
         } else {
-            ui.label(egui::RichText::new(format!("Grid spacing: {:.2} Bohr", self.orbital_generation.resolve_spacing_bohr())).small().weak());
+            ui.label(egui::RichText::new(format!("Grid spacing: {:.2} Bohr", self.surfaces.generation.resolve_spacing_bohr())).small().weak());
         }
         ui.horizontal(|ui| {
             ui.label("Box padding (Bohr):");
-            ui.add(egui::DragValue::new(&mut self.orbital_generation.padding_bohr).speed(0.1).range(1.0..=20.0));
+            ui.add(egui::DragValue::new(&mut self.surfaces.generation.padding_bohr).speed(0.1).range(1.0..=20.0));
         });
         ui.label(egui::RichText::new("If a generated orbital's isosurface looks flat-cut at one side, raise this.").small().weak());
     }
@@ -580,14 +580,14 @@ impl App {
             structure.surfaces.list.iter_mut().for_each(|other| other.settings = settings);
         }
         if use_for_new {
-            self.surface_defaults = settings;
+            self.surfaces.defaults = settings;
         }
         let new_surface_defaults = self.orbital_colors.surface_settings();
-        if self.surface_defaults != new_surface_defaults {
+        if self.surfaces.defaults != new_surface_defaults {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("New orbitals and cubes start at isovalue {}.", self.surface_defaults.isovalue)).small().weak());
+                ui.label(RichText::new(format!("New orbitals and cubes start at isovalue {}.", self.surfaces.defaults.isovalue)).small().weak());
                 if ui.small_button("Reset").on_hover_text("Back to the default settings for new surfaces").clicked() {
-                    self.surface_defaults = new_surface_defaults;
+                    self.surfaces.defaults = new_surface_defaults;
                 }
             });
         }

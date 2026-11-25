@@ -326,7 +326,7 @@ impl App {
             Some(index) => index,
             None => self.push_structure(LoadedStructure::new(file_label(path), cube_file.molecule, Some(path.to_path_buf()))),
         };
-        let surface = Surface::new(file_label(path), cube_file.grid, self.surface_defaults, SurfaceSource::Cube(path.to_path_buf()));
+        let surface = Surface::new(file_label(path), cube_file.grid, self.surfaces.defaults, SurfaceSource::Cube(path.to_path_buf()));
         self.add_surfaces(index, vec![surface], !already_showing.contains(&index));
         Some(index)
     }

@@ -36,7 +36,7 @@ impl App {
     /// "On the molecule": the one choice of what to draw, and how.
     pub(crate) fn show_results_controls(&mut self, ui: &mut egui::Ui) {
         let Some(active) = self.active_structure else { return };
-        let list_other = &mut self.list_other_values;
+        let list_other = &mut self.apost.list_other_values;
         let structure = &mut self.structures[active];
         let molecule = structure.molecule.clone();
         let Some(attachment) = structure.apost.results.as_mut() else { return };
@@ -118,7 +118,7 @@ impl App {
             let (factor, _) = display_unit(entry, view);
             let automatic = build_scene(results, &molecule, &ResultsView { ..view.clone() }, &Default::default()).legend.map(|l| l.scale);
             let key = range_key(entry, shows_diagonal(results, view));
-            let mut fixed = self.color_ranges.get(&key).map(|s| s.scaled(factor));
+            let mut fixed = self.apost.color_ranges.get(&key).map(|s| s.scaled(factor));
             ui.horizontal(|ui| {
                 ui.label("Colors");
                 if ui.selectable_label(fixed.is_none(), "Automatic").clicked() {
@@ -149,15 +149,15 @@ impl App {
                     );
                 });
             }
-            for note in build_scene(results, &molecule, view, &self.color_ranges).notes {
+            for note in build_scene(results, &molecule, view, &self.apost.color_ranges).notes {
                 ui.label(RichText::new(note).small().weak());
             }
             match fixed {
                 Some(scale) => {
-                    self.color_ranges.insert(key, scale.scaled(1.0 / factor));
+                    self.apost.color_ranges.insert(key, scale.scaled(1.0 / factor));
                 }
                 None => {
-                    self.color_ranges.remove(&key);
+                    self.apost.color_ranges.remove(&key);
                 }
             }
 
@@ -211,7 +211,7 @@ impl App {
             (0..molecule.atomic_numbers.len()).map(|a| atom_name(&molecule.atomic_numbers, a)).collect()
         };
         let decimals = if unit.is_some() { view.energy_unit.decimals() } else { entry.decimals.unwrap_or(6).min(6) };
-        let scene = build_scene(results, &molecule, view, &self.color_ranges);
+        let scene = build_scene(results, &molecule, view, &self.apost.color_ranges);
         let scale = scene.legend.as_ref().map(|l| l.scale);
 
         egui::CollapsingHeader::new(RichText::new(&entry.title).strong()).id_salt("results_values").default_open(true).show(ui, |ui| match &quantity {

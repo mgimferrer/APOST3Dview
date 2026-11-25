@@ -374,7 +374,7 @@ impl App {
     /// (`apply_orbital_colors`).
     pub(crate) fn set_orbital_colors(&mut self, pair: OrbitalColors) {
         self.orbital_colors = pair;
-        self.surface_defaults = self.surface_defaults.in_colors(pair);
+        self.surfaces.defaults = self.surfaces.defaults.in_colors(pair);
     }
 
     /// "Apply to drawn surfaces": every surface of every structure, except

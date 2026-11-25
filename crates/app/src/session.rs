@@ -645,7 +645,7 @@ impl App {
                 orbital_colors: self.orbital_colors,
                 molecule_style: self.molecule_style,
             },
-            color_ranges: self.color_ranges.clone(),
+            color_ranges: self.apost.color_ranges.clone(),
             structures,
             figure: Some(figure),
         }
@@ -717,7 +717,7 @@ impl App {
         self.structures.clear();
         self.active_structure = None;
         self.apply_appearance(&session.appearance);
-        self.color_ranges = session.color_ranges.clone();
+        self.apost.color_ranges = session.color_ranges.clone();
 
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         let mut problems: Vec<String> = Vec::new();

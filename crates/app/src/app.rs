@@ -11,8 +11,7 @@ use glam::Vec2;
 
 use crate::export::RenderExportState;
 use crate::files::FileKind;
-use crate::isosurfaces::{OrbitalColors, SurfaceSettings};
-use crate::orbitals::OrbitalGenerationState;
+use crate::isosurfaces::OrbitalColors;
 use crate::presets::list_style_presets;
 use crate::state::{AtomLabelMode, AtomLabelStyle, LoadedStructure, MeasurementStyle};
 use crate::windows::ToolWindow;
@@ -107,7 +106,6 @@ pub struct App {
     pub(crate) atom_label_mode: AtomLabelMode,
     pub(crate) atom_label_style: AtomLabelStyle,
     pub(crate) render_export: RenderExportState,
-    pub(crate) orbital_generation: OrbitalGenerationState,
     /// Updated every viewport repaint from the actual on-screen rect —
     /// the Export window reads this (rather than recomputing it itself,
     /// since it doesn't have direct access to the viewport rect) so the
@@ -155,10 +153,6 @@ pub struct App {
     /// both are on — see `ViewportResources::run_live_dof_pass`).
     pub(crate) dof_enabled: bool,
     pub(crate) dof_settings: DofSettings,
-    /// How newly opened or generated orbitals and cubes are drawn: the
-    /// default settings in `orbital_colors`, or a surface's own after "Use
-    /// for new surfaces".
-    pub(crate) surface_defaults: SurfaceSettings,
     /// Appearance > Orbital colors: the pair new orbitals, cubes and spin
     /// densities are drawn in (see `set_orbital_colors`).
     pub(crate) orbital_colors: OrbitalColors,
@@ -176,31 +170,19 @@ pub struct App {
     pub(crate) new_preset_name: String,
 
     pub(crate) toasts: Vec<Toast>,
-    /// Fixed color ranges chosen by the user, by quantity id, shared by
-    /// every structure so figures of different systems compare.
-    pub(crate) color_ranges: std::collections::BTreeMap<String, apost3dview_render::ColorScale>,
+    /// The Surfaces area's app-wide state (`areas.rs`).
+    pub(crate) surfaces: crate::areas::SurfacesArea,
+    /// The APOST-3D area's app-wide state (`areas.rs`).
+    pub(crate) apost: crate::areas::ApostArea,
     /// Open > Recent.
     pub(crate) recent: crate::recent::RecentFiles,
-    /// List, in the Show menu, the values APOST-3D prints only for
-    /// comparison (Mulliken's, in a run with another atomic definition)
-    /// and the secondary ones (`results_view::is_secondary`).
-    pub(crate) list_other_values: bool,
     /// Windows asked for since the last frame, to show expanded
     /// (`open_window`).
     pub(crate) windows_to_expand: Vec<crate::windows::ToolWindow>,
     /// Where the tool windows go (`windows/column.rs`).
     pub(crate) window_column: crate::windows::column::WindowColumn,
-    /// The table chosen in the APOST-3D window's Tables section (entry id).
-    pub(crate) apost_table: Option<String>,
-    /// The APOST-3D window's part shown; `None`: the new input for a
-    /// structure without results (loaded or next to it), the results
-    /// otherwise.
-    pub(crate) apost_tab: Option<crate::input_generator::ApostTab>,
     /// Where an Alt/Option-drag box selection started, while one is drawn.
     pub(crate) box_select_start: Option<egui::Pos2>,
-    /// What the results display was last built for (see
-    /// `update_results_display`).
-    pub(crate) results_signature: String,
     /// The session file last opened or saved: where Save session writes,
     /// and what the window title names.
     pub(crate) session_path: Option<PathBuf>,
@@ -267,7 +249,6 @@ impl App {
             atom_label_mode: AtomLabelMode::None,
             atom_label_style: AtomLabelStyle::default(),
             render_export: RenderExportState::default(),
-            orbital_generation: OrbitalGenerationState::default(),
             last_aspect_ratio: 16.0 / 9.0,
             last_viewport_height: 860.0,
             isosurface_material: IsosurfaceMaterial::default(),
@@ -280,20 +261,16 @@ impl App {
             ao_geometry_seen: 0,
             dof_enabled: true,
             dof_settings: DofSettings::default(),
-            surface_defaults: SurfaceSettings::default(),
             orbital_colors: OrbitalColors::default(),
             style_presets: list_style_presets(),
             new_preset_name: String::new(),
             toasts: Vec::new(),
-            color_ranges: Default::default(),
+            surfaces: Default::default(),
+            apost: Default::default(),
             recent: crate::recent::RecentFiles::load(options.recent_file.clone()),
-            list_other_values: false,
             windows_to_expand: Vec::new(),
             window_column: Default::default(),
-            apost_table: None,
-            apost_tab: None,
             box_select_start: None,
-            results_signature: String::new(),
             session_path: None,
             shown_title: String::new(),
             keep_view: false,

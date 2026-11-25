@@ -608,7 +608,7 @@ impl App {
         }
         self.active_structure = active;
         self.rebuild_isosurface();
-        self.results_signature.clear();
+        self.apost.results_signature.clear();
         result
     }
 
@@ -683,7 +683,7 @@ impl App {
             self.isosurface_material,
             (self.atom_label_mode, self.atom_label_style.relative_size, self.atom_label_style.text_color),
             (self.measurement_style.font_size, self.measurement_style.decimal_places, self.measurement_style.bold, self.measurement_style.text_color, self.measurement_style.line_color),
-            (self.coordinate_unit, &self.color_ranges, self.editing_input()),
+            (self.coordinate_unit, &self.apost.color_ranges, self.editing_input()),
             self.last_viewport_height,
         );
         for panel in &job.panels {

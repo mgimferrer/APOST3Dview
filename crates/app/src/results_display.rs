@@ -22,7 +22,7 @@ impl App {
         let attachment = structure.apost.results.as_ref()?;
         let results = attachment.results.as_ref().ok()?;
         let view = attachment.view.as_ref()?;
-        Some(build_scene(results, &structure.molecule, view, &self.color_ranges))
+        Some(build_scene(results, &structure.molecule, view, &self.apost.color_ranges))
     }
 
     /// Each bond's thickness factor, when not all are 1: from bond orders
@@ -62,17 +62,17 @@ impl App {
             hidden.sort_unstable();
             let view = s.apost.results.as_ref().and_then(|a| a.view.clone());
             let draft = self.editing_input().then(|| s.apost.input_draft.as_ref().map(|d| d.fragments.clone())).flatten();
-            format!("{:?}|{view:?}|{}|{:?}|{hidden:?}|{:?}|{draft:?}", self.active_structure, self.material.atom_scale, self.molecule_style, self.color_ranges)
+            format!("{:?}|{view:?}|{}|{:?}|{hidden:?}|{:?}|{draft:?}", self.active_structure, self.material.atom_scale, self.molecule_style, self.apost.color_ranges)
         });
         let signature = signature.unwrap_or_default();
-        if signature == self.results_signature {
+        if signature == self.apost.results_signature {
             return;
         }
-        let scale_changed = !self.results_signature.is_empty() && ctx.dragged_id().is_some();
+        let scale_changed = !self.apost.results_signature.is_empty() && ctx.dragged_id().is_some();
         if scale_changed {
             return;
         }
-        self.results_signature = signature;
+        self.apost.results_signature = signature;
         self.rebuild_results_display();
         self.rebuild_geometry();
     }

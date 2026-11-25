@@ -6,6 +6,7 @@
 
 mod alignment;
 mod app;
+mod areas;
 mod export;
 mod files;
 mod frames;
