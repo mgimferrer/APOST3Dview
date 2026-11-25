@@ -326,7 +326,7 @@ impl App {
         camera.world_up = crate::alignment::up_in(own);
         let (center, radius) = structure.bounds();
         // Room for fragment envelopes and the values beside them.
-        let has_fragments = structure.apost.as_ref().and_then(|a| a.results.as_ref().ok()).is_some_and(|r| !r.fragments().is_empty());
+        let has_fragments = structure.apost.results.as_ref().and_then(|a| a.results.as_ref().ok()).is_some_and(|r| !r.fragments().is_empty());
         camera.frame_bounds(center, if has_fragments { radius + 2.2 } else { radius });
         camera
     }
@@ -349,7 +349,7 @@ impl App {
 
     /// One surface's automatic caption.
     fn surface_caption(&self, structure: usize, label: &str) -> String {
-        let Some(found) = self.structures[structure].surfaces.iter().find(|s| s.label == label) else {
+        let Some(found) = self.structures[structure].surfaces.list.iter().find(|s| s.label == label) else {
             return label.to_string();
         };
         let name = match &found.source {
@@ -380,7 +380,7 @@ impl App {
 
     /// The names of a structure's surfaces ticked in the Surfaces window.
     pub(crate) fn shown_surfaces(&self, structure: usize) -> Vec<String> {
-        self.structures.get(structure).map(|s| s.surfaces.iter().filter(|x| x.visible).map(|x| x.label.clone()).collect()).unwrap_or_default()
+        self.structures.get(structure).map(|s| s.surfaces.list.iter().filter(|x| x.visible).map(|x| x.label.clone()).collect()).unwrap_or_default()
     }
 
     /// Fills an empty panel list with the active structure's surfaces (or
@@ -391,7 +391,7 @@ impl App {
             return;
         }
         let Some(active) = self.active_structure else { return };
-        let surfaces: Vec<String> = self.structures[active].surfaces.iter().map(|s| s.label.clone()).collect();
+        let surfaces: Vec<String> = self.structures[active].surfaces.list.iter().map(|s| s.label.clone()).collect();
         let panels = if surfaces.is_empty() { vec![Panel::as_shown(active)] } else { surfaces.into_iter().map(|label| Panel::of_surface(active, label)).collect() };
         self.render_export.figure.panels = panels;
     }
@@ -417,7 +417,7 @@ impl App {
                 found.push((k, panel.structure, None));
                 continue;
             }
-            let indices: Vec<Option<usize>> = panel.surfaces.iter().map(|label| structure.surfaces.iter().position(|s| &s.label == label)).collect();
+            let indices: Vec<Option<usize>> = panel.surfaces.iter().map(|label| structure.surfaces.list.iter().position(|s| &s.label == label)).collect();
             if indices.iter().all(Option::is_some) {
                 found.push((k, panel.structure, Some(indices.into_iter().flatten().collect())));
             } else {
@@ -555,7 +555,7 @@ impl App {
         let active = self.active_structure;
         let camera = self.camera;
         let background = self.material.background;
-        let visibility: Vec<Vec<bool>> = self.structures.iter().map(|s| s.surfaces.iter().map(|x| x.visible).collect()).collect();
+        let visibility: Vec<Vec<bool>> = self.structures.iter().map(|s| s.surfaces.list.iter().map(|x| x.visible).collect()).collect();
 
         if job.background == FigureBackground::White {
             // Labels take their outline from the background.
@@ -573,11 +573,11 @@ impl App {
             self.camera = panel.camera;
             if let Some(surfaces) = &panel.surfaces {
                 let structure = &mut self.structures[panel.structure];
-                for (i, s) in structure.surfaces.iter_mut().enumerate() {
+                for (i, s) in structure.surfaces.list.iter_mut().enumerate() {
                     s.visible = surfaces.contains(&i);
                 }
             } else {
-                for (s, &visible) in self.structures[panel.structure].surfaces.iter_mut().zip(&visibility[panel.structure]) {
+                for (s, &visible) in self.structures[panel.structure].surfaces.list.iter_mut().zip(&visibility[panel.structure]) {
                     s.visible = visible;
                 }
             }
@@ -597,7 +597,7 @@ impl App {
         }
 
         for (structure, visible) in self.structures.iter_mut().zip(&visibility) {
-            for (s, &v) in structure.surfaces.iter_mut().zip(visible) {
+            for (s, &v) in structure.surfaces.list.iter_mut().zip(visible) {
                 s.visible = v;
             }
         }
@@ -692,7 +692,7 @@ impl App {
             hidden.sort_unstable();
             let mut hidden_bonds: Vec<usize> = s.hidden_bonds.iter().copied().collect();
             hidden_bonds.sort_unstable();
-            let surfaces: Vec<(&str, bool, crate::isosurfaces::SurfaceSettings)> = s.surfaces.iter().map(|x| (x.label.as_str(), x.visible, x.settings)).collect();
+            let surfaces: Vec<(&str, bool, crate::isosurfaces::SurfaceSettings)> = s.surfaces.list.iter().map(|x| (x.label.as_str(), x.visible, x.settings)).collect();
             let measurements: Vec<(Vec<usize>, egui::Vec2)> = s.measurements.iter().map(|m| (m.kind.atoms().to_vec(), m.label_offset)).collect();
             key.push_str(&format!(
                 "|{}:{:?}:{:?}:{:?}:{:?}:{:?}:{:?}:{:?}:{:?}:{:?}:{}",
@@ -705,8 +705,8 @@ impl App {
                 (&s.bond_styles, s.molecule.bonds.len()),
                 surfaces,
                 measurements,
-                (&s.selected_atoms, &s.selected_bonds, s.apost.as_ref().and_then(|a| a.view.as_ref())),
-                s.input_draft.as_ref().map(|d| format!("{:?}", d.fragments)).unwrap_or_default(),
+                (&s.selected_atoms, &s.selected_bonds, s.apost.results.as_ref().and_then(|a| a.view.as_ref())),
+                s.apost.input_draft.as_ref().map(|d| format!("{:?}", d.fragments)).unwrap_or_default(),
             ));
         }
         key

@@ -287,7 +287,7 @@ impl App {
                 if p.surfaces.is_empty() {
                     return Vec::new();
                 }
-                let all = self.structures.get(p.structure).map(|s| s.surfaces.iter().map(|x| x.label.clone()).collect::<Vec<_>>()).unwrap_or_default();
+                let all = self.structures.get(p.structure).map(|s| s.surfaces.list.iter().map(|x| x.label.clone()).collect::<Vec<_>>()).unwrap_or_default();
                 all.into_iter().filter(|label| !p.surfaces.contains(label)).collect()
             })
             .collect();
@@ -346,7 +346,7 @@ impl App {
         let mut candidates: Vec<(String, Panel)> = Vec::new();
         for s in order {
             let has = |surfaces: &[String]| panels.iter().any(|p| p.structure == s && p.surfaces == surfaces);
-            for label in self.structures[s].surfaces.iter().map(|x| x.label.clone()) {
+            for label in self.structures[s].surfaces.list.iter().map(|x| x.label.clone()) {
                 if !has(std::slice::from_ref(&label)) {
                     let panel = Panel::of_surface(s, label);
                     candidates.push((name(self, &panel), panel));
@@ -371,7 +371,7 @@ impl App {
                     }
                 }
             });
-            let missing = self.structures[active].surfaces.iter().any(|x| !panels.iter().any(|p| p.structure == active && p.surfaces == std::slice::from_ref(&x.label)));
+            let missing = self.structures[active].surfaces.list.iter().any(|x| !panels.iter().any(|p| p.structure == active && p.surfaces == std::slice::from_ref(&x.label)));
             if ui.add_enabled(missing, egui::Button::new("All surfaces")).on_hover_text("Adds every surface of the active structure not in a panel of its own yet").clicked() {
                 action = Some(PanelAction::AddAll);
             }
@@ -386,7 +386,7 @@ impl App {
             }
             Some(PanelAction::Add(panel)) => figure.panels.push(panel),
             Some(PanelAction::AddAll) => {
-                for label in self.structures[active].surfaces.iter().map(|x| x.label.clone()) {
+                for label in self.structures[active].surfaces.list.iter().map(|x| x.label.clone()) {
                     if !figure.panels.iter().any(|p| p.structure == active && p.surfaces == std::slice::from_ref(&label)) {
                         figure.panels.push(Panel::of_surface(active, label));
                     }

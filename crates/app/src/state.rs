@@ -74,10 +74,11 @@ impl Default for AtomLabelStyle {
     }
 }
 
-/// One opened structure — its own geometry and its own hide/selection/
-/// bond-style state. Deliberately does NOT own the Appearance settings (material, AO, ...) — that
-/// stays a single value shared across every structure, so tuning it once
-/// applies everywhere instead of needing to be redone per file.
+/// One opened structure: its geometry and how it is shown (the core part,
+/// fields directly here), then one part per feature area (`surfaces`,
+/// `apost`, `frames`). Deliberately does NOT own the Appearance settings
+/// (material, AO, ...): that stays a single value shared across every
+/// structure, so tuning it once applies everywhere.
 pub(crate) struct LoadedStructure {
     pub(crate) label: String,
     pub(crate) molecule: Molecule,
@@ -85,6 +86,9 @@ pub(crate) struct LoadedStructure {
     /// default a "save coordinates as .xyz" export next to the source
     /// `.fchk`.
     pub(crate) source_path: Option<PathBuf>,
+    /// Which geometry of its file this structure is (0-based), when the
+    /// file holds several shown as separate structures.
+    pub(crate) file_frame: Option<usize>,
     pub(crate) hidden_atoms: HashSet<usize>,
     pub(crate) hidden_bonds: HashSet<usize>,
     pub(crate) bond_styles: Vec<BondVisualStyle>,
@@ -94,55 +98,67 @@ pub(crate) struct LoadedStructure {
     pub(crate) selected_atoms: Vec<usize>,
     pub(crate) selected_bonds: Vec<usize>,
     pub(crate) measurements: Vec<Measurement>,
-    /// Isosurfaces drawn on this molecule: `.cube` files opened for it and
-    /// orbitals generated from its wavefunction, each shown or hidden on
-    /// its own.
-    pub(crate) surfaces: Vec<Surface>,
-    /// The surface the Surfaces window's settings edit.
-    pub(crate) selected_surface: Option<usize>,
-    /// `Some` only for structures opened from a `.fchk` — the basis set +
-    /// MO coefficients, parsed once up front so the "Generate orbitals"
-    /// section can evaluate any MO on demand without re-parsing the file.
-    /// `wavefunction.beta` is itself `Some` only for an unrestricted
-    /// (open-shell) file — see `parse_fchk_wavefunction`.
-    pub(crate) wavefunction: Option<Wavefunction>,
-    /// The correlated densities of a `.fchk` and their natural orbitals
-    /// (`None` for a mean-field file, a `.molden`, or no wavefunction).
-    pub(crate) densities: Option<Densities>,
-    /// Which MOs are ticked in the "Generate orbitals" picker — 0-based,
-    /// only meaningful when `wavefunction` is `Some`. Beta is only ever
-    /// populated for an unrestricted file (see above); it stays empty,
-    /// unused, and hidden in the UI otherwise.
-    pub(crate) selected_alpha_mos: HashSet<usize>,
-    /// The densities ticked for generation, beside the orbitals.
-    pub(crate) selected_total_density: bool,
-    pub(crate) selected_spin_density: bool,
-    pub(crate) selected_beta_mos: HashSet<usize>,
-    /// APOST-3D results opened for this structure.
-    pub(crate) apost: Option<ApostAttachment>,
-    /// The `<job>.apost.json` found next to this structure's `.fchk`, not
-    /// loaded: results are opened on request (Martí, 2026-10-19), here
-    /// with the APOST-3D window's "Open these results".
-    pub(crate) results_nearby: Option<std::path::PathBuf>,
-    /// The analysis orbital sets next to the results (EOS, GEOS, OSLO).
-    pub(crate) orbital_sets: Vec<LoadedOrbitalSet>,
-    /// The orbitals the Surfaces window generates from: 0 the SCF ones,
-    /// i the set `orbital_sets[i - 1]`.
-    pub(crate) active_orbital_set: usize,
-    /// A new APOST-3D input being prepared for this `.fchk`.
-    pub(crate) input_draft: Option<crate::input_generator::InputDraft>,
     /// The view this structure was left with, given back when it becomes
     /// the active one again (`App::view_for`); `None` before.
     pub(crate) view: Option<apost3dview_render::OrbitCamera>,
     /// Aligned onto another structure on selected atoms: where its
     /// coordinates sit in the shared frame (`alignment.rs`).
     pub(crate) placement: Option<crate::alignment::Placement>,
-    /// The geometries of a multi-frame .xyz file, shown one at a time
-    /// (`frames.rs`); `molecule.positions` hold the one shown.
+
+    /// Surfaces area: the wavefunction, densities and the surfaces drawn.
+    pub(crate) surfaces: StructureSurfaces,
+    /// APOST-3D area: results, their orbital files, a new input.
+    pub(crate) apost: StructureApost,
+    /// Frames area: the geometries of a multi-frame .xyz file, shown one at
+    /// a time (`frames.rs`); `molecule.positions` hold the one shown.
     pub(crate) frames: Option<crate::frames::Frames>,
-    /// Which geometry of its file this structure is (0-based), when the
-    /// file holds several shown as separate structures.
-    pub(crate) file_frame: Option<usize>,
+}
+
+/// A structure's part of the Surfaces area.
+#[derive(Default)]
+pub(crate) struct StructureSurfaces {
+    /// Isosurfaces drawn on this molecule: `.cube` files opened for it and
+    /// orbitals generated from its wavefunction, each shown or hidden on
+    /// its own.
+    pub(crate) list: Vec<Surface>,
+    /// The surface the Surfaces window's settings edit.
+    pub(crate) selected: Option<usize>,
+    /// `Some` only for structures opened from a `.fchk` or `.molden` — the
+    /// basis set + MO coefficients, parsed once up front so any MO can be
+    /// evaluated on demand without re-parsing the file.
+    /// `wavefunction.beta` is itself `Some` only for an unrestricted
+    /// (open-shell) file — see `parse_fchk_wavefunction`.
+    pub(crate) wavefunction: Option<Wavefunction>,
+    /// The correlated densities of a `.fchk` and their natural orbitals
+    /// (`None` for a mean-field file, a `.molden`, or no wavefunction).
+    pub(crate) densities: Option<Densities>,
+    /// Which MOs are ticked in the orbital picker — 0-based, only
+    /// meaningful when `wavefunction` is `Some`. Beta is only ever
+    /// populated for an unrestricted file (see above); it stays empty,
+    /// unused, and hidden in the UI otherwise.
+    pub(crate) selected_alpha_mos: HashSet<usize>,
+    pub(crate) selected_beta_mos: HashSet<usize>,
+    /// The densities ticked for generation, beside the orbitals.
+    pub(crate) selected_total_density: bool,
+    pub(crate) selected_spin_density: bool,
+    /// The orbitals the Surfaces window generates from: 0 the SCF ones,
+    /// i the APOST-3D set `apost.orbital_sets[i - 1]`.
+    pub(crate) active_orbital_set: usize,
+}
+
+/// A structure's part of the APOST-3D area.
+#[derive(Default)]
+pub(crate) struct StructureApost {
+    /// APOST-3D results opened for this structure.
+    pub(crate) results: Option<ApostAttachment>,
+    /// The `<job>.apost.json` found next to this structure's `.fchk`, not
+    /// loaded: results are opened on request (Martí, 2026-10-19), here
+    /// with the APOST-3D window's "Open these results".
+    pub(crate) nearby: Option<std::path::PathBuf>,
+    /// The analysis orbital sets next to the results (EOS, GEOS, OSLO).
+    pub(crate) orbital_sets: Vec<LoadedOrbitalSet>,
+    /// A new APOST-3D input being prepared for this `.fchk`.
+    pub(crate) input_draft: Option<crate::input_generator::InputDraft>,
 }
 
 impl LoadedStructure {
@@ -153,6 +169,7 @@ impl LoadedStructure {
             label,
             molecule,
             source_path,
+            file_frame: None,
             hidden_atoms: HashSet::new(),
             hidden_bonds: HashSet::new(),
             bond_styles,
@@ -160,23 +177,11 @@ impl LoadedStructure {
             selected_atoms: Vec::new(),
             selected_bonds: Vec::new(),
             measurements: Vec::new(),
-            surfaces: Vec::new(),
-            selected_surface: None,
-            wavefunction: None,
-            densities: None,
-            selected_alpha_mos: HashSet::new(),
-            selected_total_density: false,
-            selected_spin_density: false,
-            selected_beta_mos: HashSet::new(),
-            apost: None,
-            results_nearby: None,
-            orbital_sets: Vec::new(),
-            active_orbital_set: 0,
-            input_draft: None,
             view: None,
             placement: None,
+            surfaces: StructureSurfaces::default(),
+            apost: StructureApost::default(),
             frames: None,
-            file_frame: None,
         }
     }
 
@@ -201,9 +206,9 @@ impl LoadedStructure {
     /// Shows surface `index` and hides the others; it becomes the one the
     /// Surfaces window edits.
     pub(crate) fn show_surface_alone(&mut self, index: usize) {
-        for (i, surface) in self.surfaces.iter_mut().enumerate() {
+        for (i, surface) in self.surfaces.list.iter_mut().enumerate() {
             surface.visible = i == index;
         }
-        self.selected_surface = Some(index);
+        self.surfaces.selected = Some(index);
     }
 }

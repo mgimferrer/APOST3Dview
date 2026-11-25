@@ -498,7 +498,7 @@ impl App {
                     structure.bond_styles.iter().enumerate().filter(|(_, s)| **s == style).map(|(i, _)| atom_pair(molecule, i)).collect::<Vec<_>>()
                 };
                 let surfaces = structure
-                    .surfaces
+                    .surfaces.list
                     .iter()
                     .map(|surface| {
                         let origin = match &surface.source {
@@ -537,7 +537,7 @@ impl App {
                 hidden_atoms.sort_unstable();
                 let mut hidden_bonds: Vec<[usize; 2]> = structure.hidden_bonds.iter().map(|&i| atom_pair(molecule, i)).collect();
                 hidden_bonds.sort_unstable();
-                let results = structure.apost.as_ref().map(|a| &a.results_path).filter(|r| !crate::files::same_file(r, path));
+                let results = structure.apost.results.as_ref().map(|a| &a.results_path).filter(|r| !crate::files::same_file(r, path));
                 Some(StructureState {
                     file: relative_path(base, path),
                     file_absolute: path.to_string_lossy().into_owned(),
@@ -546,8 +546,8 @@ impl App {
                     results: results.map(|r| relative_path(base, r)),
                     results_absolute: results.map(|r| r.to_string_lossy().into_owned()),
                     results_fingerprint: results.and_then(|r| fingerprint(r)),
-                    results_view: structure.apost.as_ref().and_then(|a| a.view.clone()),
-                    selected_surface: structure.selected_surface,
+                    results_view: structure.apost.results.as_ref().and_then(|a| a.view.clone()),
+                    selected_surface: structure.surfaces.selected,
                     hidden_atoms,
                     added_bonds: (structure.perceived_bonds..molecule.bonds.len()).map(|i| atom_pair(molecule, i)).collect(),
                     hidden_bonds,
@@ -743,7 +743,7 @@ impl App {
                     }
                     found
                 }
-                (None, _) if state.results_view.is_some() && self.structures[index].apost.is_none() => self.structures[index].results_nearby.clone(),
+                (None, _) if state.results_view.is_some() && self.structures[index].apost.results.is_none() => self.structures[index].apost.nearby.clone(),
                 _ => None,
             };
             if let Some(results) = results {
@@ -847,9 +847,9 @@ impl App {
 
         let surfaces = self.restore_surfaces(index, &state.surfaces, base, &name, problems);
         let structure = &mut self.structures[index];
-        structure.surfaces = surfaces;
-        structure.selected_surface = state.selected_surface.filter(|&i| i < structure.surfaces.len());
-        if let (Some(view), Some(attachment)) = (&state.results_view, structure.apost.as_mut())
+        structure.surfaces.list = surfaces;
+        structure.surfaces.selected = state.selected_surface.filter(|&i| i < structure.surfaces.list.len());
+        if let (Some(view), Some(attachment)) = (&state.results_view, structure.apost.results.as_mut())
             && attachment.results.is_ok()
         {
             attachment.view = Some(view.clone());
@@ -941,8 +941,8 @@ impl App {
                 },
                 SurfaceOrigin::Density { spin_density, grid_spacing_bohr, box_padding_bohr, density_matrix } => {
                     let structure = &self.structures[index];
-                    let natural = density_matrix.as_ref().map(|kind| structure.densities.as_ref().and_then(|d| d.natural.iter().find(|n| &n.kind == kind)).ok_or(kind));
-                    let generated = match (&structure.wavefunction, natural) {
+                    let natural = density_matrix.as_ref().map(|kind| structure.surfaces.densities.as_ref().and_then(|d| d.natural.iter().find(|n| &n.kind == kind)).ok_or(kind));
+                    let generated = match (&structure.surfaces.wavefunction, natural) {
                         (None, _) => Err("no wavefunction".to_string()),
                         (Some(_), Some(Err(kind))) => Err(format!("the file has no {kind} density matrix")),
                         (Some(wfn), natural) => density_surface(wfn, *spin_density, *grid_spacing_bohr, *box_padding_bohr, natural.and_then(Result::ok), self.orbital_colors),
@@ -964,21 +964,21 @@ impl App {
         for ((set_name, spacing, padding, weighted), members) in groups {
             let choices: Vec<OrbitalChoice> = members.iter().map(|(_, c)| *c).collect();
             let generated = match &set_name {
-                None => match &self.structures[index].wavefunction {
+                None => match &self.structures[index].surfaces.wavefunction {
                     None => Err("no wavefunction".to_string()),
                     Some(wfn) => orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), OrbitalNames::Scf),
                 },
-                Some(key) if key.starts_with("natural-") => match self.structures[index].densities.as_ref().and_then(|d| d.by_key(key)) {
+                Some(key) if key.starts_with("natural-") => match self.structures[index].surfaces.densities.as_ref().and_then(|d| d.by_key(key)) {
                     None => Err(format!("the file has no {} density matrix", &key["natural-".len()..])),
                     Some(set) => orbital_surfaces(&set.orbitals, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), OrbitalNames::Natural(set)),
                 },
-                Some(analysis) => match self.structures[index].orbital_sets.iter().position(|s| &s.set.key() == analysis) {
+                Some(analysis) => match self.structures[index].apost.orbital_sets.iter().position(|s| &s.set.key() == analysis) {
                     None => Err(format!("its {analysis} orbital file was not found")),
                     Some(position) if !self.load_orbital_set(index, position) => Err(format!("its {analysis} orbital file could not be used")),
                     Some(position) => {
                         let structure = &self.structures[index];
-                        let set = &structure.orbital_sets[position];
-                        match (&set.wavefunction, structure.apost.as_ref().map(|a| &a.results)) {
+                        let set = &structure.apost.orbital_sets[position];
+                        match (&set.wavefunction, structure.apost.results.as_ref().map(|a| &a.results)) {
                             (Some(Ok(wfn)), Some(Ok(results))) => {
                                 let context = SetContext { set, results, molecule: &structure.molecule, weighted };
                                 orbital_surfaces(wfn, &choices, f64::from_bits(spacing), f64::from_bits(padding), SurfaceSettings::default(), OrbitalNames::Set(&context))

@@ -233,12 +233,12 @@ impl App {
                 // the generate button counts only what the user chose.
                 if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("fchk")) {
                     let (densities, problems) = crate::natural::load_densities(path, &wfn);
-                    structure.densities = densities;
+                    structure.surfaces.densities = densities;
                     for problem in problems {
                         self.show_warning(format!("{label}: {problem}"));
                     }
                 }
-                structure.wavefunction = Some(wfn);
+                structure.surfaces.wavefunction = Some(wfn);
                 if max_angular_momentum > 4 {
                     self.show_warning(format!("{label}: the basis set includes h (or higher) shells, orbital generation isn't supported yet for this file."));
                 }
@@ -246,7 +246,7 @@ impl App {
             Err(err) => self.show_warning(format!("{label}: geometry loaded, but orbitals unavailable: {err}")),
         }
         if look_for_results {
-            structure.results_nearby = find_results_for(path);
+            structure.apost.nearby = find_results_for(path);
         }
         Some(self.push_structure(structure))
     }
@@ -361,7 +361,7 @@ impl App {
         ));
         let molecule = results.molecule().unwrap_or_else(|| Molecule::from_atoms(Vec::new(), Vec::new()));
         let mut structure = LoadedStructure::new(label, molecule, Some(path.to_path_buf()));
-        structure.apost = Some(ApostAttachment::without_fchk(path, results));
+        structure.apost.results = Some(ApostAttachment::without_fchk(path, results));
         self.open_window(crate::windows::ToolWindow::Apost);
         Some(self.push_structure(structure))
     }

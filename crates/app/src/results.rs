@@ -120,15 +120,15 @@ impl App {
         // The density drawn is the one APOST-3D analysed (a Gaussian file
         // with an MP2 density, analysed without DENS 2, shows the SCF one).
         if let Ok(r) = &results
-            && let Some(densities) = self.structures[index].densities.as_mut()
+            && let Some(densities) = self.structures[index].surfaces.densities.as_mut()
             && let Some(kind) = crate::natural::analysed_density_kind(r, &densities.info)
         {
             densities.choose_kind(&kind);
         }
         let sets = results.as_ref().map(|r| crate::orbital_sets::find_orbital_sets(r, results_path)).unwrap_or_default();
-        self.structures[index].orbital_sets = sets;
-        self.structures[index].active_orbital_set = 0;
-        self.structures[index].apost = Some(ApostAttachment::new(results_path, results, true));
+        self.structures[index].apost.orbital_sets = sets;
+        self.structures[index].surfaces.active_orbital_set = 0;
+        self.structures[index].apost.results = Some(ApostAttachment::new(results_path, results, true));
         self.open_window(crate::windows::ToolWindow::Apost);
     }
 }

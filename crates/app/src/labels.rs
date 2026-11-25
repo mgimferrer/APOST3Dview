@@ -151,7 +151,7 @@ impl App {
         // APOST-3D values, with the atom's or fragment's name above when
         // asked for; they then replace the atom names below.
         let mut values_on_atoms = false;
-        if let (Some(scene), Some(attachment)) = (self.results_scene(structure), structure.apost.as_ref())
+        if let (Some(scene), Some(attachment)) = (self.results_scene(structure), structure.apost.results.as_ref())
             && let (Ok(results), Some(view)) = (&attachment.results, attachment.view.as_ref())
         {
             values_on_atoms = scene.labels.iter().any(|l| matches!(l.anchor, LabelAnchor::Atom(_)));

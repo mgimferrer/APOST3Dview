@@ -91,7 +91,7 @@ impl App {
     pub(crate) fn show_enpart_quality(&mut self, ui: &mut egui::Ui) {
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
         let molecule = structure.molecule.clone();
-        let Some(attachment) = structure.apost.as_mut() else { return };
+        let Some(attachment) = structure.apost.results.as_mut() else { return };
         let (Ok(results), Some(view)) = (&attachment.results, attachment.view.as_mut()) else { return };
         let Some(enpart) = results.enpart() else { return };
         let warnings = warnings(&enpart);

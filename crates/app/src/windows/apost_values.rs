@@ -39,7 +39,7 @@ impl App {
         let list_other = &mut self.list_other_values;
         let structure = &mut self.structures[active];
         let molecule = structure.molecule.clone();
-        let Some(attachment) = structure.apost.as_mut() else { return };
+        let Some(attachment) = structure.apost.results.as_mut() else { return };
         let (Ok(results), Some(view)) = (&attachment.results, attachment.view.as_mut()) else { return };
         if results.molecule.is_none() {
             return;
@@ -198,7 +198,7 @@ impl App {
         let Some(active) = self.active_structure else { return };
         let structure = &mut self.structures[active];
         let molecule = structure.molecule.clone();
-        let Some(attachment) = structure.apost.as_mut() else { return };
+        let Some(attachment) = structure.apost.results.as_mut() else { return };
         let (Ok(results), Some(view)) = (&attachment.results, attachment.view.as_mut()) else { return };
         let Some(entry) = shown_entry(results, view).cloned() else { return };
         let Ok(quantity) = results.quantity(&entry) else { return };
@@ -276,8 +276,8 @@ impl App {
         // Total first, then its parts, as the term selector lists them.
         let order = |id: &str| enpart_term(id).and_then(|(t, _)| apost3dview_core::ENPART_TERMS.iter().position(|x| *x == t)).unwrap_or(usize::MAX);
         iqa.sort_by_key(|(entry, _)| order(&entry.id));
-        let enpart = structure.apost.as_ref().and_then(|x| x.results.as_ref().ok()).and_then(|r| r.enpart());
-        let energy_unit = structure.apost.as_ref().and_then(|x| x.view.as_ref()).map(|v| v.energy_unit).unwrap_or_default();
+        let enpart = structure.apost.results.as_ref().and_then(|x| x.results.as_ref().ok()).and_then(|r| r.enpart());
+        let energy_unit = structure.apost.results.as_ref().and_then(|x| x.view.as_ref()).map(|v| v.energy_unit).unwrap_or_default();
         let (factor, d) = (energy_unit.factor(), energy_unit.decimals());
         egui::CollapsingHeader::new(RichText::new(format!("Selected pair {pair}")).strong()).id_salt("results_pair").default_open(true).show(ui, |ui| {
             egui::Grid::new("results_pair_grid").num_columns(2).spacing([12.0, 3.0]).show(ui, |ui| {

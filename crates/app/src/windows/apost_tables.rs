@@ -69,7 +69,7 @@ impl App {
     /// The run's single numbers, in one short list.
     pub(crate) fn show_key_numbers(&mut self, ui: &mut egui::Ui) {
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) else { return };
-        let Some(Ok(results)) = structure.apost.as_ref().map(|a| &a.results) else { return };
+        let Some(Ok(results)) = structure.apost.results.as_ref().map(|a| &a.results) else { return };
         // The energy partitioning's numbers are in its own section.
         let entries: Vec<&IndexEntry> =
             results.entries(QuantityKind::Scalar).filter(|e| (self.list_other_values || !e.is_comparison()) && e.analysis.as_deref() != Some("enpart")).collect();
@@ -101,7 +101,7 @@ impl App {
     pub(crate) fn show_tables(&mut self, ui: &mut egui::Ui) {
         let Some(active) = self.active_structure else { return };
         let structure = &self.structures[active];
-        let Some(Ok(results)) = structure.apost.as_ref().map(|a| &a.results) else { return };
+        let Some(Ok(results)) = structure.apost.results.as_ref().map(|a| &a.results) else { return };
         let entries: Vec<&IndexEntry> = results.entries(QuantityKind::Table).filter(|e| self.list_other_values || !e.is_comparison()).collect();
         if entries.is_empty() {
             return;
@@ -123,7 +123,7 @@ impl App {
             });
             let Ok(Quantity::Table(table)) = results.quantity(chosen) else { return };
             let channel = table_channel(chosen, &table);
-            let set: Option<&LoadedOrbitalSet> = channel.and_then(|(analysis, _)| structure.orbital_sets.iter().find(|s| s.set.analysis == analysis && !s.set.preortho));
+            let set: Option<&LoadedOrbitalSet> = channel.and_then(|(analysis, _)| structure.apost.orbital_sets.iter().find(|s| s.set.analysis == analysis && !s.set.preortho));
             let by_orbital = table.rows == "orbital";
             let names: Vec<String> = (0..table.n_rows)
                 .map(|row| {

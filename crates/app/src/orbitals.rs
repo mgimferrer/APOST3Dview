@@ -161,9 +161,9 @@ pub(crate) fn density_surface(wfn: &Wavefunction, spin: bool, spacing_bohr: f64,
 /// Whether the structure's densities include a spin density: from the
 /// chosen natural orbitals' spin block, or from the occupied orbitals.
 pub(crate) fn has_spin_density(structure: &LoadedStructure) -> bool {
-    match structure.densities.as_ref().and_then(Densities::chosen) {
+    match structure.surfaces.densities.as_ref().and_then(Densities::chosen) {
         Some(set) => set.spin.is_some(),
-        None => structure.wavefunction.as_ref().is_some_and(|w| w.spin_density_weights().is_some()),
+        None => structure.surfaces.wavefunction.as_ref().is_some_and(|w| w.spin_density_weights().is_some()),
     }
 }
 
@@ -291,22 +291,22 @@ impl App {
     pub(crate) fn generate_selected_orbitals(&mut self) {
         let Some(active) = self.active_structure else { return };
         let Some(structure) = self.structures.get(active) else { return };
-        let Some(wfn) = &structure.wavefunction else { return };
-        let natural = structure.densities.as_ref().and_then(Densities::chosen);
-        let densities: Vec<bool> = [(structure.selected_total_density, false), (structure.selected_spin_density && has_spin_density(structure), true)]
+        let Some(wfn) = &structure.surfaces.wavefunction else { return };
+        let natural = structure.surfaces.densities.as_ref().and_then(Densities::chosen);
+        let densities: Vec<bool> = [(structure.surfaces.selected_total_density, false), (structure.surfaces.selected_spin_density && has_spin_density(structure), true)]
             .into_iter()
             .filter(|(ticked, _)| *ticked)
             .map(|(_, spin)| spin)
             .collect();
-        if structure.selected_alpha_mos.is_empty() && structure.selected_beta_mos.is_empty() && densities.is_empty() {
+        if structure.surfaces.selected_alpha_mos.is_empty() && structure.surfaces.selected_beta_mos.is_empty() && densities.is_empty() {
             self.show_warning("No orbitals selected");
             return;
         }
 
         let spacing = self.orbital_generation.resolve_spacing_bohr();
-        let mut choices: Vec<OrbitalChoice> = structure.selected_alpha_mos.iter().map(|&mo_index| OrbitalChoice { beta: false, mo_index }).collect();
+        let mut choices: Vec<OrbitalChoice> = structure.surfaces.selected_alpha_mos.iter().map(|&mo_index| OrbitalChoice { beta: false, mo_index }).collect();
         if wfn.beta.is_some() {
-            choices.extend(structure.selected_beta_mos.iter().map(|&mo_index| OrbitalChoice { beta: true, mo_index }));
+            choices.extend(structure.surfaces.selected_beta_mos.iter().map(|&mo_index| OrbitalChoice { beta: true, mo_index }));
         }
         choices.sort_unstable_by_key(|c| (c.beta, c.mo_index));
 
@@ -346,7 +346,7 @@ impl App {
     /// density ("NO 5 (MP2)").
     pub(crate) fn generate_natural_orbitals(&mut self) {
         let Some(active) = self.active_structure else { return };
-        let Some(densities) = self.structures[active].densities.as_ref() else { return };
+        let Some(densities) = self.structures[active].surfaces.densities.as_ref() else { return };
         let Some(set) = densities.listed.and_then(|i| densities.natural.get(i)) else { return };
         let mut choices: Vec<OrbitalChoice> = densities.selected.iter().map(|&mo_index| OrbitalChoice { beta: false, mo_index }).collect();
         choices.sort_unstable_by_key(|c| c.mo_index);
@@ -374,7 +374,7 @@ impl App {
     pub(crate) fn load_orbital_set(&mut self, structure_index: usize, index: usize) -> bool {
         let Some(structure) = self.structures.get_mut(structure_index) else { return false };
         let Some(main) = structure.source_path.clone() else { return false };
-        let Some(set) = structure.orbital_sets.get_mut(index) else { return false };
+        let Some(set) = structure.apost.orbital_sets.get_mut(index) else { return false };
         let first_time = set.wavefunction.is_none();
         set.load(&main);
         match &set.wavefunction {
@@ -394,14 +394,14 @@ impl App {
     /// analysis set, labeled from the tables and colored by fragment.
     pub(crate) fn generate_set_orbitals(&mut self) {
         let Some(active) = self.active_structure else { return };
-        let Some(index) = self.structures[active].active_orbital_set.checked_sub(1) else { return };
+        let Some(index) = self.structures[active].surfaces.active_orbital_set.checked_sub(1) else { return };
         if !self.load_orbital_set(active, index) {
             return;
         }
         let spacing = self.orbital_generation.resolve_spacing_bohr();
         let padding = self.orbital_generation.padding_bohr;
         let structure = &self.structures[active];
-        let set = &structure.orbital_sets[index];
+        let set = &structure.apost.orbital_sets[index];
         let mut choices: Vec<OrbitalChoice> = set.selected_alpha.iter().map(|&mo_index| OrbitalChoice { beta: false, mo_index }).collect();
         choices.extend(set.selected_beta.iter().map(|&mo_index| OrbitalChoice { beta: true, mo_index }));
         choices.sort_unstable_by_key(|c| (c.beta, c.mo_index));
@@ -409,7 +409,7 @@ impl App {
             self.show_warning("No orbitals selected");
             return;
         }
-        let (Some(Ok(wfn)), Some(Ok(results))) = (&set.wavefunction, structure.apost.as_ref().map(|a| &a.results)) else { return };
+        let (Some(Ok(wfn)), Some(Ok(results))) = (&set.wavefunction, structure.apost.results.as_ref().map(|a| &a.results)) else { return };
         let context = SetContext { set, results, molecule: &structure.molecule, weighted: self.orbital_generation.fragment_weighted };
         let surfaces = match orbital_surfaces(wfn, &choices, spacing, padding, self.surface_defaults, OrbitalNames::Set(&context)) {
             Ok(surfaces) => surfaces,
@@ -430,9 +430,9 @@ impl App {
     /// the current choice of fragment weighting, each keeping its settings
     /// and visibility.
     pub(crate) fn reweigh_set_surfaces(&mut self, structure_index: usize, key: &str) {
-        let Some(position) = self.structures[structure_index].orbital_sets.iter().position(|s| s.set.key() == key) else { return };
+        let Some(position) = self.structures[structure_index].apost.orbital_sets.iter().position(|s| s.set.key() == key) else { return };
         let mut groups: BTreeMap<(u64, u64), Vec<OrbitalChoice>> = BTreeMap::new();
-        for surface in &self.structures[structure_index].surfaces {
+        for surface in &self.structures[structure_index].surfaces.list {
             if let SurfaceSource::Orbital { choice, spacing_bohr, padding_bohr, set: Some(set), .. } = &surface.source
                 && set == key
             {
@@ -444,8 +444,8 @@ impl App {
         }
         let weighted = self.orbital_generation.fragment_weighted;
         let structure = &self.structures[structure_index];
-        let set = &structure.orbital_sets[position];
-        let (Some(Ok(wfn)), Some(Ok(results))) = (&set.wavefunction, structure.apost.as_ref().map(|a| &a.results)) else { return };
+        let set = &structure.apost.orbital_sets[position];
+        let (Some(Ok(wfn)), Some(Ok(results))) = (&set.wavefunction, structure.apost.results.as_ref().map(|a| &a.results)) else { return };
         let context = SetContext { set, results, molecule: &structure.molecule, weighted };
         let mut redrawn = Vec::new();
         for ((spacing, padding), choices) in groups {
@@ -460,7 +460,7 @@ impl App {
         let count = redrawn.len();
         let structure = &mut self.structures[structure_index];
         for mut surface in redrawn {
-            if let Some(old) = structure.surfaces.iter_mut().find(|s| s.label == surface.label) {
+            if let Some(old) = structure.surfaces.list.iter_mut().find(|s| s.label == surface.label) {
                 surface.settings = old.settings;
                 surface.visible = old.visible;
                 *old = surface;
@@ -477,13 +477,13 @@ impl App {
     /// becomes the current one, the orbital is generated and shown.
     pub(crate) fn draw_set_orbital(&mut self, analysis: &str, beta: bool, mo_index: usize) {
         let Some(active) = self.active_structure else { return };
-        let Some(position) = self.structures[active].orbital_sets.iter().position(|s| s.set.analysis == analysis && !s.set.preortho) else {
+        let Some(position) = self.structures[active].apost.orbital_sets.iter().position(|s| s.set.analysis == analysis && !s.set.preortho) else {
             self.show_warning("The orbital file of this analysis was not found next to the results.");
             return;
         };
         let structure = &mut self.structures[active];
-        structure.active_orbital_set = position + 1;
-        let set = &mut structure.orbital_sets[position];
+        structure.surfaces.active_orbital_set = position + 1;
+        let set = &mut structure.apost.orbital_sets[position];
         set.selected_alpha.clear();
         set.selected_beta.clear();
         if beta { set.selected_beta.insert(mo_index) } else { set.selected_alpha.insert(mo_index) };

@@ -92,11 +92,11 @@ impl App {
                         switch_to = Some(index);
                     }
                     let mut notes = Vec::new();
-                    if !structure.surfaces.is_empty() {
-                        let n = structure.surfaces.len();
+                    if !structure.surfaces.list.is_empty() {
+                        let n = structure.surfaces.list.len();
                         notes.push(format!("{n} surface{}", if n == 1 { "" } else { "s" }));
                     }
-                    if structure.apost.as_ref().is_some_and(|a| a.results.is_ok()) {
+                    if structure.apost.results.as_ref().is_some_and(|a| a.results.is_ok()) {
                         notes.push("APOST-3D".to_string());
                     }
                     if !notes.is_empty() {
@@ -160,8 +160,8 @@ impl App {
     /// which window holds them.
     fn show_links_to_other_windows(&mut self, ui: &mut egui::Ui, active: usize) {
         let structure = &self.structures[active];
-        let has_orbitals = structure.wavefunction.is_some();
-        let has_results = structure.apost.is_some() || structure.results_nearby.is_some();
+        let has_orbitals = structure.surfaces.wavefunction.is_some();
+        let has_results = structure.apost.results.is_some() || structure.apost.nearby.is_some();
         let is_fchk = structure.source_path.as_ref().is_some_and(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("fchk")));
         ui.horizontal_wrapped(|ui| {
             if has_orbitals && ui.button("Orbitals...").on_hover_text("Generate and show orbitals (Surfaces window)").clicked() {

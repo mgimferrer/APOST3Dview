@@ -437,7 +437,7 @@ impl App {
     /// The active structure's surfaces, with whether each is shown — for
     /// tests.
     pub fn surface_labels(&self) -> Vec<(String, bool)> {
-        self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.surfaces.iter().map(|x| (x.label.clone(), x.visible)).collect()).unwrap_or_default()
+        self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.surfaces.list.iter().map(|x| (x.label.clone(), x.visible)).collect()).unwrap_or_default()
     }
 
     /// The active structure's surfaces' positive and negative colors, in
@@ -446,21 +446,21 @@ impl App {
         let rgb = |c: egui::Color32| [c.r(), c.g(), c.b()];
         self.active_structure
             .and_then(|i| self.structures.get(i))
-            .map(|s| s.surfaces.iter().map(|x| (rgb(x.settings.positive_color), rgb(x.settings.negative_color))).collect())
+            .map(|s| s.surfaces.list.iter().map(|x| (rgb(x.settings.positive_color), rgb(x.settings.negative_color))).collect())
             .unwrap_or_default()
     }
 
     /// The active structure's surfaces' opacities (1 = opaque), in list
     /// order — for tests.
     pub fn surface_opacities(&self) -> Vec<f32> {
-        self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.surfaces.iter().map(|x| x.settings.opacity).collect()).unwrap_or_default()
+        self.active_structure.and_then(|i| self.structures.get(i)).map(|s| s.surfaces.list.iter().map(|x| x.settings.opacity).collect()).unwrap_or_default()
     }
 
     /// Shows exactly the active structure's surfaces named `labels`, as
     /// their tick boxes in the Surfaces window would — for tests.
     pub fn show_surfaces(&mut self, labels: &[&str]) {
         let Some(index) = self.active_structure else { return };
-        for surface in &mut self.structures[index].surfaces {
+        for surface in &mut self.structures[index].surfaces.list {
             surface.visible = labels.contains(&surface.label.as_str());
         }
         self.extract_shown_surfaces(index);
@@ -472,7 +472,7 @@ impl App {
     /// tests.
     pub fn set_surface_colors(&mut self, label: &str, positive: [u8; 3], negative: [u8; 3]) {
         let Some(index) = self.active_structure else { return };
-        if let Some(surface) = self.structures[index].surfaces.iter_mut().find(|s| s.label == label) {
+        if let Some(surface) = self.structures[index].surfaces.list.iter_mut().find(|s| s.label == label) {
             surface.settings.positive_color = egui::Color32::from_rgb(positive[0], positive[1], positive[2]);
             surface.settings.negative_color = egui::Color32::from_rgb(negative[0], negative[1], negative[2]);
         }
@@ -483,7 +483,7 @@ impl App {
     /// current analysis set — for tests.
     pub fn select_set_orbitals(&mut self, alpha: &[usize], beta: &[usize]) {
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
-        let Some(set) = structure.active_orbital_set.checked_sub(1).and_then(|i| structure.orbital_sets.get_mut(i)) else { return };
+        let Some(set) = structure.surfaces.active_orbital_set.checked_sub(1).and_then(|i| structure.apost.orbital_sets.get_mut(i)) else { return };
         set.selected_alpha = alpha.iter().copied().collect();
         set.selected_beta = beta.iter().copied().collect();
     }
@@ -493,7 +493,7 @@ impl App {
     pub fn surface_colored_by_fragment(&self, index: usize) -> bool {
         self.active_structure
             .and_then(|i| self.structures.get(i))
-            .and_then(|s| s.surfaces.get(index))
+            .and_then(|s| s.surfaces.list.get(index))
             .is_some_and(|x| x.settings.by_fragment && x.fragment_tint.is_some())
     }
 

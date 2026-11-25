@@ -19,7 +19,7 @@ impl App {
         if self.editing_input() {
             return None;
         }
-        let attachment = structure.apost.as_ref()?;
+        let attachment = structure.apost.results.as_ref()?;
         let results = attachment.results.as_ref().ok()?;
         let view = attachment.view.as_ref()?;
         Some(build_scene(results, &structure.molecule, view, &self.color_ranges))
@@ -44,7 +44,7 @@ impl App {
         if self.editing_input() {
             return None;
         }
-        let attachment = structure.apost.as_ref()?;
+        let attachment = structure.apost.results.as_ref()?;
         let view = attachment.view.as_ref()?;
         if !view.bond_thickness {
             return None;
@@ -60,8 +60,8 @@ impl App {
         let signature = self.active_structure.and_then(|i| self.structures.get(i)).map(|s| {
             let mut hidden: Vec<usize> = s.hidden_atoms.iter().copied().collect();
             hidden.sort_unstable();
-            let view = s.apost.as_ref().and_then(|a| a.view.clone());
-            let draft = self.editing_input().then(|| s.input_draft.as_ref().map(|d| d.fragments.clone())).flatten();
+            let view = s.apost.results.as_ref().and_then(|a| a.view.clone());
+            let draft = self.editing_input().then(|| s.apost.input_draft.as_ref().map(|d| d.fragments.clone())).flatten();
             format!("{:?}|{view:?}|{}|{:?}|{hidden:?}|{:?}|{draft:?}", self.active_structure, self.material.atom_scale, self.molecule_style, self.color_ranges)
         });
         let signature = signature.unwrap_or_default();
@@ -86,7 +86,7 @@ impl App {
             && editing
         {
             let structure = &self.structures[active];
-            if let Some(draft) = &structure.input_draft {
+            if let Some(draft) = &structure.apost.input_draft {
                 // Atoms in no fragment get a gray envelope of their own.
                 let mut groups = draft.fragments.clone();
                 let rest: Vec<usize> = (0..structure.molecule.positions.len()).filter(|a| !groups.iter().any(|g| g.contains(a))).collect();
@@ -104,7 +104,7 @@ impl App {
             let scene = self.structures.get(active).and_then(|s| self.results_scene(s));
             let sizes = self.drawn_sizes(&self.structures[active]);
             let structure = &mut self.structures[active];
-            if let (Some(scene), Some(attachment)) = (scene, structure.apost.as_mut())
+            if let (Some(scene), Some(attachment)) = (scene, structure.apost.results.as_mut())
                 && let Ok(results) = &attachment.results
             {
                 if !scene.envelopes.is_empty() {
@@ -194,7 +194,7 @@ impl App {
             return false;
         }
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return false };
-        let Some(attachment) = structure.apost.as_mut() else { return false };
+        let Some(attachment) = structure.apost.results.as_mut() else { return false };
         let Ok(results) = &attachment.results else { return false };
         let Some(view) = attachment.view.as_mut() else { return false };
         match focus_target(results, view) {
@@ -217,7 +217,7 @@ impl App {
     /// (entry, value) — for the two-atom selection.
     pub(crate) fn pair_values(&self, a: usize, b: usize) -> Vec<(apost3dview_core::IndexEntry, f64)> {
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) else { return Vec::new() };
-        let Some(Ok(results)) = structure.apost.as_ref().map(|a| &a.results) else { return Vec::new() };
+        let Some(Ok(results)) = structure.apost.results.as_ref().map(|a| &a.results) else { return Vec::new() };
         results
             .entries(apost3dview_core::QuantityKind::AtomMatrix)
             .filter_map(|entry| match results.quantity(entry) {
@@ -232,7 +232,7 @@ impl App {
     /// results or no such quantity. (Tests use it; so could scripting.)
     pub fn show_on_molecule(&mut self, what: &str) -> bool {
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return false };
-        let Some(attachment) = structure.apost.as_mut() else { return false };
+        let Some(attachment) = structure.apost.results.as_mut() else { return false };
         let Ok(results) = &attachment.results else { return false };
         let Some(view) = attachment.view.as_mut() else { return false };
         view.shown = match what {

@@ -383,7 +383,7 @@ impl App {
     pub(crate) fn apply_orbital_colors(&mut self) -> usize {
         let pair = self.orbital_colors;
         let mut changed = 0;
-        for surface in self.structures.iter_mut().flat_map(|s| s.surfaces.iter_mut()) {
+        for surface in self.structures.iter_mut().flat_map(|s| s.surfaces.list.iter_mut()) {
             let recolored = surface.settings.in_colors(pair);
             if surface.takes_orbital_colors() && surface.settings != recolored {
                 surface.settings = recolored;
@@ -400,7 +400,7 @@ impl App {
     /// would recolor.
     pub(crate) fn has_surfaces_in_other_colors(&self) -> bool {
         let pair = self.orbital_colors;
-        self.structures.iter().flat_map(|s| s.surfaces.iter()).any(|s| s.takes_orbital_colors() && s.settings != s.settings.in_colors(pair))
+        self.structures.iter().flat_map(|s| s.surfaces.list.iter()).any(|s| s.takes_orbital_colors() && s.settings != s.settings.in_colors(pair))
     }
 
     /// Adds surfaces to a structure and, when `show` is set, shows the
@@ -413,15 +413,15 @@ impl App {
         let Some(structure) = self.structures.get_mut(structure_index) else { return };
         let mut first = None;
         for mut surface in new_surfaces {
-            let index = match structure.surfaces.iter().position(|s| s.label == surface.label) {
+            let index = match structure.surfaces.list.iter().position(|s| s.label == surface.label) {
                 Some(index) => {
-                    surface.settings = structure.surfaces[index].settings;
-                    structure.surfaces[index] = surface;
+                    surface.settings = structure.surfaces.list[index].settings;
+                    structure.surfaces.list[index] = surface;
                     index
                 }
                 None => {
-                    structure.surfaces.push(surface);
-                    structure.surfaces.len() - 1
+                    structure.surfaces.list.push(surface);
+                    structure.surfaces.list.len() - 1
                 }
             };
             first.get_or_insert(index);
@@ -445,7 +445,7 @@ impl App {
         }
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
         let mut changed = false;
-        for surface in structure.surfaces.iter_mut().filter(|s| s.needs_extraction()) {
+        for surface in structure.surfaces.list.iter_mut().filter(|s| s.needs_extraction()) {
             surface.extract();
             changed = true;
         }
@@ -458,7 +458,7 @@ impl App {
     /// out of date, at once (an export can't wait for the next frame).
     pub(crate) fn extract_shown_surfaces(&mut self, index: usize) {
         if let Some(structure) = self.structures.get_mut(index) {
-            for surface in structure.surfaces.iter_mut().filter(|s| s.needs_extraction()) {
+            for surface in structure.surfaces.list.iter_mut().filter(|s| s.needs_extraction()) {
                 surface.extract();
             }
         }
@@ -471,7 +471,7 @@ impl App {
     pub(crate) fn rebuild_isosurface(&self) {
         let mut vertices: Vec<IsosurfaceVertex> = Vec::new();
         if let Some(structure) = self.active_structure.and_then(|i| self.structures.get(i)) {
-            for surface in structure.surfaces.iter().filter(|s| s.visible) {
+            for surface in structure.surfaces.list.iter().filter(|s| s.visible) {
                 surface.push_vertices(&mut vertices);
             }
         }

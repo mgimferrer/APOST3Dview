@@ -10,7 +10,7 @@ use crate::windows::ToolWindow;
 use crate::orbital_sets::show_set_checklist;
 use crate::isosurfaces::SurfaceSource;
 use crate::orbitals::{fitted_only, fragment_weighting, show_mo_checklist, OrbitalAccuracyPreset};
-use crate::state::LoadedStructure;
+use crate::state::{LoadedStructure, StructureApost, StructureSurfaces};
 
 /// What the surface list asks for after drawing.
 enum ListAction {
@@ -34,16 +34,16 @@ impl App {
             return;
         };
         let structure = &self.structures[active];
-        if structure.wavefunction.is_some() || !structure.orbital_sets.is_empty() {
+        if structure.surfaces.wavefunction.is_some() || !structure.apost.orbital_sets.is_empty() {
             egui::CollapsingHeader::new(RichText::new("Generate orbitals and densities").strong())
                 .id_salt("generate_orbitals")
                 .default_open(true)
                 .show(ui, |ui| {
                     self.show_orbital_set_selector(ui, active);
-                    let natural_listed = self.structures[active].densities.as_ref().is_some_and(|d| d.listed.is_some());
-                    if self.structures[active].active_orbital_set == 0 && natural_listed {
+                    let natural_listed = self.structures[active].surfaces.densities.as_ref().is_some_and(|d| d.listed.is_some());
+                    if self.structures[active].surfaces.active_orbital_set == 0 && natural_listed {
                         self.show_generate_natural_orbitals(ui, active);
-                    } else if self.structures[active].active_orbital_set == 0 {
+                    } else if self.structures[active].surfaces.active_orbital_set == 0 {
                         self.show_generate_orbitals(ui, active);
                     } else {
                         self.show_generate_set_orbitals(ui, active);
@@ -59,21 +59,21 @@ impl App {
     /// analysis sets APOST-3D wrote next to its results.
     fn show_orbital_set_selector(&mut self, ui: &mut egui::Ui, active: usize) {
         let structure = &mut self.structures[active];
-        let natural_names: Vec<String> = structure.densities.as_ref().map(|d| d.natural.iter().map(|n| format!("Natural orbitals ({})", n.name)).collect()).unwrap_or_default();
-        if structure.orbital_sets.is_empty() && natural_names.is_empty() {
+        let natural_names: Vec<String> = structure.surfaces.densities.as_ref().map(|d| d.natural.iter().map(|n| format!("Natural orbitals ({})", n.name)).collect()).unwrap_or_default();
+        if structure.apost.orbital_sets.is_empty() && natural_names.is_empty() {
             return;
         }
         // A correlated 1-RDM stored as "SCF": the file's MOs aren't SCF ones.
-        let file_orbitals = if structure.densities.as_ref().is_some_and(|d| d.info.correlated_scf) { "Orbitals of the file" } else { "SCF orbitals" };
+        let file_orbitals = if structure.surfaces.densities.as_ref().is_some_and(|d| d.info.correlated_scf) { "Orbitals of the file" } else { "SCF orbitals" };
         // (set, natural): (0, None) the file's orbitals, (0, Some(i)) natural set i, (i, None) analysis set i - 1.
         let mut options: Vec<((usize, Option<usize>), String)> = Vec::new();
-        if structure.wavefunction.is_some() {
+        if structure.surfaces.wavefunction.is_some() {
             options.push(((0, None), file_orbitals.to_string()));
             options.extend(natural_names.into_iter().enumerate().map(|(i, name)| ((0, Some(i)), name)));
         }
-        options.extend(structure.orbital_sets.iter().enumerate().map(|(i, s)| ((i + 1, None), s.set.title().to_string())));
-        let listed = structure.densities.as_ref().and_then(|d| d.listed);
-        let mut current = (structure.active_orbital_set, if structure.active_orbital_set == 0 { listed } else { None });
+        options.extend(structure.apost.orbital_sets.iter().enumerate().map(|(i, s)| ((i + 1, None), s.set.title().to_string())));
+        let listed = structure.surfaces.densities.as_ref().and_then(|d| d.listed);
+        let mut current = (structure.surfaces.active_orbital_set, if structure.surfaces.active_orbital_set == 0 { listed } else { None });
         if !options.iter().any(|(o, _)| *o == current) {
             current = options[0].0;
         }
@@ -94,8 +94,8 @@ impl App {
                      the others are APOST-3D's analysis orbitals, labeled with their fragments.",
                 );
         });
-        structure.active_orbital_set = chosen.0;
-        if let Some(densities) = structure.densities.as_mut().filter(|d| d.listed != chosen.1) {
+        structure.surfaces.active_orbital_set = chosen.0;
+        if let Some(densities) = structure.surfaces.densities.as_mut().filter(|d| d.listed != chosen.1) {
             if let Some(set) = chosen.1.and_then(|i| densities.natural.get(i)) {
                 densities.selected = crate::natural::frontier(set);
             }
@@ -106,7 +106,7 @@ impl App {
 
     /// The natural orbitals of a correlated density, by occupation.
     fn show_generate_natural_orbitals(&mut self, ui: &mut egui::Ui, active: usize) {
-        let Some(densities) = &mut self.structures[active].densities else { return };
+        let Some(densities) = &mut self.structures[active].surfaces.densities else { return };
         let Some(set) = densities.listed.and_then(|i| densities.natural.get(i)) else { return };
         let orbitals = &set.orbitals.alpha;
         ui.label(
@@ -148,8 +148,9 @@ impl App {
     /// The orbitals of an analysis set: only those the tables describe,
     /// each labeled with its fragment(s) and numbers.
     fn show_generate_set_orbitals(&mut self, ui: &mut egui::Ui, active: usize) {
-        let set_index = self.structures[active].active_orbital_set - 1;
-        let LoadedStructure { orbital_sets, apost, molecule, .. } = &mut self.structures[active];
+        let set_index = self.structures[active].surfaces.active_orbital_set - 1;
+        let LoadedStructure { apost, molecule, .. } = &mut self.structures[active];
+        let StructureApost { orbital_sets, results: apost, .. } = apost;
         let Some(Ok(results)) = apost.as_ref().map(|a| &a.results) else { return };
         let set = &mut orbital_sets[set_index];
         if let Some(Err(reason)) = &set.wavefunction {
@@ -240,34 +241,34 @@ impl App {
     }
 
     fn show_generate_orbitals(&mut self, ui: &mut egui::Ui, active: usize) {
-        let num_orbitals = self.structures[active].wavefunction.as_ref().unwrap().alpha.num_orbitals();
-        let is_unrestricted = self.structures[active].wavefunction.as_ref().unwrap().beta.is_some();
+        let num_orbitals = self.structures[active].surfaces.wavefunction.as_ref().unwrap().alpha.num_orbitals();
+        let is_unrestricted = self.structures[active].surfaces.wavefunction.as_ref().unwrap().beta.is_some();
         self.orbital_generation.range_start = self.orbital_generation.range_start.clamp(1, num_orbitals.max(1));
         self.orbital_generation.range_end = self.orbital_generation.range_end.clamp(1, num_orbitals.max(1));
 
         ui.horizontal(|ui| {
             if ui.button("HOMO/LUMO").clicked() {
-                let wfn = self.structures[active].wavefunction.as_ref().unwrap();
+                let wfn = self.structures[active].surfaces.wavefunction.as_ref().unwrap();
                 let (alpha_homo, alpha_lumo, alpha_num) = (wfn.alpha.homo_index(), wfn.alpha.lumo_index(), wfn.alpha.num_orbitals());
                 let beta_homo_lumo_num = wfn.beta.as_ref().map(|b| (b.homo_index(), b.lumo_index(), b.num_orbitals()));
                 let structure = &mut self.structures[active];
-                structure.selected_alpha_mos.clear();
-                structure.selected_alpha_mos.insert(alpha_homo - 1);
+                structure.surfaces.selected_alpha_mos.clear();
+                structure.surfaces.selected_alpha_mos.insert(alpha_homo - 1);
                 if alpha_lumo <= alpha_num {
-                    structure.selected_alpha_mos.insert(alpha_lumo - 1);
+                    structure.surfaces.selected_alpha_mos.insert(alpha_lumo - 1);
                 }
-                structure.selected_beta_mos.clear();
+                structure.surfaces.selected_beta_mos.clear();
                 if let Some((beta_homo, beta_lumo, beta_num)) = beta_homo_lumo_num {
-                    structure.selected_beta_mos.insert(beta_homo - 1);
+                    structure.surfaces.selected_beta_mos.insert(beta_homo - 1);
                     if beta_lumo <= beta_num {
-                        structure.selected_beta_mos.insert(beta_lumo - 1);
+                        structure.surfaces.selected_beta_mos.insert(beta_lumo - 1);
                     }
                 }
             }
             if ui.button("Clear").clicked() {
                 let structure = &mut self.structures[active];
-                structure.selected_alpha_mos.clear();
-                structure.selected_beta_mos.clear();
+                structure.surfaces.selected_alpha_mos.clear();
+                structure.surfaces.selected_beta_mos.clear();
             }
         });
         ui.horizontal(|ui| {
@@ -282,9 +283,9 @@ impl App {
                 );
                 let structure = &mut self.structures[active];
                 for mo_number in lo..=hi {
-                    structure.selected_alpha_mos.insert(mo_number - 1);
+                    structure.surfaces.selected_alpha_mos.insert(mo_number - 1);
                     if is_unrestricted {
-                        structure.selected_beta_mos.insert(mo_number - 1);
+                        structure.surfaces.selected_beta_mos.insert(mo_number - 1);
                     }
                 }
             }
@@ -293,7 +294,7 @@ impl App {
         // The densities, generated with the orbitals.
         let has_spin = crate::orbitals::has_spin_density(&self.structures[active]);
         let correlated = self.structures[active]
-            .apost
+            .apost.results
             .as_ref()
             .and_then(|a| a.results.as_ref().ok())
             .and_then(|r| r.enpart())
@@ -301,16 +302,16 @@ impl App {
             .filter(|w| w == "CASSCF" || w == "CISD");
         ui.horizontal(|ui| {
             let structure = &mut self.structures[active];
-            ui.checkbox(&mut structure.selected_total_density, "Total density")
+            ui.checkbox(&mut structure.surfaces.selected_total_density, "Total density")
                 .on_hover_text("The electron density, from the occupied orbitals");
             if has_spin {
-                ui.checkbox(&mut structure.selected_spin_density, "Spin density")
+                ui.checkbox(&mut structure.surfaces.selected_spin_density, "Spin density")
                     .on_hover_text("Alpha minus beta density: positive where alpha electrons are in excess");
             }
         });
         // Which density matrix: the occupied orbitals' (mean field) or a
         // correlated one of the file, through its natural orbitals.
-        if let Some(densities) = &mut self.structures[active].densities {
+        if let Some(densities) = &mut self.structures[active].surfaces.densities {
             let mut options: Vec<(Option<usize>, String)> = Vec::new();
             if densities.offers_mean_field() {
                 options.push((None, "SCF".to_string()));
@@ -334,7 +335,7 @@ impl App {
                 ui.label(RichText::new(format!("The {} density of the .fchk, through its natural orbitals.", set.name)).small().weak());
             }
         }
-        let natural_density = self.structures[active].densities.as_ref().is_some_and(|d| d.chosen.is_some());
+        let natural_density = self.structures[active].surfaces.densities.as_ref().is_some_and(|d| d.chosen.is_some());
         if let Some(method) = correlated.filter(|_| !natural_density) {
             ui.label(
                 RichText::new(format!(
@@ -353,13 +354,13 @@ impl App {
         // (mutable) coexist without needing two separate
         // indexing expressions into `self.structures`, which
         // the borrow checker can't prove disjoint on its own.
-        let LoadedStructure {
+        let StructureSurfaces {
             wavefunction,
             densities,
             selected_alpha_mos,
             selected_beta_mos,
             ..
-        } = &mut self.structures[active];
+        } = &mut self.structures[active].surfaces;
         let wfn = wavefunction.as_ref().unwrap();
         if densities.as_ref().is_some_and(|d| d.info.correlated_scf) && wfn.alpha.orbital_energies.iter().all(|&e| e == 0.0) {
             ui.label(RichText::new("This file stores no orbital energies (0 below); its natural orbitals carry the occupations.").small().weak());
@@ -373,8 +374,8 @@ impl App {
 
         ui.add_space(4.0);
         let structure = &self.structures[active];
-        let selected_count = structure.selected_alpha_mos.len() + structure.selected_beta_mos.len();
-        let density_count = usize::from(structure.selected_total_density) + usize::from(structure.selected_spin_density && has_spin);
+        let selected_count = structure.surfaces.selected_alpha_mos.len() + structure.surfaces.selected_beta_mos.len();
+        let density_count = usize::from(structure.surfaces.selected_total_density) + usize::from(structure.surfaces.selected_spin_density && has_spin);
         let label = match density_count {
             0 => format!("Generate {selected_count} orbital(s)"),
             n => format!("Generate {} surface(s)", selected_count + n),
@@ -411,8 +412,8 @@ impl App {
 
     fn show_surface_list(&mut self, ui: &mut egui::Ui, active: usize) {
         let structure = &self.structures[active];
-        if structure.surfaces.is_empty() {
-            let hint = if structure.wavefunction.is_some() {
+        if structure.surfaces.list.is_empty() {
+            let hint = if structure.surfaces.wavefunction.is_some() {
                 "No surfaces yet: generate orbitals above, or open .cube files of this molecule."
             } else {
                 "No surfaces. Open .cube files of this molecule, or a .fchk/.molden to generate orbitals."
@@ -423,7 +424,7 @@ impl App {
 
         let mut action = None;
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("Surfaces ({})", structure.surfaces.len())).strong());
+            ui.label(RichText::new(format!("Surfaces ({})", structure.surfaces.list.len())).strong());
             if ui.small_button("Show all").clicked() {
                 action = Some(ListAction::ShowAll(true));
             }
@@ -432,7 +433,7 @@ impl App {
             }
         });
         egui::ScrollArea::vertical().id_salt("surface_list").max_height(200.0).show(ui, |ui| {
-            for (index, surface) in structure.surfaces.iter().enumerate() {
+            for (index, surface) in structure.surfaces.list.iter().enumerate() {
                 ui.horizontal(|ui| {
                     let mut visible = surface.visible;
                     if ui.checkbox(&mut visible, "").on_hover_text("Show or hide, keeping the others as they are").changed() {
@@ -458,7 +459,7 @@ impl App {
                         let part = egui::Rect::from_min_size(rect.min + egui::vec2(k as f32 * width, 0.0), egui::vec2(width, rect.height()));
                         ui.painter().rect_filled(part, 0.0, *color);
                     }
-                    let selected = structure.selected_surface == Some(index);
+                    let selected = structure.surfaces.selected == Some(index);
                     if ui.selectable_label(selected, &surface.label).on_hover_text("Show this surface alone, and edit it below").clicked() {
                         action = Some(ListAction::ShowAlone(index));
                     }
@@ -476,18 +477,18 @@ impl App {
             match action {
                 ListAction::ShowAlone(index) => structure.show_surface_alone(index),
                 ListAction::Toggle(index) => {
-                    structure.surfaces[index].visible = !structure.surfaces[index].visible;
-                    structure.selected_surface = Some(index);
+                    structure.surfaces.list[index].visible = !structure.surfaces.list[index].visible;
+                    structure.surfaces.selected = Some(index);
                 }
                 ListAction::Remove(index) => {
-                    structure.surfaces.remove(index);
-                    structure.selected_surface = match structure.selected_surface {
+                    structure.surfaces.list.remove(index);
+                    structure.surfaces.selected = match structure.surfaces.selected {
                         Some(s) if s == index => None,
                         Some(s) if s > index => Some(s - 1),
                         other => other,
                     };
                 }
-                ListAction::ShowAll(visible) => structure.surfaces.iter_mut().for_each(|s| s.visible = visible),
+                ListAction::ShowAll(visible) => structure.surfaces.list.iter_mut().for_each(|s| s.visible = visible),
             }
             self.rebuild_isosurface();
         }
@@ -504,11 +505,11 @@ impl App {
     /// 2026-10-19).
     fn show_surface_settings(&mut self, ui: &mut egui::Ui, active: usize) {
         let structure = &mut self.structures[active];
-        let Some(index) = structure.selected_surface.filter(|&i| i < structure.surfaces.len()) else {
+        let Some(index) = structure.surfaces.selected.filter(|&i| i < structure.surfaces.list.len()) else {
             return;
         };
-        let surface_count = structure.surfaces.len();
-        let surface = &mut structure.surfaces[index];
+        let surface_count = structure.surfaces.list.len();
+        let surface = &mut structure.surfaces.list[index];
         let own_defaults = surface.default_settings(self.orbital_colors);
         let translucent_opacity = surface.translucent_opacity();
         let is_density = surface.density().is_some();
@@ -576,7 +577,7 @@ impl App {
         }
         let settings = *s;
         if apply_to_all {
-            structure.surfaces.iter_mut().for_each(|other| other.settings = settings);
+            structure.surfaces.list.iter_mut().for_each(|other| other.settings = settings);
         }
         if use_for_new {
             self.surface_defaults = settings;

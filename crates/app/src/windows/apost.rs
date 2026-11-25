@@ -287,7 +287,7 @@ impl App {
                 let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
                 let atomic_numbers = structure.molecule.atomic_numbers.clone();
                 let selected_atoms = structure.selected_atoms.clone();
-                let Some(attachment) = structure.apost.as_mut() else { return };
+                let Some(attachment) = structure.apost.results.as_mut() else { return };
                 let Ok(results) = &attachment.results else { return };
                 let focus_mode = attachment.view.as_ref().and_then(|v| focus_target(results, v)) == Some(true);
                 if results.molecule.is_some() {
@@ -305,7 +305,7 @@ impl App {
     pub(crate) fn apost_tab_shown(&self) -> crate::input_generator::ApostTab {
         use crate::input_generator::ApostTab;
         self.apost_tab.unwrap_or_else(|| match self.active_structure.and_then(|i| self.structures.get(i)) {
-            Some(s) if s.apost.is_none() && s.results_nearby.is_none() => ApostTab::Input,
+            Some(s) if s.apost.results.is_none() && s.apost.nearby.is_none() => ApostTab::Input,
             _ => ApostTab::Results,
         })
     }
@@ -332,10 +332,10 @@ impl App {
             ui.label(RichText::new("Open a structure first.").weak());
             return false;
         };
-        let Some(attachment) = structure.apost.as_mut() else {
+        let Some(attachment) = structure.apost.results.as_mut() else {
             // A .fchk is the calculation alone; its results are opened on
             // request.
-            let nearby = structure.results_nearby.clone();
+            let nearby = structure.apost.nearby.clone();
             match nearby {
                 Some(path) => {
                     ui.label("APOST-3D results of this calculation were found next to it:");
@@ -391,7 +391,7 @@ impl App {
     fn apply_fragment_action(&mut self, action: Option<(FragmentAction, bool)>) {
         let Some((FragmentAction::Select { position, add }, focus_mode)) = action else { return };
         let Some(structure) = self.active_structure.and_then(|i| self.structures.get_mut(i)) else { return };
-        let Some(attachment) = structure.apost.as_mut() else { return };
+        let Some(attachment) = structure.apost.results.as_mut() else { return };
         if focus_mode {
             if let Some(view) = attachment.view.as_mut() {
                 view.focus = position;

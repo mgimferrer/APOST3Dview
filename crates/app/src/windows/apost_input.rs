@@ -233,7 +233,7 @@ impl App {
         // The first time the form is shown, make room for the fragment
         // envelopes it draws (as for results with fragments), zooming out
         // only if the view is tighter than that.
-        if structure.input_draft.is_none() {
+        if structure.apost.input_draft.is_none() {
             let (center, radius) = structure.molecule.bounding_sphere();
             let mut roomy = self.camera;
             roomy.frame_bounds(center, radius + 2.2);
@@ -241,7 +241,7 @@ impl App {
                 self.camera.distance = roomy.distance;
             }
         }
-        let draft = structure.input_draft.get_or_insert_with(|| InputDraft::new(&fchk, n_atoms));
+        let draft = structure.apost.input_draft.get_or_insert_with(|| InputDraft::new(&fchk, n_atoms));
 
         let input = draft.build();
         let text = input.to_text(n_atoms);
@@ -359,7 +359,7 @@ impl App {
         let bonds: Vec<(usize, usize)> =
             structure.molecule.bonds.iter().enumerate().filter(|(i, _)| !structure.drawn_hidden_bonds().contains(i)).map(|(_, b)| (b.atom_a, b.atom_b)).collect();
         let selected = structure.selected_atoms.clone();
-        let Some(draft) = structure.input_draft.as_mut() else { return };
+        let Some(draft) = structure.apost.input_draft.as_mut() else { return };
         match action {
             Action::FromSelection => {
                 structure.selected_atoms.clear();
@@ -401,7 +401,7 @@ impl App {
     /// Makes `atoms` (0-based) a new fragment of the active structure's
     /// input, taking them out of the fragments they were in.
     pub(crate) fn add_fragment(&mut self, mut atoms: Vec<usize>) {
-        let Some(draft) = self.active_structure.and_then(|i| self.structures.get_mut(i)).and_then(|s| s.input_draft.as_mut()) else { return };
+        let Some(draft) = self.active_structure.and_then(|i| self.structures.get_mut(i)).and_then(|s| s.apost.input_draft.as_mut()) else { return };
         atoms.sort_unstable();
         atoms.dedup();
         for fragment in &mut draft.fragments {
@@ -415,7 +415,7 @@ impl App {
 
     /// The fragments of the active structure's input, 0-based — for tests.
     pub fn input_fragments(&self) -> Vec<Vec<usize>> {
-        self.active_structure.and_then(|i| self.structures.get(i)).and_then(|s| s.input_draft.as_ref()).map(|d| d.fragments.clone()).unwrap_or_default()
+        self.active_structure.and_then(|i| self.structures.get(i)).and_then(|s| s.apost.input_draft.as_ref()).map(|d| d.fragments.clone()).unwrap_or_default()
     }
 }
 
@@ -423,6 +423,6 @@ impl App {
     /// The input the active structure's generator makes now — for tests.
     pub fn input_text(&self) -> Option<String> {
         let structure = self.active_structure.and_then(|i| self.structures.get(i))?;
-        Some(structure.input_draft.as_ref()?.build().to_text(structure.molecule.atomic_numbers.len()))
+        Some(structure.apost.input_draft.as_ref()?.build().to_text(structure.molecule.atomic_numbers.len()))
     }
 }
