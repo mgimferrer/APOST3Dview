@@ -59,6 +59,10 @@ pub struct Candidate {
     pub elements: Vec<Element>,
     /// The symmetrized positions.
     symmetric: Vec<Vec3>,
+    /// Its operations about the analysis's center, and where each sends
+    /// every atom (empty for the linear groups).
+    pub operations: Vec<DMat3>,
+    pub permutations: Vec<Vec<usize>>,
 }
 
 impl Candidate {
@@ -138,7 +142,15 @@ pub fn analyze(atomic_numbers: &[u32], positions: &[Vec3]) -> Analysis {
     let p: Vec<DVec3> = positions.iter().map(|v| v.as_dvec3()).collect();
     let center = if n == 0 { DVec3::ZERO } else { p.iter().copied().sum::<DVec3>() / n as f64 };
     let q: Vec<DVec3> = p.iter().map(|v| *v - center).collect();
-    let mut candidates = vec![Candidate { label: "C1".into(), order: 1, displacement: 0.0, elements: Vec::new(), symmetric: positions.to_vec() }];
+    let mut candidates = vec![Candidate {
+        label: "C1".into(),
+        order: 1,
+        displacement: 0.0,
+        elements: Vec::new(),
+        symmetric: positions.to_vec(),
+        operations: vec![DMat3::IDENTITY],
+        permutations: vec![(0..n).collect()],
+    }];
     if n < 2 {
         return Analysis { center, candidates };
     }
@@ -218,6 +230,8 @@ fn linear_candidates(z: &[u32], q: &[DVec3], center: DVec3) -> Option<Vec<Candid
         displacement: moved(&on_axis),
         elements: vec![Element::Axis { direction: axis, order: 0 }],
         symmetric: to_vec3(&on_axis),
+        operations: Vec::new(),
+        permutations: Vec::new(),
     }];
     // D∞h: the inversion as well (each atom paired with a like atom at the
     // opposite position, or at the center).
@@ -229,6 +243,8 @@ fn linear_candidates(z: &[u32], q: &[DVec3], center: DVec3) -> Option<Vec<Candid
             displacement: moved(&both),
             elements: vec![Element::Axis { direction: axis, order: 0 }, Element::Inversion],
             symmetric: to_vec3(&both),
+            operations: Vec::new(),
+            permutations: Vec::new(),
         });
     }
     Some(out)
@@ -336,7 +352,15 @@ fn finite_candidates(z: &[u32], q: &[DVec3], center: DVec3) -> Vec<Candidate> {
             continue;
         }
         let (label, elements) = classify(&group);
-        let candidate = Candidate { label, order: group.len(), displacement, elements, symmetric: symmetric.iter().map(|v| (*v + center).as_vec3()).collect() };
+        let candidate = Candidate {
+            label,
+            order: group.len(),
+            displacement,
+            elements,
+            symmetric: symmetric.iter().map(|v| (*v + center).as_vec3()).collect(),
+            operations: group.clone(),
+            permutations: perms,
+        };
         let key = group_key(&group);
         match best.get(&key) {
             Some(&k) if out[k].displacement <= displacement => {}
