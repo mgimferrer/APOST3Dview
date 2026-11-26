@@ -2,7 +2,9 @@
 
 What changed in each version of APOST-3Dview, for its users. The newest version is at the top. Changes not yet in a release are under "Unreleased".
 
-## Unreleased
+## 1.0.1 (2026-11-26)
+
+The version described in the paper.
 
 ### New
 - **Reaction paths**: a multi-frame `.xyz` (IRC, NEB, an optimization) opens as one structure whose frames play in the window. Frames are lined up onto each other (or on chosen atoms, or kept as in the file), bonds grow and fade as they form and break, geometries in between are smooth, and the energy profile from the comment lines can be clicked to jump along the path. Views can be kept at chosen frames, so the molecule turns as the path plays. The GIF export records what plays. Example in `examples/reaction-path/`, guide chapter "Reaction paths and other frames".
@@ -18,8 +20,6 @@ What changed in each version of APOST-3Dview, for its users. The newest version 
 - Ambient occlusion is recomputed when the geometry changes (it kept the old shading until the view moved).
 
 ## 1.0.0 (2026-11-23)
-
-The version described in the paper.
 
 ### New
 - **Panel figures**: several orbitals (or structures) in one PNG, each panel with a caption written from the APOST-3D tables, optional letters, one legend, sized for a half or a full page at a chosen DPI, with a live preview.
