@@ -144,17 +144,17 @@ fn bond_target(a: u32, b: u32, distance: f64) -> (f64, f64) {
 
 /// Everything Clean pulls toward, worked out once from the starting
 /// geometry.
-struct Model {
-    bonds: Vec<(usize, usize, f64)>,
-    angles: Vec<(usize, usize, usize, f64)>,
-    flat: Vec<[usize; 4]>,
+pub(crate) struct Model {
+    pub(crate) bonds: Vec<(usize, usize, f64)>,
+    pub(crate) angles: Vec<(usize, usize, usize, f64)>,
+    pub(crate) flat: Vec<[usize; 4]>,
     twists: Vec<[usize; 4]>,
     /// Across double and aromatic bonds between flat centres: 0 or 180.
     pi: Vec<[usize; 4]>,
-    repel: Vec<(usize, usize, f64)>,
+    pub(crate) repel: Vec<(usize, usize, f64)>,
 }
 
-fn build_model(z: &[u32], p: &[DVec3], bonds: &[(usize, usize)], options: &CleanOptions) -> Model {
+pub(crate) fn build_model(z: &[u32], p: &[DVec3], bonds: &[(usize, usize)], options: &CleanOptions) -> Model {
     let n = z.len();
     let mut neighbors = vec![Vec::new(); n];
     let mut pairs: Vec<(usize, usize, f64)> = Vec::new();
@@ -166,9 +166,13 @@ fn build_model(z: &[u32], p: &[DVec3], bonds: &[(usize, usize)], options: &Clean
         neighbors[b].push(a);
         pairs.push((a, b, bond_target(z[a], z[b], p[a].distance(p[b])).0));
     }
-    // Neighbours other than metals: bonds to a metal (a Cp to Fe) aren't
-    // electron domains of the ligand atom.
-    let organic: Vec<Vec<usize>> = (0..n).map(|i| neighbors[i].iter().copied().filter(|&j| !is_metal(z[j])).collect()).collect();
+    // A ligand atom's metal is one of its electron domains when it bonds
+    // to it on its own (σ: the C of CO or CN); not when a neighbour bonds to
+    // the same metal too (η: a Cp ring on Fe).
+    let sigma = |i: usize, m: usize| !neighbors[i].iter().any(|&j| j != m && !is_metal(z[j]) && neighbors[j].contains(&m));
+    let organic: Vec<Vec<usize>> = (0..n)
+        .map(|i| neighbors[i].iter().copied().filter(|&j| !is_metal(z[j]) || (!is_metal(z[i]) && sigma(i, j))).collect())
+        .collect();
     let rings = small_rings(&organic);
     // Aromatic rings (5 or 6 atoms, each three-connected C, or N, O, S
     // with two or three neighbours, every bond drawn aromatic or double):
@@ -188,6 +192,27 @@ fn build_model(z: &[u32], p: &[DVec3], bonds: &[(usize, usize)], options: &Clean
             }
         }
     }
+    // No atom of the first two rows beyond its valence (C 4, N 3, O 2, a
+    // halogen 1): a multiple bond that would put it there is single (a
+    // crushed drawing makes short single bonds look triple).
+    let valence = |i: usize| -> Option<f64> {
+        let e = valence_electrons(z[i]);
+        (z[i] <= 10 && !is_metal(z[i])).then(|| f64::from(e.min(8 - e)).clamp(1.0, 4.0))
+    };
+    for _ in 0..3 {
+        let mut total = vec![0.0f64; n];
+        for &(a, b, order) in &pairs {
+            total[a] += order;
+            total[b] += order;
+        }
+        for pair in pairs.iter_mut() {
+            let (a, b, order) = *pair;
+            let over = |i: usize| valence(i).is_some_and(|v| total[i] > v + 0.6);
+            if order > 1.0 && !aromatic.contains(&(a.min(b), a.max(b))) && (over(a) || over(b)) {
+                pair.2 = 1.0;
+            }
+        }
+    }
     let mut orders = vec![0.0f64; n];
     let mut model_bonds = Vec::new();
     for &(a, b, order) in &pairs {
@@ -201,10 +226,10 @@ fn build_model(z: &[u32], p: &[DVec3], bonds: &[(usize, usize)], options: &Clean
         } else {
             bond_lengths(z[a], z[b]).into_iter().find(|(o, _)| *o == order).map_or(p[a].distance(p[b]), |(_, l)| l)
         };
-        if !is_metal(z[b]) {
+        if !is_metal(z[b]) || organic[a].contains(&b) {
             orders[a] += order;
         }
-        if !is_metal(z[a]) {
+        if !is_metal(z[a]) || organic[b].contains(&a) {
             orders[b] += order;
         }
         model_bonds.push((a, b, length));
@@ -439,45 +464,26 @@ fn dihedral(q: &[DVec3; 4]) -> f64 {
     (b2.length() * b1.dot(b2.cross(b3))).atan2(b1.cross(b2).dot(b2.cross(b3)))
 }
 
-/// The geometry cleaned (see the module's description). `bonds` are the
-/// bonds drawn, as 0-based pairs.
-pub fn clean(z: &[u32], positions: &[Vec3], bonds: &[(usize, usize)], options: &CleanOptions) -> Cleaned {
-    let start: Vec<DVec3> = positions.iter().map(|v| v.as_dvec3()).collect();
-    let n = start.len();
-    if n == 0 {
-        return Cleaned { positions: Vec::new(), largest_move: 0.0, steps: 0 };
-    }
-    let model = build_model(z, &start, bonds, options);
-    let mut held = vec![false; n];
-    for &h in &options.held {
-        if h < n {
-            held[h] = true;
-        }
-    }
-    let project = |g: &mut Vec<DVec3>| {
-        if let Some(s) = &options.symmetry {
-            *g = s.gradient(g);
-        }
-        for (i, gi) in g.iter_mut().enumerate() {
-            if held[i] {
-                *gi = DVec3::ZERO;
-            }
-        }
-    };
-    let mut x = match &options.symmetry {
-        Some(s) => s.positions(&start),
-        None => start.clone(),
-    };
+/// L-BFGS with a backtracking line search, from `x`: `eval` gives the
+/// energy and fills the gradient, `project` limits the gradient (held atoms,
+/// symmetry), `place` limits the positions (symmetry). No atom moves more
+/// than 0.3 angstrom in one step.
+pub(crate) fn minimize(
+    mut x: Vec<DVec3>,
+    mut eval: impl FnMut(&[DVec3], &mut [DVec3]) -> f64,
+    project: &dyn Fn(&mut Vec<DVec3>),
+    place: &dyn Fn(Vec<DVec3>) -> Vec<DVec3>,
+    max_steps: usize,
+) -> (Vec<DVec3>, usize) {
+    let n = x.len();
     let mut g = vec![DVec3::ZERO; n];
-    let mut e = energy(&model, &x, &mut g);
+    let mut e = eval(&x, &mut g);
     project(&mut g);
-
-    // L-BFGS with a backtracking line search.
     let memory = 8;
     let mut history: Vec<(Vec<DVec3>, Vec<DVec3>, f64)> = Vec::new();
     let dot = |a: &[DVec3], b: &[DVec3]| a.iter().zip(b).map(|(u, v)| u.dot(*v)).sum::<f64>();
     let mut steps = 0;
-    for _ in 0..1000 {
+    for _ in 0..max_steps {
         let gnorm = dot(&g, &g).sqrt();
         if gnorm < 1e-5 {
             break;
@@ -507,19 +513,14 @@ pub fn clean(z: &[u32], positions: &[Vec3], bonds: &[(usize, usize)], options: &
             direction = g.iter().map(|v| -*v * (0.1 / gnorm)).collect();
             history.clear();
         }
-        // Never more than 0.3 angstrom per atom in one step.
         let longest = direction.iter().map(|v| v.length()).fold(0.0, f64::max);
         let mut t = if longest > 0.3 { 0.3 / longest } else { 1.0 };
         let slope = dot(&direction, &g);
         let mut accepted = None;
         for _ in 0..30 {
-            let trial: Vec<DVec3> = x.iter().zip(&direction).map(|(xi, di)| *xi + *di * t).collect();
-            let trial = match &options.symmetry {
-                Some(s) => s.positions(&trial),
-                None => trial,
-            };
+            let trial = place(x.iter().zip(&direction).map(|(xi, di)| *xi + *di * t).collect());
             let mut trial_g = vec![DVec3::ZERO; n];
-            let trial_e = energy(&model, &trial, &mut trial_g);
+            let trial_e = eval(&trial, &mut trial_g);
             if trial_e <= e + 1e-4 * t * slope {
                 project(&mut trial_g);
                 accepted = Some((trial, trial_e, trial_g));
@@ -546,6 +547,43 @@ pub fn clean(z: &[u32], positions: &[Vec3], bonds: &[(usize, usize)], options: &
             break;
         }
     }
+    (x, steps)
+}
+
+/// The geometry cleaned (see the module's description). `bonds` are the
+/// bonds drawn, as 0-based pairs.
+pub fn clean(z: &[u32], positions: &[Vec3], bonds: &[(usize, usize)], options: &CleanOptions) -> Cleaned {
+    let start: Vec<DVec3> = positions.iter().map(|v| v.as_dvec3()).collect();
+    let n = start.len();
+    if n == 0 {
+        return Cleaned { positions: Vec::new(), largest_move: 0.0, steps: 0 };
+    }
+    let model = build_model(z, &start, bonds, options);
+    let mut held = vec![false; n];
+    for &h in &options.held {
+        if h < n {
+            held[h] = true;
+        }
+    }
+    let project = |g: &mut Vec<DVec3>| {
+        if let Some(s) = &options.symmetry {
+            *g = s.gradient(g);
+        }
+        for (i, gi) in g.iter_mut().enumerate() {
+            if held[i] {
+                *gi = DVec3::ZERO;
+            }
+        }
+    };
+    let x0 = match &options.symmetry {
+        Some(s) => s.positions(&start),
+        None => start.clone(),
+    };
+    let symmetrize = |x: Vec<DVec3>| match &options.symmetry {
+        Some(s) => s.positions(&x),
+        None => x,
+    };
+    let (x, steps) = minimize(x0, |x, g| energy(&model, x, g), &project, &symmetrize, 1000);
     let largest_move = x.iter().zip(&start).map(|(a, b)| a.distance(*b)).fold(0.0, f64::max);
     Cleaned { positions: x.iter().map(|v| v.as_vec3()).collect(), largest_move, steps }
 }
