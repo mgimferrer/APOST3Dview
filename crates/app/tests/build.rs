@@ -270,3 +270,51 @@ fn closed_build_leaves_the_app_as_before() {
     click(&mut harness, "Build");
     assert!(harness.query_by_label_contains("Building:").is_none());
 }
+
+#[test]
+fn clean_tidies_the_copy_and_keeps_its_symmetry() {
+    let mut harness = app_with(vec![ethane()]);
+    open_build(&mut harness);
+    let ([c1, c2], _) = ethane_atoms(&harness);
+    harness.state_mut().select_atoms(&[c1, c2]);
+    harness.run_steps(2);
+    harness.state_mut().build_set_value(2.0);
+    harness.state_mut().select_atoms(&[]);
+    harness.run_steps(3);
+    harness.query_by_label_contains("Keep the symmetry (D3d)").expect("the group kept is named");
+    // C cleans (only with no field focused).
+    harness.key_press(egui::Key::C);
+    harness.run_steps(3);
+    let p = harness.state().atom_positions();
+    assert!((distance(&p, c1, c2) - 1.52).abs() < 0.01, "C-C {}", distance(&p, c1, c2));
+    assert!(toasts(&harness).iter().any(|t| t.starts_with("Cleaned, D3d kept")), "{:?}", toasts(&harness));
+    assert!(harness.query_all_by_label("D3d").next().is_some(), "still D3d");
+    harness.query_by_label_contains("2 edits").expect("one step for Clean");
+    click(&mut harness, "Undo");
+    assert!((distance(&harness.state().atom_positions(), c1, c2) - 2.0).abs() < 1e-4);
+}
+
+#[test]
+fn rebuild_makes_a_sensible_structure_from_the_bonds() {
+    // Ethane flattened onto a plane, as a hurried drawing.
+    let dir = scratch_dir("build-rebuild");
+    let path = dir.join("flat-ethane.xyz");
+    std::fs::write(
+        &path,
+        "8\nflat ethane\nC 0.0 0.0 0.0\nC 1.54 0.0 0.0\nH -0.5 0.95 0.0\nH -0.5 -0.95 0.0\nH -1.05 0.1 0.0\nH 2.04 0.95 0.0\nH 2.04 -0.95 0.0\nH 2.59 -0.1 0.0\n",
+    )
+    .unwrap();
+    let mut harness = app_with(vec![path]);
+    open_build(&mut harness);
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::C);
+    harness.run_steps(3);
+    assert!(toasts(&harness).iter().any(|t| t.starts_with("Rebuilt from the bonds")), "{:?}", toasts(&harness));
+    let p = harness.state().atom_positions();
+    assert!((distance(&p, 0, 1) - 1.52).abs() < 0.02, "C-C {}", distance(&p, 0, 1));
+    // Three-dimensional now: the hydrogens out of any one plane.
+    let z: Vec<f32> = p.iter().map(|v| v[2]).collect();
+    let spread = z.iter().cloned().fold(f32::MIN, f32::max) - z.iter().cloned().fold(f32::MAX, f32::min);
+    assert!(spread > 1.0, "still flat: {spread}");
+    click(&mut harness, "Undo");
+    assert!(harness.state().atom_positions().iter().all(|v| v[2] == 0.0));
+}

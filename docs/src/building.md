@@ -63,6 +63,19 @@ While it is on:
 
 Each drag is one edit: the first one makes the copy, and **Undo** takes a whole drag back. While you drag, the status bar says how far the atoms moved or how much they turned, and measurement labels follow the atoms, so you can drag a distance close to what you want by eye and then **Set** it exactly. Over an atom, the pointer becomes a hand.
 
+## Clean and Rebuild
+
+**Clean (C)** tidies the geometry from where it is: bond lengths typical for the two elements and the kind of bond (single, aromatic, double or triple, read from how long the bond is now), angles from the atom's electron domains (VSEPR: 180° for two, 120° for three, 109.5° for four, a little less with lone pairs, so water is bent and ammonia pyramidal), flat aromatic and sp2 centres, staggered single bonds, and no atoms on top of each other. It takes milliseconds, and it is a starting geometry for a calculation, not an optimization: the lengths and angles are typical values, not this molecule's.
+
+- **Keep the symmetry** (on): the point group the structure has to within 0.01 Å stays exact.
+- **Hold the selected atoms**: they don't move, and the rest adapts around them.
+- **Metals:** **Keep as they are** (the default) leaves bond lengths and angles at metals alone, since simple rules describe them poorly. **Ideal** takes metal-ligand lengths from covalent radii and snaps the angles at a metal to the nearest ideal polyhedron (octahedral, tetrahedral, square planar, trigonal bipyramidal), for badly drawn complexes.
+- Under **Advanced**, **Prefer staggered single bonds** can be switched off, to keep a conformation you set on purpose.
+
+**Rebuild (Shift+C)** is for drawings too poor for Clean: everything flat, atoms on top of each other, a ring folded through itself. It builds the structure again from its bonds alone (which atoms are bonded to which) and the handedness of any stereocentre the drawing shows, then cleans it. The coordinates themselves hardly matter, so the bonds must be right: look at them before rebuilding, and fix a missing or extra one with **Create bond** or by hiding it (Molecule window). The result is one sensible conformation, not necessarily the one you meant, and it is placed where the drawing was.
+
+Both are one edit each, so **Undo** takes them back.
+
 ## Symmetry
 
 The Molecule window shows every structure's point group on the **Point group:** line, also without the Build window. It is the group a quantum chemistry program would find: atoms where the symmetry puts them to within 0.0001 Å, about as tight as Gaussian, ORCA (10⁻⁴ bohr) and Q-Chem (10⁻⁵). A geometry optimized without symmetry is rarely that exact, so when the structure is close to a higher group the line names it too, with how far the atoms are from it: "C1 (C3v within 0.0005 Å)".

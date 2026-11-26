@@ -338,6 +338,10 @@ fn editing_a_molecule() {
     guide.state_mut().select_atoms(&[c1, c2]);
     guide.run_steps(3);
     sees_text(&guide, "Turn about");
+    for label in ["Clean (C)", "Rebuild (Shift+C)", "Hold the selected atoms", "Metals:", "Keep as they are", "Ideal", "Advanced"] {
+        sees(&guide, label);
+    }
+    sees_text(&guide, "Keep the symmetry");
     frame(&mut guide, 0.4, 0.25, 1.9);
     guide.state_mut().pan_view(1.2, 0.0);
     settle(&mut guide);

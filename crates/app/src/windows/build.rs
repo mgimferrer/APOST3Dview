@@ -40,6 +40,8 @@ impl App {
             ui.separator();
             self.show_build_edits(ui, active);
             ui.separator();
+            self.show_clean(ui, active);
+            ui.separator();
             self.show_symmetry(ui, active);
         });
         self.record_column_window(ctx, ToolWindow::Build, response.map(|r| r.response));
@@ -111,6 +113,50 @@ impl App {
                     .on_hover_text("Everything bonded to the atom grabbed, such as a whole ligand. Hide a bond to cut a piece off.");
             });
         }
+    }
+
+    /// Clean and how it works.
+    fn show_clean(&mut self, ui: &mut egui::Ui, active: usize) {
+        ui.horizontal(|ui| {
+            if ui
+                .button("Clean (C)")
+                .on_hover_text("Tidies the geometry from where it is: typical bond lengths, angles from the electron domains (VSEPR), flat rings, no overlapping atoms. A starting geometry, not an optimization.")
+                .clicked()
+            {
+                self.clean_structure();
+            }
+            if ui
+                .button("Rebuild (Shift+C)")
+                .on_hover_text("For a badly drawn structure: built again from its bonds alone (which atoms are bonded, and the handedness the drawing shows), then cleaned. The bonds must be right: check them first.")
+                .clicked()
+            {
+                self.rebuild_structure();
+            }
+        });
+        let group = self.symmetry(active).map(|a| {
+            let exact = a.group_within(apost3dview_build::PROGRAM_TOLERANCE);
+            a.highest_above(exact, crate::symmetry::ORIENTATION_TOLERANCE).unwrap_or(exact).label.clone()
+        });
+        let keep = match &group {
+            Some(label) if label != "C1" => format!("Keep the symmetry ({label})"),
+            _ => "Keep the symmetry".to_string(),
+        };
+        ui.checkbox(&mut self.build.clean.keep_symmetry, keep).on_hover_text("The point group the structure has (within 0.01 \u{c5}) stays exact");
+        let any_selected = !self.structures[active].selected_atoms.is_empty();
+        ui.add_enabled(any_selected, egui::Checkbox::new(&mut self.build.clean.hold_selected, "Hold the selected atoms"))
+            .on_hover_text("They don't move; the rest adapts around them")
+            .on_disabled_hover_text("Select atoms to hold them in place");
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("Metals:").weak());
+            ui.radio_value(&mut self.build.clean.ideal_metals, false, "Keep as they are")
+                .on_hover_text("Bond lengths and angles at metals kept (simple rules don't describe them well)");
+            ui.radio_value(&mut self.build.clean.ideal_metals, true, "Ideal")
+                .on_hover_text("Bond lengths from covalent radii, angles snapped to the nearest ideal polyhedron (for badly drawn complexes)");
+        });
+        egui::CollapsingHeader::new("Advanced").id_salt("clean_advanced").show(ui, |ui| {
+            ui.checkbox(&mut self.build.clean.staggered, "Prefer staggered single bonds")
+                .on_hover_text("A weak pull toward staggered conformations (methyl groups, chains); off to keep a conformation set on purpose");
+        });
     }
 
     /// The point group, the groups the structure is close to (each with

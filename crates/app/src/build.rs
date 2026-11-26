@@ -49,6 +49,27 @@ pub(crate) struct BuildArea {
     /// elements are drawn in the view.
     pub(crate) symmetry_choice: Option<(u64, usize)>,
     pub(crate) symmetry_hover: Option<usize>,
+    /// How Clean works.
+    pub(crate) clean: CleanSettings,
+}
+
+/// The Clean part of the Build window.
+pub(crate) struct CleanSettings {
+    /// Keep the structure's symmetry (the highest group within 0.01 Å).
+    pub(crate) keep_symmetry: bool,
+    /// The selected atoms don't move.
+    pub(crate) hold_selected: bool,
+    /// Metals: bond lengths from covalent radii and ideal polyhedron angles
+    /// (otherwise kept as they are).
+    pub(crate) ideal_metals: bool,
+    /// Single bonds turned toward staggered.
+    pub(crate) staggered: bool,
+}
+
+impl Default for CleanSettings {
+    fn default() -> Self {
+        Self { keep_symmetry: true, hold_selected: false, ideal_metals: false, staggered: true }
+    }
 }
 
 /// What a drag on an atom moves.
@@ -391,9 +412,66 @@ impl App {
         if ctx.input(|i| i.key_pressed(egui::Key::D) && i.modifiers.is_none()) {
             self.build.drag_atoms = !self.build.drag_atoms;
         }
+        if ctx.input(|i| i.key_pressed(egui::Key::C) && i.modifiers.is_none()) {
+            self.clean_structure();
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::C) && i.modifiers.shift_only()) {
+            self.rebuild_structure();
+        }
         let delete = ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace));
         if delete && self.active_structure.is_some_and(|i| !self.structures[i].selected_atoms.is_empty()) {
             self.delete_selected_atoms();
+        }
+    }
+
+    /// Clean: the active structure tidied (one edit). See
+    /// `apost3dview_build::clean`.
+    pub(crate) fn clean_structure(&mut self) {
+        let Some(active) = self.active_structure else { return };
+        let settings = &self.build.clean;
+        let symmetry = if settings.keep_symmetry {
+            self.symmetry(active).and_then(|analysis| {
+                let exact = analysis.group_within(apost3dview_build::PROGRAM_TOLERANCE);
+                let group = analysis.highest_above(exact, crate::symmetry::ORIENTATION_TOLERANCE).unwrap_or(exact);
+                (!group.operations.is_empty() && group.order > 1).then(|| (group.label.clone(), apost3dview_build::KeptSymmetry {
+                    center: analysis.center,
+                    operations: group.operations.clone(),
+                    permutations: group.permutations.clone(),
+                }))
+            })
+        } else {
+            None
+        };
+        let held = if settings.hold_selected { self.structures[active].selected_atoms.clone() } else { Vec::new() };
+        let options = apost3dview_build::CleanOptions { held, ideal_metals: settings.ideal_metals, twist: settings.staggered, symmetry: symmetry.as_ref().map(|(_, s)| s.clone()) };
+        let mut moved = 0.0;
+        let done = self.edit(|s| {
+            let hidden = s.drawn_hidden_bonds();
+            let bonds: Vec<(usize, usize)> = s.molecule.bonds.iter().enumerate().filter(|(k, _)| !hidden.contains(k)).map(|(_, b)| (b.atom_a, b.atom_b)).collect();
+            let result = apost3dview_build::clean(&s.molecule.atomic_numbers, &s.molecule.positions, &bonds, &options);
+            moved = result.largest_move;
+            Ok(Edited::Positions(result.positions))
+        });
+        if done {
+            let kept = symmetry.map(|(label, _)| format!(", {label} kept")).unwrap_or_default();
+            let moved = self.length_text(moved);
+            self.show_status(format!("Cleaned{kept}: atoms moved up to {moved}"));
+        }
+    }
+
+    /// Rebuild: a sensible structure from the bonds alone, for drawings too
+    /// poor for Clean (one edit). See `apost3dview_build::rebuild`.
+    pub(crate) fn rebuild_structure(&mut self) {
+        let done = self.edit(|s| {
+            let hidden = s.drawn_hidden_bonds();
+            let bonds: Vec<(usize, usize)> = s.molecule.bonds.iter().enumerate().filter(|(k, _)| !hidden.contains(k)).map(|(_, b)| (b.atom_a, b.atom_b)).collect();
+            if bonds.is_empty() {
+                return Err("There are no bonds to rebuild from: create them first (or open the structure again).".into());
+            }
+            Ok(Edited::Positions(apost3dview_build::rebuild(&s.molecule.atomic_numbers, &s.molecule.positions, &bonds, 16)))
+        });
+        if done {
+            self.show_status("Rebuilt from the bonds: check them, and the result, before a calculation");
         }
     }
 

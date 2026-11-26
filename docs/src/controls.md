@@ -28,6 +28,8 @@ Only while the [Build window](building.md) is open. Closing it gives every key a
 | Redo | <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>), or **Redo** |
 | Delete the selected atoms | <kbd>Delete</kbd> (or <kbd>Backspace</kbd>), or **Delete selected atoms** |
 | Set a distance, angle or dihedral | Select 2, 3 or 4 atoms, type the value, <kbd>Enter</kbd> or **Set** |
+| Clean the geometry | <kbd>C</kbd>, or **Clean (C)** |
+| Rebuild a badly drawn structure from its bonds | <kbd>Shift</kbd>+<kbd>C</kbd>, or **Rebuild (Shift+C)** |
 | Switch dragging atoms on or off | <kbd>D</kbd>, or **Drag atoms (D)** (off whenever the Build window opens) |
 
 With **Drag atoms (D)** on:
