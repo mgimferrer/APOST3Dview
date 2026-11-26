@@ -39,6 +39,8 @@ impl App {
             self.show_drag_switch(ui);
             ui.separator();
             self.show_build_edits(ui, active);
+            ui.separator();
+            self.show_symmetry(ui, active);
         });
         self.record_column_window(ctx, ToolWindow::Build, response.map(|r| r.response));
         self.set_window_open(ToolWindow::Build, open);
@@ -108,6 +110,65 @@ impl App {
                 ui.radio_value(&mut self.build.drag_moves, crate::build::DragMoves::Piece, "Its piece")
                     .on_hover_text("Everything bonded to the atom grabbed, such as a whole ligand. Hide a bond to cut a piece off.");
             });
+        }
+    }
+
+    /// The point group, the groups the structure is close to (each with
+    /// its largest atom move), and Symmetrize. The group under the pointer,
+    /// or the one chosen, has its elements drawn in the view.
+    fn show_symmetry(&mut self, ui: &mut egui::Ui, active: usize) {
+        self.build.symmetry_hover = None;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Symmetry").strong());
+            ui.label(RichText::new(format!("point group {}", self.point_group_text(active))).weak());
+        });
+        let Some(analysis) = self.symmetry(active) else { return };
+        let key = crate::symmetry::geometry_key(&self.structures[active].molecule);
+        let chosen = self.build.symmetry_choice.filter(|(k, _)| *k == key).map(|(_, i)| i);
+        let current = analysis.group_within(apost3dview_build::PROGRAM_TOLERANCE).label.clone();
+        ui.label(RichText::new("Groups it is close to, with how far atoms would move. Point at one to see its elements, click to choose it.").small().weak());
+        let mut choose = None;
+        egui::Grid::new("symmetry_candidates").num_columns(2).spacing([10.0, 2.0]).show(ui, |ui| {
+            for (index, candidate) in analysis.candidates.iter().enumerate().take(14) {
+                let response = ui.selectable_label(chosen == Some(index), &candidate.label).on_hover_text(candidate.describe());
+                if response.hovered() {
+                    self.build.symmetry_hover = Some(index);
+                }
+                if response.clicked() {
+                    choose = Some(index);
+                }
+                let note = if candidate.displacement <= apost3dview_build::PROGRAM_TOLERANCE {
+                    if candidate.label == current { "as it is".to_string() } else { "as it is (a lower group)".to_string() }
+                } else {
+                    format!("atoms move up to {}", self.length_text(candidate.displacement))
+                };
+                ui.label(RichText::new(note).small());
+                ui.end_row();
+            }
+        });
+        if let Some(index) = choose {
+            self.build.symmetry_choice = if chosen == Some(index) { None } else { Some((key, index)) };
+        }
+        let chosen = self.build.symmetry_choice.filter(|(k, _)| *k == key).map(|(_, i)| i);
+        if ui
+            .button("Standard orientation")
+            .on_hover_text("Moves the coordinates: the center of nuclear charge at the origin, the main axis of the structure's symmetry (within 0.01 \u{c5}) along z, as Gaussian does. The view turns with the molecule, so the picture stays.")
+            .clicked()
+        {
+            self.standard_orientation();
+        }
+        if let Some(candidate) = chosen.and_then(|i| analysis.candidates.get(i)) {
+            let moves = candidate.displacement > apost3dview_build::PROGRAM_TOLERANCE;
+            if ui
+                .add_enabled(moves, egui::Button::new(format!("Symmetrize to {}", candidate.label)))
+                .on_hover_text("Moves the atoms so this group is exact (to about 1e-6 \u{c5}), keeping the center and the orientation")
+                .on_disabled_hover_text("The structure already has this group.")
+                .clicked()
+            {
+                let candidate = candidate.clone();
+                self.symmetrize_to(&candidate);
+                self.build.symmetry_choice = None;
+            }
         }
     }
 

@@ -105,6 +105,8 @@ pub(crate) struct LoadedStructure {
     /// Aligned onto another structure on selected atoms: where its
     /// coordinates sit in the shared frame (`alignment.rs`).
     pub(crate) placement: Option<crate::alignment::Placement>,
+    /// Its point group (`symmetry.rs`).
+    pub(crate) symmetry: crate::symmetry::SymmetryState,
 
     /// Surfaces area: the wavefunction, densities and the surfaces drawn.
     pub(crate) surfaces: StructureSurfaces,
@@ -183,6 +185,7 @@ impl LoadedStructure {
             measurements: Vec::new(),
             view: None,
             placement: None,
+            symmetry: Default::default(),
             surfaces: StructureSurfaces::default(),
             apost: StructureApost::default(),
             frames: None,

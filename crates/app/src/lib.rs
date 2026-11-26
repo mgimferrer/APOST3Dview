@@ -30,6 +30,7 @@ mod results_display;
 mod results_view;
 mod session;
 mod state;
+mod symmetry;
 mod util;
 mod viewport;
 mod windows;

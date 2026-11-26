@@ -90,6 +90,7 @@ impl App {
         self.update_results_display(ctx);
         self.update_figure_preview(ctx);
         self.handle_build_keys(ctx);
+        self.update_symmetry();
         // Dragging atoms exists only in Build mode: closing Build turns the
         // switch off, so it starts off whenever Build opens again.
         if !self.building() {

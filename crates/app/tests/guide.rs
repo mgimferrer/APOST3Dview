@@ -350,6 +350,29 @@ fn editing_a_molecule() {
     sees_text(&guide, "Cmd/Ctrl+drag to turn");
 }
 
+/// "Editing a molecule", Symmetry: CH3F from its calculation (the
+/// CH3F-GEOS example) is C3v only to 0.0005 Å, so a program would see a
+/// lower group; choosing C3v in the Build window draws its axis and planes,
+/// and Symmetrize makes it exact.
+#[test]
+fn symmetry_of_a_molecule() {
+    let mut guide = open(vec![example("CH3F-GEOS").join("CH3F-GEOS.fchk")]);
+    sees(&guide, "Point group:");
+    sees_text(&guide, "C1 (C3v within 0.000");
+    click(&mut guide, "Build");
+    sees(&guide, "Symmetry");
+    sees_text(&guide, "Groups it is close to");
+    click(&mut guide, "C3v");
+    sees(&guide, "Symmetrize to C3v");
+    frame(&mut guide, 0.5, 0.35, 1.6);
+    guide.state_mut().pan_view(1.4, 0.0);
+    settle(&mut guide);
+    snap_window(&mut guide, "build-symmetry", 1400);
+    click(&mut guide, "Symmetrize to C3v");
+    sees_text(&guide, "Symmetrized to C3v");
+    assert!(guide.query_all_by_label_contains("(C3v within").next().is_none(), "now exactly C3v");
+}
+
 /// "Looking at a molecule", Styles: an Fe d EFO of ferrocene (the
 /// FeCp2-EOS-OSLO example) in the four styles, side by side, in the view of
 /// the paper's figure (Cp-Fe-Cp vertical, seen from a little above).

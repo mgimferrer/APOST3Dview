@@ -30,4 +30,6 @@ Densities were checked against the density matrices Gaussian writes itself, eval
 
 On the APOST-3D side, APOST-3Dview is tested on every change against APOST-3D's own reference results: every file loads, every value it lists can be read, and the input APOST-3Dview writes is read back as APOST-3D reads it. The atomic weights APOST-3Dview rebuilds from a results file agree with APOST-3D's own at 105 points per system to 10⁻¹⁵ (TFVC and Becke-rho atoms), and the EFOs it draws from them and APOST-3D's unweighted orbital file agree with APOST-3D's own cube files of the same EFOs at every point of 16 cubes, to the 5 digits the cube files are written with.
 
+Point groups (Molecule window, Build window's Symmetry) were compared with pymatgen's on 29 structures at two tolerances, 0.01 and 0.1 Å: 18 molecules built with their ideal symmetry (from C1 to Ih, linear ones included) and 11 geometries from real calculations (the examples and the Gaussian validation files). All agree. Every ideal molecule is also shaken by up to 0.02 Å in the tests, and symmetrizing it gives its group back exactly.
+
 These files open like any other, and are a quick way to try orbitals and densities.

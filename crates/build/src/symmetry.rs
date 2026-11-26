@@ -67,6 +67,17 @@ impl Candidate {
         &self.symmetric
     }
 
+    /// The main axis: of the highest order (infinite for linear
+    /// molecules), and of those the one lying in the most mirror planes (so
+    /// D2d's S4 axis, not a perpendicular C2). `None` without an axis.
+    pub fn main_axis(&self) -> Option<DVec3> {
+        let axes: Vec<(DVec3, u32)> = self.elements.iter().filter_map(|e| if let Element::Axis { direction, order } = e { Some((*direction, *order)) } else { None }).collect();
+        let key = |o: u32| if o == 0 { u32::MAX } else { o };
+        let top = axes.iter().map(|(_, o)| key(*o)).max()?;
+        let in_planes = |a: DVec3| self.elements.iter().filter(|e| matches!(e, Element::Plane { normal } if normal.dot(a).abs() < 1e-3)).count();
+        axes.iter().filter(|(_, o)| key(*o) == top).map(|(a, _)| *a).max_by_key(|a| in_planes(*a))
+    }
+
     /// A short description of its main elements, to tell apart candidates
     /// of the same group: "C2 along (0.00, 0.00, 1.00)".
     pub fn describe(&self) -> String {
@@ -105,9 +116,14 @@ impl Analysis {
         self.candidates.iter().filter(|c| c.displacement <= tolerance).max_by(|a, b| rank(a).cmp(&rank(b))).unwrap_or(&self.candidates[self.candidates.len() - 1])
     }
 
-    /// The closest group higher than `current`, if any.
-    pub fn next_above(&self, current: &Candidate) -> Option<&Candidate> {
-        self.candidates.iter().filter(|c| rank(c) > rank(current)).min_by(|a, b| a.displacement.total_cmp(&b.displacement))
+    /// The highest group above `current` within `tolerance` (largest
+    /// move, angstrom), if any: the symmetry the structure is really close
+    /// to (a distorted ammonia: C3v, rather than one of its mirror planes).
+    pub fn highest_above(&self, current: &Candidate, tolerance: f64) -> Option<&Candidate> {
+        self.candidates
+            .iter()
+            .filter(|c| rank(c) > rank(current) && c.displacement <= tolerance)
+            .max_by(|a, b| rank(a).cmp(&rank(b)).then(b.displacement.total_cmp(&a.displacement)))
     }
 }
 
@@ -135,6 +151,54 @@ pub fn analyze(atomic_numbers: &[u32], positions: &[Vec3]) -> Analysis {
     prune(&mut candidates);
     candidates.sort_by(|a, b| rank(b).cmp(&rank(a)).then(a.displacement.total_cmp(&b.displacement)));
     Analysis { center, candidates }
+}
+
+// ---------------------------------------------------------------- orientation
+
+/// The positions in a standard orientation for `group` (one of the
+/// analysis's candidates, usually the structure's own group): the center of
+/// nuclear charge at the origin (as Gaussian), the main rotation axis along
+/// z (for Cs, the plane's normal; without either, the principal axis whose
+/// moment stands apart from the other two), and x along a C2 axis perpendicular to it, or in a
+/// mirror plane containing it, or along a principal axis.
+pub fn standard_orientation(atomic_numbers: &[u32], positions: &[Vec3], group: &Candidate) -> Vec<Vec3> {
+    let (rotation, center) = standard_frame(atomic_numbers, positions, group);
+    positions.iter().map(|v| (rotation * (v.as_dvec3() - center)).as_vec3()).collect()
+}
+
+/// The motion `standard_orientation` applies: new = rotation (old - center).
+pub fn standard_frame(atomic_numbers: &[u32], positions: &[Vec3], group: &Candidate) -> (DMat3, DVec3) {
+    let p: Vec<DVec3> = positions.iter().map(|v| v.as_dvec3()).collect();
+    let charge: f64 = atomic_numbers.iter().map(|&z| f64::from(z)).sum::<f64>().max(1e-9);
+    let center = p.iter().zip(atomic_numbers).map(|(v, &z)| *v * f64::from(z)).sum::<DVec3>() / charge;
+    let q: Vec<DVec3> = p.iter().map(|v| *v - center).collect();
+    let principal = principal_axes(&q);
+    let moment = |a: DVec3| q.iter().map(|v| (*v - a * v.dot(a)).length_squared()).sum::<f64>();
+    let axes: Vec<(DVec3, u32)> = group.elements.iter().filter_map(|e| if let Element::Axis { direction, order } = e { Some((*direction, *order)) } else { None }).collect();
+    let planes: Vec<DVec3> = group.elements.iter().filter_map(|e| if let Element::Plane { normal } = e { Some(*normal) } else { None }).collect();
+    let main = group
+        .main_axis()
+        .or_else(|| planes.first().copied())
+        .unwrap_or_else(|| {
+            // The principal axis whose moment stands apart from the other
+            // two (a symmetric top's unique axis).
+            let m: Vec<f64> = principal.iter().map(|a| moment(*a)).collect();
+            let apart = |i: usize| (0..3).filter(|&j| j != i).map(|j| (m[i] - m[j]).abs()).fold(f64::MAX, f64::min);
+            principal[(0..3).max_by(|&a, &b| apart(a).total_cmp(&apart(b))).unwrap()]
+        });
+    let z = main.normalize();
+    // The part of `v` across z, if it has one (not just rounding noise).
+    let perpendicular = |v: DVec3| Some(v - z * v.dot(z)).filter(|w| w.length() > 1e-6).map(DVec3::normalize);
+    let x = axes
+        .iter()
+        .filter(|(a, o)| *o == 2 && a.dot(z).abs() < 1e-3)
+        .find_map(|(a, _)| perpendicular(*a))
+        .or_else(|| planes.iter().filter(|n| n.dot(z).abs() < 1e-3).find_map(|n| perpendicular(n.cross(z))))
+        .or_else(|| principal.iter().filter_map(|a| perpendicular(*a)).max_by(|a, b| moment(*a).total_cmp(&moment(*b))))
+        .unwrap_or_else(|| any_perpendicular(z));
+    let y = z.cross(x);
+    // Rows x, y, z: a point's new coordinates are its components along them.
+    (DMat3::from_cols(x, y, z).transpose(), center)
 }
 
 // ---------------------------------------------------------------- linear

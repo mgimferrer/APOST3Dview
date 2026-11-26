@@ -17,4 +17,4 @@ pub use internal::{
     angle_degrees, center, dihedral_degrees, distance, rotate_about_bond, set_angle, set_dihedral, set_distance, transform_atoms, translate, EditError, Moves,
 };
 pub use sides::{moving_atoms, Graph, Which};
-pub use symmetry::{analyze, Analysis, Candidate, Element, FIND_TOLERANCE, PROGRAM_TOLERANCE};
+pub use symmetry::{analyze, standard_frame, standard_orientation, Analysis, Candidate, Element, FIND_TOLERANCE, PROGRAM_TOLERANCE};

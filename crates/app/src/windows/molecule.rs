@@ -22,6 +22,12 @@ impl App {
 
                 ui.add_space(6.0);
                 self.show_links_to_other_windows(ui, active);
+                ui.horizontal(|ui| {
+                    ui.label("Point group:");
+                    ui.label(egui::RichText::new(self.point_group_text(active)).strong()).on_hover_text(
+                        "As Gaussian, ORCA or Q-Chem would see it: atoms where the symmetry puts them within 0.0001 \u{c5}. In brackets, a higher group the structure is close to and how far atoms are from it. Build > Symmetry makes a group exact.",
+                    );
+                });
 
                 if self.structures[active].frames.is_some() {
                     ui.add_space(6.0);

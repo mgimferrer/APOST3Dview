@@ -63,6 +63,19 @@ While it is on:
 
 Each drag is one edit: the first one makes the copy, and **Undo** takes a whole drag back. While you drag, the status bar says how far the atoms moved or how much they turned, and measurement labels follow the atoms, so you can drag a distance close to what you want by eye and then **Set** it exactly. Over an atom, the pointer becomes a hand.
 
+## Symmetry
+
+The Molecule window shows every structure's point group on the **Point group:** line, also without the Build window. It is the group a quantum chemistry program would find: atoms where the symmetry puts them to within 0.0001 Å, about as tight as Gaussian, ORCA (10⁻⁴ bohr) and Q-Chem (10⁻⁵). A geometry optimized without symmetry is rarely that exact, so when the structure is close to a higher group the line names it too, with how far the atoms are from it: "C1 (C3v within 0.0005 Å)".
+
+![CH3F from its calculation, C3v to 0.0005 Å: the C3 axis and the three mirror planes drawn while C3v is chosen](images/build-symmetry.png)
+
+The **Symmetry** part of the Build window lists the groups the structure is close to, each with the largest move an atom would make to have it exactly. Point at one, or click it to choose it, and its symmetry elements are drawn in the view: rotation axes as lines through the center (labeled C2, C3, ...), mirror planes as faint discs, the inversion center as a dot. A group can appear more than once when it can be reached in different ways (two different mirror planes, for example), each with its own move, and the drawing tells them apart.
+
+- **Symmetrize to** (the group chosen) moves the atoms so the group is exact, to about 10⁻⁶ Å, so a program finds it. The center and the orientation stay as they are. Like every edit it goes to the copy and can be undone, and the status bar says how far the atoms moved.
+- **Standard orientation** turns and moves the coordinates as Gaussian orients a molecule: the center of nuclear charge at the origin and the main axis of the structure's symmetry (the highest group within 0.01 Å) along z, with x along a perpendicular C2 axis or in a mirror plane. The view turns with the molecule, so the picture doesn't change. It is never done on its own: only this button moves the coordinates that way.
+
+The point groups are checked against pymatgen on 29 structures, from water to C60 and from ideal geometries to real calculations ([File formats and what is validated](formats.md)).
+
 ## Undo and saving
 
 **Undo** and **Redo** go back and forth through the copy's edits, up to 200 of them, while the program runs.

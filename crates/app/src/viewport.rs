@@ -317,6 +317,15 @@ impl App {
         self.paint_legend(ui.painter(), rect);
         self.paint_panel_frame(ui, rect);
         self.paint_build_frame(ui, rect);
+        if self.building()
+            && let Some(analysis) = self.active_structure.and_then(|i| self.symmetry(i))
+        {
+            let key = crate::symmetry::geometry_key(&self.structures[self.active_structure.unwrap()].molecule);
+            let shown = self.build.symmetry_hover.or(self.build.symmetry_choice.filter(|(k, _)| *k == key).map(|(_, i)| i));
+            if let Some(candidate) = shown.and_then(|i| analysis.candidates.get(i)) {
+                self.paint_symmetry_elements(ui.painter(), rect, analysis.center, candidate);
+            }
+        }
         if let Some(drawn) = selection_box {
             let accent = ui.visuals().selection.bg_fill;
             ui.painter().rect(drawn, 0.0, accent.gamma_multiply(0.15), egui::Stroke::new(1.0, accent), egui::StrokeKind::Inside);

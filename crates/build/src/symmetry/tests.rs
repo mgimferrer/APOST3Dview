@@ -219,6 +219,34 @@ fn shaken_molecules_are_c1_and_symmetrize_back() {
 }
 
 #[test]
+fn standard_orientation_puts_the_main_axis_along_z() {
+    for (name, m, group) in known() {
+        // Turned and moved away first.
+        let turn = glam::DQuat::from_euler(glam::EulerRot::XYZ, 0.7, -1.1, 0.4);
+        let moved: Mol = m.iter().map(|(z, p)| (*z, (turn * DVec3::from_array(*p) + DVec3::new(3.0, -2.0, 5.0)).to_array())).collect();
+        let (z, p) = split(&moved);
+        let analysis = analyze(&z, &p);
+        let found = analysis.group_within(PROGRAM_TOLERANCE);
+        let oriented = standard_orientation(&z, &p, found);
+        let (rotation, _) = standard_frame(&z, &p, found);
+        assert!((rotation.determinant() - 1.0).abs() < 1e-9, "{name}: not a rotation");
+        // The same shape, the same group, the center of charge at the origin.
+        let again = analyze(&z, &oriented);
+        assert_eq!(again.group_within(PROGRAM_TOLERANCE).label, group, "{name}");
+        let charge: f64 = z.iter().map(|&k| f64::from(k)).sum();
+        let center = oriented.iter().zip(&z).map(|(v, &k)| v.as_dvec3() * f64::from(k)).sum::<DVec3>() / charge;
+        assert!(center.length() < 1e-4, "{name}: center {center:?}");
+        // The main axis (or the plane's normal) is z.
+        // (Cubic and icosahedral groups and D2h have several equal axes.)
+        if let Some(axis) = again.group_within(PROGRAM_TOLERANCE).main_axis()
+            && !matches!(group, "Td" | "Oh" | "Ih" | "D2h" | "D2")
+        {
+            assert!(axis.z.abs() > 0.999, "{name}: main axis {axis:?}");
+        }
+    }
+}
+
+#[test]
 fn several_candidates_of_one_group_are_told_apart() {
     // Water pulled a little off C2v: two different mirror planes give Cs.
     let mut m = water();
@@ -263,5 +291,6 @@ fn write_known_molecules() {
         std::fs::write(dir.join(format!("{}.xyz", name.replace(' ', "-"))), text).unwrap();
     }
 }
+
 
 

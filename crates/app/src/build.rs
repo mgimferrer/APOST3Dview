@@ -44,6 +44,11 @@ pub(crate) struct BuildArea {
     pub(crate) drag_moves: DragMoves,
     /// The drag under way, if any.
     pub(crate) drag: Option<AtomDrag>,
+    /// The group chosen in the Symmetry list (index into the candidates
+    /// of the geometry with this key), and the one under the pointer: their
+    /// elements are drawn in the view.
+    pub(crate) symmetry_choice: Option<(u64, usize)>,
+    pub(crate) symmetry_hover: Option<usize>,
 }
 
 /// What a drag on an atom moves.
