@@ -190,12 +190,20 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      # The three packages by name (not the guide, not the check pictures).
       - uses: actions/download-artifact@v8
         with:
+          name: windows
           path: dist
-          # The three packages (windows, macos, linux), not the guide.
-          pattern: '[wml]*'
-          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux
+          path: dist
+      - run: ls -l dist
       - run: cd dist && sha256sum * > SHA256SUMS.txt
       - name: Draft release
         env:
