@@ -58,4 +58,14 @@ jobs:
       - name: APOST-3D reference results (the commit in scripts/apost3d-commit)
         shell: bash
         run: sh scripts/sync-apost3d-fixtures.sh --pinned
-      - run: cargo test --locked --profile ci -p apost3dview
+      # On Windows one test at a time: WARP's shader compiler (d3d10warp.dll,
+      # dxilconv.dll) can crash when several tests compile shaders at once in
+      # one process (crash dumps of stress runs, 2026-11-26). The program
+      # itself compiles its shaders one after another, and uses WARP only on
+      # a computer without a graphics card.
+      - name: App tests
+        shell: bash
+        run: |
+          threads=""
+          if [ "$RUNNER_OS" = Windows ]; then threads="--test-threads=1"; fi
+          cargo test --locked --profile ci -p apost3dview -- $threads

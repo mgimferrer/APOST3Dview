@@ -155,20 +155,55 @@ jobs:
           name: linux-check-picture
           path: APOST3Dview-*/ferrocene.png
 
+  # The packaged Windows program renders an example session on a machine
+  # without a graphics card (WARP, Direct3D 12): it starts, reads a session,
+  # builds every render pipeline and writes the picture.
+  windows-check-render:
+    needs: windows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows
+      - name: Render an example session
+        shell: pwsh
+        run: |
+          Expand-Archive APOST3Dview-windows.zip -DestinationPath unpacked
+          $dir = Get-ChildItem unpacked -Directory | Select-Object -First 1
+          Set-Location $dir.FullName
+          $render = '--render', 'examples/FeCp2-IQA-ALLPAIRS/ferrocene-iqa-fragments.a3dview', 'ferrocene.png', '--size', '640x400'
+          $p = Start-Process -FilePath .\APOST-3Dview.exe -ArgumentList $render -Wait -PassThru -NoNewWindow -RedirectStandardError render-errors.txt
+          Get-Content render-errors.txt
+          if ($p.ExitCode -ne 0) { throw "APOST-3Dview.exe --render stopped with exit code $($p.ExitCode)" }
+          if (-not (Test-Path ferrocene.png) -or (Get-Item ferrocene.png).Length -eq 0) { throw "no picture written" }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-check-picture
+          path: unpacked/*/ferrocene.png
+
   publish:
-    needs: [version, windows, macos, linux, linux-check-rocky8, linux-check-render]
+    needs: [version, windows, macos, linux, linux-check-rocky8, linux-check-render, windows-check-render]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      # The three packages by name (not the guide, not the check pictures).
       - uses: actions/download-artifact@v8
         with:
+          name: windows
           path: dist
-          # The three packages (windows, macos, linux), not the guide.
-          pattern: '[wml]*'
-          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux
+          path: dist
+      - run: ls -l dist
       - run: cd dist && sha256sum * > SHA256SUMS.txt
       - name: Draft release
         env:

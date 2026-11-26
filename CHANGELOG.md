@@ -5,8 +5,17 @@ What changed in each version of APOST-3Dview, for its users. The newest version 
 ## Unreleased
 
 ### New
-- **Reaction paths**: a multi-frame `.xyz` (IRC, NEB, an optimization) opens as one structure whose frames play in the window. Frames are lined up onto each other (or on chosen atoms, or kept as in the file), bonds grow and fade as they form and break, geometries in between are smooth, and the energy profile from the comment lines can be clicked to jump along the path. Views can be kept at chosen frames, so the molecule turns as the path plays. The GIF export records what plays. Example in `examples/reaction-path/`, guide chapter "Reaction paths and other frames".
 - **Editing a molecule**: a Build window (switched on at the first start, or in About > Features...) sets distances, angles and dihedrals (moving the last atom with its side, alone, or both sides by half), turns a group about a bond, moves, deletes and changes atoms. Edits go to a copy under the original, which never changes, can be undone and redone, and the copy is saved as .xyz or kept in sessions. Clean (C) tidies a geometry in milliseconds (typical bond lengths, VSEPR angles, flat rings, no overlaps, symmetry kept), and Rebuild (Shift+C) builds a badly drawn structure again from its bonds alone. Symmetry: every structure's point group in the Molecule window (as Gaussian, ORCA or Q-Chem would see it, and the higher group it is close to), and in the Build window the groups it is close to with their elements drawn in the view, Symmetrize, and Standard orientation. Atoms can also be dragged with the mouse (Drag atoms, key D: move, turn, toward or away, a whole piece at once). While the window is open the view has a blue frame and the status bar is blue. Guide chapter "Editing a molecule", and every key and gesture in "Mouse and keyboard".
+
+### Fixed
+- Dihedral angles in Measure had the opposite sign to the IUPAC convention (and to Gaussian, ORCA and Chemcraft). Their size was right. Now positive when, looking from the second atom to the third, the first bond turns clockwise to cover the last one.
+
+## 1.0.1 (2026-11-26)
+
+The version described in the paper.
+
+### New
+- **Reaction paths**: a multi-frame `.xyz` (IRC, NEB, an optimization) opens as one structure whose frames play in the window. Frames are lined up onto each other (or on chosen atoms, or kept as in the file), bonds grow and fade as they form and break, geometries in between are smooth, and the energy profile from the comment lines can be clicked to jump along the path. Views can be kept at chosen frames, so the molecule turns as the path plays. The GIF export records what plays. Example in `examples/reaction-path/`, guide chapter "Reaction paths and other frames".
 - **Several surfaces in one panel**: a panel of a figure can hold any set of surfaces of one structure, drawn together in their own colors (a metal d EFO with a ligand EFO, as in bonding papers), with their captions joined by " + ".
 
 ### Changed
@@ -15,13 +24,10 @@ What changed in each version of APOST-3Dview, for its users. The newest version 
 - **Linux**: the download now runs on any 64-bit Linux with glibc 2.17 or later (RHEL, CentOS, Rocky and AlmaLinux 7 and later, Ubuntu 14.04 and later). Version 1.0.0 needed glibc 2.35 (Ubuntu 22.04 or newer) and stopped with "GLIBC_2.xx not found" on older systems.
 
 ### Fixed
-- Dihedral angles in Measure had the opposite sign to the IUPAC convention (and to Gaussian, ORCA and Chemcraft). Their size was right. Now positive when, looking from the second atom to the third, the first bond turns clockwise to cover the last one.
 - Without a graphics driver it can use (Vulkan on Linux), the program now stops with a message saying what is missing and how to install it, instead of crashing. It no longer falls back to OpenGL, which can't draw its pictures yet.
 - Ambient occlusion is recomputed when the geometry changes (it kept the old shading until the view moved).
 
 ## 1.0.0 (2026-11-23)
-
-The version described in the paper.
 
 ### New
 - **Panel figures**: several orbitals (or structures) in one PNG, each panel with a caption written from the APOST-3D tables, optional letters, one legend, sized for a half or a full page at a chosen DPI, with a live preview.
