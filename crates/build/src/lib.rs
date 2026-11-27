@@ -9,7 +9,9 @@
 
 pub mod atoms;
 pub mod clean;
+pub mod place;
 pub mod internal;
+pub mod library;
 pub mod rebuild;
 pub mod sides;
 pub mod symmetry;
@@ -18,6 +20,10 @@ pub use atoms::{change_element, delete_atoms, Deleted};
 pub use clean::{clean, is_metal, CleanOptions, Cleaned, KeptSymmetry};
 pub use internal::{
     angle_degrees, center, dihedral_degrees, distance, rotate_about_bond, set_angle, set_dihedral, set_distance, transform_atoms, translate, EditError, Moves,
+};
+pub use library::{group_from_xyz, group_to_xyz, library, parse_library, write_library, LibraryEntry, Tab};
+pub use place::{
+    add_hydrogens, bond_length, change_element_adjusting, element_fragment, free_direction, group_from_selection, place, usual_valence, Attachment, Fragment, FragmentKind, Placement, Site, View,
 };
 pub use rebuild::rebuild;
 pub use sides::{moving_atoms, Graph, Which};

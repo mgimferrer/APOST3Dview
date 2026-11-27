@@ -87,7 +87,7 @@ pub fn is_metal(z: u32) -> bool {
 }
 
 /// Valence electrons of a main-group element (its group's last digit).
-fn valence_electrons(z: u32) -> u32 {
+pub(crate) fn valence_electrons(z: u32) -> u32 {
     match z {
         1 => 1,
         2 => 2,
@@ -124,7 +124,7 @@ fn multiple_radii(z: u32) -> Option<(f64, f64)> {
 /// The typical lengths of the bond orders the pair can have: (order,
 /// length). Single from Cordero's radii, aromatic by Pauling's rule (single
 /// − 0.71 log10 1.5), double and triple from Pyykkö's radii.
-fn bond_lengths(a: u32, b: u32) -> Vec<(f64, f64)> {
+pub(crate) fn bond_lengths(a: u32, b: u32) -> Vec<(f64, f64)> {
     let (ra, rb) = (f64::from(element_data(a).covalent_radius), f64::from(element_data(b).covalent_radius));
     let single = ra + rb;
     let mut out = vec![(1.0, single)];
@@ -138,7 +138,7 @@ fn bond_lengths(a: u32, b: u32) -> Vec<(f64, f64)> {
 
 /// A bond's order and target length: the order whose typical length is
 /// closest to the current distance (what was drawn stays what it is).
-fn bond_target(a: u32, b: u32, distance: f64) -> (f64, f64) {
+pub(crate) fn bond_target(a: u32, b: u32, distance: f64) -> (f64, f64) {
     bond_lengths(a, b).into_iter().min_by(|x, y| (x.1 - distance).abs().total_cmp(&(y.1 - distance).abs())).unwrap()
 }
 
@@ -193,8 +193,9 @@ pub(crate) fn build_model(z: &[u32], p: &[DVec3], bonds: &[(usize, usize)], opti
         }
     }
     // No atom of the first two rows beyond its valence (C 4, N 3, O 2, a
-    // halogen 1): a multiple bond that would put it there is single (a
-    // crushed drawing makes short single bonds look triple).
+    // halogen 1) plus one formal charge (the O of C≡O, the N of an
+    // isocyanide, nitro or azide): a multiple bond that would put it further
+    // is single (a crushed drawing makes short single bonds look triple).
     let valence = |i: usize| -> Option<f64> {
         let e = valence_electrons(z[i]);
         (z[i] <= 10 && !is_metal(z[i])).then(|| f64::from(e.min(8 - e)).clamp(1.0, 4.0))
@@ -207,7 +208,7 @@ pub(crate) fn build_model(z: &[u32], p: &[DVec3], bonds: &[(usize, usize)], opti
         }
         for pair in pairs.iter_mut() {
             let (a, b, order) = *pair;
-            let over = |i: usize| valence(i).is_some_and(|v| total[i] > v + 0.6);
+            let over = |i: usize| valence(i).is_some_and(|v| total[i] > v + 1.6);
             if order > 1.0 && !aromatic.contains(&(a.min(b), a.max(b))) && (over(a) || over(b)) {
                 pair.2 = 1.0;
             }

@@ -10,3 +10,8 @@ description = "Editing molecular geometries for APOST-3Dview's Build window: no 
 [dependencies]
 apost3dview-core = { version = "1.0.1", path = "../core" }
 glam = "0.33.3"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.9"
+
+[dev-dependencies]
+serde_json = "1.0"

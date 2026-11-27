@@ -220,3 +220,23 @@ fn held_atoms_stay_and_tidy_geometries_barely_move() {
     let tidy = clean(&z, &ideal, &bonds, &CleanOptions::default());
     assert!(tidy.largest_move < 0.05, "moved {}", tidy.largest_move);
 }
+
+#[test]
+fn carbonyls_and_isocyanides_keep_their_triple_bonds() {
+    // The valence cap allows one formal charge: O of C≡O, N of R-N≡C.
+    let mut m = vec![(26, [0.0; 3])];
+    for d in [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]] {
+        let v = DVec3::from_array(d);
+        m.push((6, (v * 1.82).to_array()));
+        m.push((8, (v * 2.97).to_array()));
+    }
+    let (z, p) = split(&m);
+    let bonds = bonds_of(&z, &p);
+    let result = clean(&z, &distorted(&p, 0.05), &bonds, &CleanOptions::default());
+    for c in (1..11).step_by(2) {
+        assert!((distance(&result.positions, c, c + 1) - 1.13).abs() < 0.02, "C-O {}", distance(&result.positions, c, c + 1));
+    }
+    let methyl_isocyanide = vec![(6, [0.0, 0.0, 0.0]), (7, [0.0, 0.0, 1.16]), (6, [0.0, 0.0, 2.58]), (1, [1.03, 0.0, 2.94]), (1, [-0.51, 0.89, 2.94]), (1, [-0.51, -0.89, 2.94])];
+    let (_, p) = cleaned(&methyl_isocyanide, 0.05, &CleanOptions::default());
+    assert!((distance(&p, 0, 1) - 1.14).abs() < 0.02, "C≡N {}", distance(&p, 0, 1));
+}

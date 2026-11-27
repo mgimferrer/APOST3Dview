@@ -1,0 +1,31 @@
+# PubChem compounds whose 3D conformer (public domain) the library uses:
+# key  CID  name
+water 962 water
+ammonia 222 ammonia
+methane 297 methane
+carbon-dioxide 280 carbon dioxide
+benzene 241 benzene
+toluene 1140 toluene
+ethylene 6325 ethylene
+acetylene 6326 acetylene
+formaldehyde 712 formaldehyde
+methanol 887 methanol
+ethanol 702 ethanol
+acetone 180 acetone
+dmso 679 dimethyl sulfoxide
+acetonitrile 6342 acetonitrile
+thf 8028 tetrahydrofuran
+diethyl-ether 3283 diethyl ether
+pyridine 1049 pyridine
+dichloromethane 6344 dichloromethane
+chloroform 6212 chloroform
+hydrogen-sulfide 402 hydrogen sulfide
+triethylphosphine 27365 triethylphosphine
+tricyclohexylphosphine 75806 tricyclohexylphosphine
+tri-tert-butylphosphine 83681 tri-tert-butylphosphine
+trimethyl-phosphite 8472 trimethyl phosphite
+tert-butyl-isocyanide 23577 tert-butyl isocyanide
+xylyl-isocyanide 76009 2,6-dimethylphenyl isocyanide
+dmap 14284 4-dimethylaminopyridine
+imidazole 795 imidazole
+imidazolidine 449488 imidazolidine
