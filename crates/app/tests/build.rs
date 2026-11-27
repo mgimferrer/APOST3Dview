@@ -117,7 +117,9 @@ fn edits_go_to_a_copy_and_can_be_undone() {
     // Change an element and delete atoms.
     harness.state_mut().select_atoms(&[c1]);
     harness.run_steps(2);
-    click(&mut harness, "N");
+    // The Element: row's N (the Add section has an N button before it).
+    harness.query_all_by_label("N").last().unwrap().click_accesskit();
+    harness.run_steps(3);
     assert_eq!(harness.state().atomic_numbers()[c1], 7);
     harness.state_mut().select_atoms(&[h1]);
     harness.run_steps(2);

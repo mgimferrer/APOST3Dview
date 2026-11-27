@@ -566,6 +566,10 @@ impl App {
                     if let Some(drag) = self.build.drag.as_ref().filter(|d| !d.text.is_empty()) {
                         ui.separator();
                         ui.label(RichText::new(&drag.text).strong());
+                    } else if let Some(plan) = self.build.add.plan.as_ref().filter(|p| building && !p.text.is_empty()) {
+                        ui.separator();
+                        ui.label(RichText::new(&plan.text).strong());
+                        ui.label(RichText::new("Esc: Select").weak());
                     }
                     ui.label(RichText::new(format!("{n} atom{}", if n == 1 { "" } else { "s" })).weak());
                     let selected = structure.selected_atoms.len() + structure.selected_bonds.len();

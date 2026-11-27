@@ -31,6 +31,11 @@ Only while the [Build window](building.md) is open. Closing it gives every key a
 | Clean the geometry | <kbd>C</kbd>, or **Clean (C)** |
 | Rebuild a badly drawn structure from its bonds | <kbd>Shift</kbd>+<kbd>C</kbd>, or **Rebuild (Shift+C)** |
 | Switch dragging atoms on or off | <kbd>D</kbd>, or **Drag atoms (D)** (off whenever the Build window opens) |
+| Pick what clicks add | An element or a group in the **Add** section (it stays picked) |
+| Find a group by name | <kbd>Cmd</kbd>+<kbd>F</kbd> (<kbd>Ctrl</kbd>+<kbd>F</kbd>), then type |
+| See what a click would add | Point at an atom or empty space: blue outlines in the view, the action in the status bar |
+| Add it | Click a hydrogen (replaces it), another atom (bonds to it or changes it) or empty space (adds it apart) |
+| Give clicks back their usual meaning | <kbd>Esc</kbd>, or **Select** (a second <kbd>Esc</kbd> clears the selection) |
 
 With **Drag atoms (D)** on:
 

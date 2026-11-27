@@ -9,6 +9,7 @@ mod apost_tables;
 mod apost_values;
 mod appearance;
 pub(crate) mod build;
+pub(crate) mod build_add;
 pub(crate) mod column;
 mod coordinates;
 mod export;

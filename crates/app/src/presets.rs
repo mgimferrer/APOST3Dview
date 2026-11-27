@@ -146,6 +146,11 @@ impl App {
             self.show_warning("No folder for settings on this system");
             return;
         };
+        self.open_folder(&dir);
+    }
+
+    /// Shows `dir` (made if missing) in the system's file manager.
+    pub(crate) fn open_folder(&mut self, dir: &std::path::Path) {
         let opener = if cfg!(target_os = "macos") {
             "open"
         } else if cfg!(windows) {
@@ -153,7 +158,7 @@ impl App {
         } else {
             "xdg-open"
         };
-        if let Err(err) = std::fs::create_dir_all(&dir).and_then(|()| std::process::Command::new(opener).arg(&dir).spawn().map(drop)) {
+        if let Err(err) = std::fs::create_dir_all(dir).and_then(|()| std::process::Command::new(opener).arg(dir).spawn().map(drop)) {
             self.show_warning(format!("Could not open {}: {err}", dir.display()));
         }
     }

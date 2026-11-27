@@ -64,6 +64,7 @@ jobs:
           Copy-Item target/release/apost3dview.exe "$dir/APOST-3Dview.exe"
           Copy-Item LICENSE "$dir/LICENSE.txt"
           Copy-Item crates/render/assets/fonts/OFL.txt "$dir/Arimo-OFL.txt"
+          Copy-Item crates/build/assets/library-avogadro-LICENSE.txt "$dir/Avogadro-fragments-LICENSE.txt"
           Copy-Item -Recurse examples "$dir/examples"
           Copy-Item -Recurse docs/book "$dir/guide"
           Compress-Archive -Path $dir -DestinationPath "dist/APOST3Dview-windows.zip"

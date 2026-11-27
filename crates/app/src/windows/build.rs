@@ -27,7 +27,8 @@ impl App {
         let mut open = self.window_open(ToolWindow::Build);
         let response = self.column_window(ctx, ToolWindow::Build, &mut open).show(ctx, |ui| {
             let Some(active) = self.active_structure else {
-                ui.label(RichText::new("Open a structure first.").weak());
+                ui.label(RichText::new("Open a structure, or start a new molecule:").weak());
+                self.show_add(ui, None);
                 return;
             };
             if let Some(reason) = self.not_editable() {
@@ -35,6 +36,8 @@ impl App {
                 return;
             }
             self.show_build_header(ui, active);
+            ui.separator();
+            self.show_add(ui, Some(active));
             ui.separator();
             self.show_drag_switch(ui);
             ui.separator();

@@ -185,7 +185,12 @@ impl App {
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) && !atom_dragging {
-            self.clear_selection();
+            // In the Build window, Esc first puts back Select.
+            if self.building() && self.build.add.tool != crate::build_add::Tool::Select {
+                self.pick_tool(crate::build_add::Tool::Select);
+            } else {
+                self.clear_selection();
+            }
         }
 
         let aspect_ratio = if rect.height() > 0.0 { rect.width() / rect.height() } else { 1.0 };
@@ -212,7 +217,25 @@ impl App {
         // No separate "Atoms/Bonds/Off" mode needed for that
         // anymore, since a click can only ever mean one thing at
         // a time regardless.
-        if response.clicked()
+        // With something picked in the Build window's Add section, the
+        // pointer shows what a click would add, and a click adds it.
+        let adding = self.building() && self.build.add.tool != crate::build_add::Tool::Select && !atom_dragging;
+        if adding {
+            let hover = ui.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p) && !camera_dragging);
+            let target = hover.map(|p| match self.atom_under(rect, p) {
+                Some(atom) => crate::build_add::Target::Atom(atom),
+                None => crate::build_add::Target::Space(self.point_in_space(rect, p)),
+            });
+            self.update_add_plan(active, target);
+            if hover.is_some() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+            }
+        } else {
+            self.build.add.plan = None;
+        }
+        if adding && response.clicked() {
+            self.apply_add_plan();
+        } else if response.clicked()
             && let Some(pos) = response.interact_pointer_pos()
         {
             let ndc_x = ((pos.x - rect.left()) / rect.width()) * 2.0 - 1.0;
@@ -317,6 +340,9 @@ impl App {
         self.paint_legend(ui.painter(), rect);
         self.paint_panel_frame(ui, rect);
         self.paint_build_frame(ui, rect);
+        if self.building() {
+            self.paint_add_preview(ui.painter(), rect);
+        }
         if self.building()
             && let Some(analysis) = self.active_structure.and_then(|i| self.symmetry(i))
         {

@@ -374,8 +374,15 @@ impl App {
             .structures
             .iter()
             .filter_map(|structure| {
-                let path = build::session_file(structure)?;
                 let inline = build::written_inline(structure);
+                // A molecule built from nothing has no file: its atoms are in
+                // the session.
+                let empty = PathBuf::new();
+                let path = match build::session_file(structure) {
+                    Some(path) => path,
+                    None if inline => &empty,
+                    None => return None,
+                };
                 let molecule = &structure.molecule;
                 let bonds_with = |style: BondVisualStyle| {
                     structure.bond_styles.iter().enumerate().filter(|(_, s)| **s == style).map(|(i, _)| atom_pair(molecule, i)).collect::<Vec<_>>()
@@ -387,7 +394,7 @@ impl App {
                 hidden_bonds.sort_unstable();
                 let results = apost::saved_results(structure, path, base);
                 Some(StructureState {
-                    file: relative_path(base, path),
+                    file: if path.as_os_str().is_empty() { String::new() } else { relative_path(base, path) },
                     file_absolute: path.to_string_lossy().into_owned(),
                     atomic_numbers: molecule.atomic_numbers.clone(),
                     file_fingerprint: if inline { None } else { fingerprint(path) },
@@ -426,7 +433,7 @@ impl App {
             .structures
             .iter()
             .scan(0, |next, s| {
-                Some(build::session_file(s).map(|_| {
+                Some((build::session_file(s).is_some() || build::written_inline(s)).then(|| {
                     *next += 1;
                     *next
                 }))

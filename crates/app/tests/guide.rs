@@ -354,6 +354,61 @@ fn editing_a_molecule() {
     sees_text(&guide, "Cmd/Ctrl+drag to turn");
 }
 
+/// "Editing a molecule", Adding atoms and groups: tBu picked, the pointer
+/// on a hydrogen of ethane shows the group where it would go and says what
+/// a click does; the click replaces the hydrogen.
+#[test]
+fn adding_atoms_and_groups() {
+    let mut guide = open(vec![example("C2H6-OSLO-2CH3").join("C2H6-OSLO-2CH3.fchk")]);
+    click(&mut guide, "Build");
+    for label in ["Add", "Select", "Groups", "Rings", "Ligands", "Molecules", "Mine", "Adjust hydrogens", "Add hydrogens", "Remove hydrogens", "Mirror", "New molecule", "Table…"] {
+        sees(&guide, label);
+    }
+    sees_text(&guide, "Pick an element or a group");
+    frame(&mut guide, 0.4, 0.25, 2.4);
+    guide.state_mut().pan_view(0.9, 0.0);
+    settle(&mut guide);
+    click(&mut guide, "tBu");
+    sees_text(&guide, "tBu picked");
+    // The pointer on a hydrogen in front, on the left.
+    let z = guide.state().atomic_numbers();
+    let screen = guide.state().atom_window_positions();
+    let mut hydrogens: Vec<usize> = (0..z.len()).filter(|&i| z[i] == 1).collect();
+    hydrogens.sort_by(|a, b| screen[*a][0].total_cmp(&screen[*b][0]));
+    let h = hydrogens.into_iter().find(|&i| screen[i][0] > 40.0 && guide.state().atom_at_window_point(screen[i][0], screen[i][1]) == Some(i)).unwrap();
+    let at = egui::pos2(screen[h][0], screen[h][1]);
+    guide.event(egui::Event::PointerMoved(at));
+    guide.run_steps(3);
+    let hint = guide.state().build_add_hint();
+    assert_eq!(hint.as_deref(), Some(format!("Click to replace H{} by tBu", h + 1).as_str()), "pointer at {at:?}");
+    sees_text(&guide, &hint.unwrap());
+    sees_text(&guide, "Esc: Select");
+    if let Some(dir) = images_dir() {
+        // With the pointer there (the preview needs it).
+        guide.run_steps(2);
+        let image = guide.render().expect("render");
+        let height = image.height() * 1400 / image.width();
+        save(&dir, "build-add", &image::imageops::resize(&image, 1400, height, image::imageops::FilterType::Lanczos3));
+    }
+    guide.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+    guide.run_steps(1);
+    guide.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+    guide.run_steps(3);
+    sees_text(&guide, "Building: C2H6-OSLO-2CH3 (edited)");
+    assert_eq!(guide.state().atomic_numbers().len(), 20);
+    click(&mut guide, "Ligands");
+    for label in ["PPh3", "IPr", "SIPr", "IMes", "cAAC", "CO"] {
+        sees(&guide, label);
+    }
+    sees_text(&guide, "Chelating and η ligands come later");
+    click(&mut guide, "Molecules");
+    sees(&guide, "H2O");
+    click(&mut guide, "Mine");
+    for label in ["Save selection as a group", "Open groups folder", "Ligand"] {
+        sees(&guide, label);
+    }
+}
+
 /// "Editing a molecule", Symmetry: CH3F from its calculation (the
 /// CH3F-GEOS example) is C3v only to 0.0005 Å, so a program would see a
 /// lower group; choosing C3v in the Build window draws its axis and planes,

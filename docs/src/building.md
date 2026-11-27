@@ -1,6 +1,6 @@
 # Editing a molecule
 
-The **Build** window changes a geometry: set a distance, an angle or a dihedral, turn a group about a bond, move atoms, delete atoms, change an element. Edits never touch a file or the structure opened from it. The first edit makes a copy, and every edit can be undone.
+The **Build** window builds and changes a geometry: add atoms, groups, ligands and molecules, set a distance, an angle or a dihedral, turn a group about a bond, move atoms, delete atoms, change an element. Edits never touch a file or the structure opened from it. The first edit makes a copy, and every edit can be undone.
 
 **Build** is in the toolbar once **Building and editing molecules** is ticked. APOST-3Dview asks at the first start, and **Features...** in the About window changes it later.
 
@@ -21,6 +21,38 @@ The copy takes the geometry, the bonds (including those made with **Create bond*
 The copy's name is in the **Name:** field at the top of the window. **Continue in a new copy** keeps the copy as it is now and goes on in a new copy of it, so you can keep several stages side by side.
 
 The frames of a path can't be edited. Open each frame as a structure (Molecule window) to edit one geometry.
+
+## Adding atoms, groups and ligands
+
+The **Add** section at the top of the Build window works like GaussView or Chemcraft: pick something, then click where it goes.
+
+![tBu picked, the pointer on a hydrogen of ethane: the tBu is drawn in blue outlines where it would go, and the status bar says "Click to replace H5 by tBu"](images/build-add.png)
+
+1. Pick an element (H, C, N, ... or any element in **Table…**) or a group from the tabs: **Groups** (CH3, tBu, Ph, Mes, Dipp, OMe, NMe2, NO2, CF3, COOMe, OTf, SiMe3, PPh2, ...), **Rings** (cyclohexyl, naphthyl, pyridyl, adamantyl, ...), **Ligands** (CO, NO, NH3, py, MeCN, PMe3, PPh3, PCy3, PtBu3, P(OMe)3, isocyanides, and the carbenes IMe, ItBu, IMes, IPr, SIMes, SIPr and cAAC), **Molecules** (water, benzene, solvents, ...) and **Mine** (your own groups). Or type part of a name in the find field (<kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>F</kbd>): "carbene", "phosphine", "Dipp". Hover over a button for its full name and where its coordinates come from.
+2. Move the pointer over the molecule. Before you click, the view shows in blue outlines where the new atoms would go, the atom under the pointer is ringed, and the status bar says exactly what a click will do, for example "Click to replace H5 by tBu".
+3. Click. It is one edit (made in the copy, undone with <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>+<kbd>Z</kbd>), and the new atoms are left selected, so **Turn about**, dragging or <kbd>C</kbd> act on them right away.
+
+What is picked stays picked, so several clicks add several groups. <kbd>Esc</kbd> or **Select** gives clicks back their usual meaning (a second <kbd>Esc</kbd> clears the selection).
+
+What a click does depends on where:
+
+- On a hydrogen: the group takes its place, bonded to the same atom along the same direction. An element brings its own hydrogens: C gives CH3, N gives NH2, O gives OH.
+- On another atom: the group bonds to it on its free direction, the empty corner left by its neighbours and lone pairs (a tetrahedron, a triangle or a line, as the atom's valence asks; at a metal, the site its other ligands leave). An element changes the atom instead; with **Adjust hydrogens** ticked (the default) its hydrogens are added or removed to fit (C to N on a CH3 gives NH2, a ring C to N in benzene gives pyridine). H on an atom adds one hydrogen.
+- In empty space: the group goes there as a separate piece, on the plane through the middle of the view. A group's open bond gets a hydrogen (tBu gives isobutane); a ligand or a molecule goes as it is.
+
+The new bond has the typical length for its two atoms (the same table **Clean (C)** uses), and the group is turned about it to where it has the most room, which also makes it staggered. Nothing else moves: <kbd>C</kbd> tidies everything when you want it.
+
+A ligand takes one site of a metal. Ligands that bind through several atoms (chelates, pincers, η5 rings) are not offered yet.
+
+**Add hydrogens** gives the selected atoms (all atoms when none is selected) the hydrogens their usual valence asks for, and **Remove hydrogens** removes theirs. **Mirror** makes the mirror image, reflected left to right as seen: the other enantiomer. **New molecule** starts a new structure, without a file, from what is picked (methane with **Select**), so you can build from nothing; it is written into sessions like an unsaved copy.
+
+### Your own groups
+
+Select the atoms of a group in any structure, for example a ligand from a calculation. Exactly one bond must leave the selection: it says where the group bonds. Under **Mine**, type a name, tick **Ligand** if it should be listed with the ligands, and click **Save selection as a group**. It is saved as an .xyz file in the settings folder (**Open groups folder** shows it: copy the files to share them) and appears under **Mine**, with × to delete it.
+
+### Where the groups come from
+
+The common groups, rings and ligands are from Avogadro's fragment collection (BSD licence, which comes with the program as Avogadro-fragments-LICENSE.txt), the molecules and some ligands are PubChem 3D conformers, and the cAAC and Dipp are from a DFT structure (Chem. Sci. 2022, 13, 6583). The NHCs and a few groups are put together from those by the builder itself and tidied with Clean. A test checks every one: in one piece, no atoms too close, Clean changes its bond lengths by less than 0.2 Å, and placed it makes only the bond it should.
 
 ## Setting a distance, an angle or a dihedral
 

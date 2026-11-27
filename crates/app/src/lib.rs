@@ -8,6 +8,7 @@ mod alignment;
 mod app;
 mod areas;
 mod build;
+mod build_add;
 mod export;
 mod features;
 mod files;

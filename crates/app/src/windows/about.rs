@@ -51,6 +51,11 @@ impl App {
                             .small()
                             .weak(),
                     );
+                    ui.label(
+                        egui::RichText::new("Most of the Build window's groups and ligands come from Avogadro's fragment collection (Open Chemistry), under the BSD 3-Clause License, whose text comes with the program as Avogadro-fragments-LICENSE.txt.")
+                            .small()
+                            .weak(),
+                    );
                     ui.add_space(8.0);
                     ui.separator();
                     ui.add_space(8.0);

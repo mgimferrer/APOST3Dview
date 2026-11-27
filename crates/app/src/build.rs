@@ -51,6 +51,8 @@ pub(crate) struct BuildArea {
     pub(crate) symmetry_hover: Option<usize>,
     /// How Clean works.
     pub(crate) clean: CleanSettings,
+    /// The Add section: what clicks add, and what a click would do.
+    pub(crate) add: crate::build_add::AddState,
 }
 
 /// The Clean part of the Build window.
@@ -166,6 +168,8 @@ pub(crate) enum Edited {
     Deleted(Deleted),
     Elements(Molecule),
     Bonds(Vec<Bond>),
+    /// Atoms added (and maybe one replaced): the new atoms end up selected.
+    Changed(apost3dview_build::Placement),
 }
 
 /// The bonds drawn (the ones sides follow): hidden bonds cut, created
@@ -408,6 +412,10 @@ impl App {
             self.redo_edit();
         } else if ctx.input_mut(|i| i.consume_shortcut(&undo)) {
             self.undo_edit();
+        }
+        let find = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::F);
+        if ctx.input_mut(|i| i.consume_shortcut(&find)) {
+            self.build.add.focus_find = true;
         }
         if ctx.input(|i| i.key_pressed(egui::Key::D) && i.modifiers.is_none()) {
             self.build.drag_atoms = !self.build.drag_atoms;
@@ -673,27 +681,40 @@ fn apply(s: &mut LoadedStructure, edited: Edited) {
             s.selected_bonds.clear();
             s.molecule.bonds = bonds;
         }
-        Edited::Deleted(Deleted { molecule, atom_map, bond_map }) => {
-            let atom = |a: usize| atom_map.get(a).copied().flatten();
-            let bond = |b: usize| bond_map.get(b).copied().flatten();
-            s.hidden_atoms = s.hidden_atoms.iter().filter_map(|&a| atom(a)).collect();
-            s.hidden_bonds = s.hidden_bonds.iter().filter_map(|&b| bond(b)).collect();
-            s.bond_styles = s.bond_styles.iter().enumerate().filter(|(k, _)| bond(*k).is_some()).map(|(_, style)| *style).collect();
-            s.perceived_bonds = (0..s.perceived_bonds).filter(|&k| bond(k).is_some()).count();
-            s.selected_atoms = s.selected_atoms.iter().filter_map(|&a| atom(a)).collect();
-            s.selected_bonds = s.selected_bonds.iter().filter_map(|&b| bond(b)).collect();
-            s.measurements = s
-                .measurements
-                .iter()
-                .filter_map(|m| {
-                    let atoms: Option<Vec<usize>> = m.kind.atoms().into_iter().map(atom).collect();
-                    let kind = MeasurementKind::from_picks(&atoms?)?;
-                    Some(Measurement { kind, label_offset: m.label_offset })
-                })
-                .collect();
-            s.molecule = molecule;
+        Edited::Deleted(Deleted { molecule, atom_map, bond_map }) => remap(s, molecule, &atom_map, &bond_map),
+        Edited::Changed(placement) => {
+            remap(s, placement.molecule, &placement.atom_map, &placement.bond_map);
+            // New bonds (after the old ones) are drawn plainly.
+            s.bond_styles.resize(s.molecule.bonds.len(), BondVisualStyle::Single);
+            if !placement.added.is_empty() {
+                s.selected_atoms = placement.added;
+                s.selected_bonds.clear();
+            }
         }
     }
+}
+
+/// Puts `molecule` in place of the structure's, carrying every per-atom and
+/// per-bond state through the maps (`None`: that atom or bond is gone).
+fn remap(s: &mut LoadedStructure, molecule: Molecule, atom_map: &[Option<usize>], bond_map: &[Option<usize>]) {
+    let atom = |a: usize| atom_map.get(a).copied().flatten();
+    let bond = |b: usize| bond_map.get(b).copied().flatten();
+    s.hidden_atoms = s.hidden_atoms.iter().filter_map(|&a| atom(a)).collect();
+    s.hidden_bonds = s.hidden_bonds.iter().filter_map(|&b| bond(b)).collect();
+    s.bond_styles = s.bond_styles.iter().enumerate().filter(|(k, _)| bond(*k).is_some()).map(|(_, style)| *style).collect();
+    s.perceived_bonds = (0..s.perceived_bonds).filter(|&k| bond(k).is_some()).count();
+    s.selected_atoms = s.selected_atoms.iter().filter_map(|&a| atom(a)).collect();
+    s.selected_bonds = s.selected_bonds.iter().filter_map(|&b| bond(b)).collect();
+    s.measurements = s
+        .measurements
+        .iter()
+        .filter_map(|m| {
+            let atoms: Option<Vec<usize>> = m.kind.atoms().into_iter().map(atom).collect();
+            let kind = MeasurementKind::from_picks(&atoms?)?;
+            Some(Measurement { kind, label_offset: m.label_offset })
+        })
+        .collect();
+    s.molecule = molecule;
 }
 
 /// Test hooks of the Build area.

@@ -38,6 +38,7 @@ iconutil -c icns "$iconset" -o "$app/Contents/Resources/APOST3Dview.icns"
 rm -rf "$iconset"
 # The license of the font figure captions are drawn with.
 cp crates/render/assets/fonts/OFL.txt "$app/Contents/Resources/Arimo-OFL.txt"
+cp crates/build/assets/library-avogadro-LICENSE.txt "$app/Contents/Resources/Avogadro-fragments-LICENSE.txt"
 
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --strict "$app"
